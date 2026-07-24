@@ -118,9 +118,9 @@ established before running `vcgen`, e.g. from a separation hypothesis via
 Equations of the pure interpreter functions and the `UInt64`/`BitVec` coercion
 round-trips, so sym-mode `simp` normalizes register-file and address terms. -/
 
-attribute [sym_simp] MachineData.setReg Reg64s.set Reg64s.set64 Reg64s.get Reg64s.get64
-  Reg.base Reg.offset ConstExpr.interp BitVec.take BitVec.drop BitVec.replaceLow
-  AddrExpr.interp BitVec.toAddressSize BitVec.signed StatusFlags.from_result
+attribute [sym_simp] Reg64s.set
+  Reg.base Reg.offset ConstExpr.interp
+  AddrExpr.interp BitVec.toAddressSize BitVec.signed
 
 @[sym_simp] theorem UInt64.ofNat_lit (n : Nat) : (OfNat.ofNat n : UInt64) = UInt64.ofNat n := rfl
 
@@ -386,3 +386,27 @@ theorem sdyn_correct [layout : Layout] (s₀ : MachineData)
            | exact (by decide : UInt64.ofBitVec (BitVec.ofInt 64 (Int.ofBytes (Int.toBytes 8 42))) = 42)
            | exact (by decide : UInt64.ofBitVec (BitVec.ofInt 64 (Int.ofBytes (Int.toBytes 8 99))) = 99)
            | rfl)
+
+/-! ## Read-over-write API: characterize register reads by rewriting, so
+discharging queries only the registers the postcondition mentions and the
+state chain is never unfolded into record literals. -/
+
+@[sym_simp, simp] theorem Reg64s.get64_set64 (s : Reg64s) (r r' : Reg64) (v : Width.W64.type) :
+    (s.set64 r v).get64 r' = if r' = r then v else s.get64 r' := by
+  cases r <;> cases r' <;> simp [Reg64s.set64, Reg64s.get64]
+
+@[sym_simp, simp] theorem Reg64s.get_low64 (s : Reg64s) (r : Reg64) :
+    s.get (.low r .W64) = s.get64 r := by
+  simp [Reg64s.get, Reg.base, Reg.offset, BitVec.take, BitVec.drop]
+
+@[sym_simp, simp] theorem Reg64s.rax_set64 (s : Reg64s) (r : Reg64) (v : Width.W64.type) :
+    (s.set64 r v).rax = if r = .rax then .ofBitVec v else s.rax := by
+  cases r <;> simp [Reg64s.set64]
+
+@[sym_simp, simp] theorem MachineData.regs_setReg (s : MachineData) {w} (r : Reg w) (v : w.type) :
+    (s.setReg r v).regs = s.regs.set r v := rfl
+
+@[sym_simp, simp] theorem MachineData.regs_mk (r z st d) : (MachineData.mk r z st d).regs = r := rfl
+@[sym_simp, simp] theorem MachineData.dmem_mk (r z st d) : (MachineData.mk r z st d).dmem = d := rfl
+@[sym_simp, simp] theorem MachineData.status_mk (r z st d) : (MachineData.mk r z st d).status = st := rfl
+@[sym_simp, simp] theorem MachineData.zmms_mk (r z st d) : (MachineData.mk r z st d).zmms = z := rfl
