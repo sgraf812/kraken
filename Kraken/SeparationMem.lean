@@ -60,9 +60,7 @@ private theorem List.mapM_loop_id_some {α : Type} (xs : List α) (acc : List α
   | nil =>
     simp [List.mapM.loop]
   | cons x xs ih =>
-    dsimp [List.mapM.loop]
-    rw [ih (x :: acc)]
-    simp
+    simp [List.mapM.loop, ih (x :: acc)]
 
 private theorem List.allSome_map_some {α : Type} (l : List α) : List.allSome (l.map some) = some l := by
   dsimp [List.allSome, List.mapM]

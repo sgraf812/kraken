@@ -94,14 +94,15 @@ def handleEffects (ds : IncrementerState) (es : Effects)
   | .require_read_access _ _ cont => handleEffects ds (cont ()) ok
   | .require_write_access _ _ cont => handleEffects ds (cont ()) ok
   | .require_exec_access _ cont => handleEffects ds (cont ()) ok
-  | .nonmem_load dmem addr w cont => do
-    let .W32 := w
-      | throw s!"nonmem_load of width other than 4 bytes"
-    let some r := Incrementer.Register.of_addr (UInt64.ofBitVec addr)
-      | throw s!"nonmem_load at unmapped address {repr addr}"
-    let some (reply, ds') := ds.read_step r
-      | throw s!"Incrementer.read_step failed"
-    handleEffects ds' (cont (UInt32.toBitVec reply) dmem) ok
+  | .nonmem_load dmem addr w cont =>
+    match w with
+    | .W32 => do
+      let some r := Incrementer.Register.of_addr (UInt64.ofBitVec addr)
+        | throw s!"nonmem_load at unmapped address {repr addr}"
+      let some (reply, ds') := ds.read_step r
+        | throw s!"Incrementer.read_step failed"
+      handleEffects ds' (cont (UInt32.toBitVec reply) dmem) ok
+    | _ => throw s!"nonmem_load of width other than 4 bytes"
   | @Effects.nonmem_store dmem addr w v cont =>
     match w with
       | .W32 => match Incrementer.Register.of_addr (UInt64.ofBitVec addr) with
