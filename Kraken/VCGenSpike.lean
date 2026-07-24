@@ -90,55 +90,100 @@ established before running `vcgen`, e.g. from a separation hypothesis via
   simp only [MachineData.store, h]
   exact hwp
 
-/-! ## Per-instruction specs
+@[spec] theorem MachineData.loadAvx_spec (s : MachineData) (addr : BitVec 64) (w : AvxWidth)
+    (ret : w.type → MachineData → Effects) (i : Int)
+    (h : Mem.loadInt s.dmem addr w.bytes = some i)
+    (post : MachineState → Prop) (epost : EPost.Nil) :
+    ⦃ wp (ret (.ofInt w.bits i) s) post epost ⦄ MachineData.loadAvx s addr w ret ⦃ post; epost ⦄ := by
+  constructor
+  intro hwp
+  show (MachineData.loadAvx s addr w ret).All post
+  simp only [MachineData.loadAvx, h]
+  exact hwp
 
-One Triple per `Operation` constructor, keyed on the constructor pattern; the
-precondition is the wp of the instruction's own CPS expansion, so the proof is
-definitional. This replaces equation-unfolding of `Operation.interp`. -/
+@[spec] theorem MachineData.storeAvx_spec (s : MachineData) (addr : BitVec 64) {w : AvxWidth}
+    (v : w.type) (ret : MachineData → Effects) (i : Int)
+    (h : Mem.loadInt s.dmem addr w.bytes = some i)
+    (post : MachineState → Prop) (epost : EPost.Nil) :
+    ⦃ wp (ret { s with dmem := Mem.storeInt s.dmem addr w.bytes v.toInt }) post epost ⦄
+      MachineData.storeAvx s addr v ret ⦃ post; epost ⦄ := by
+  constructor
+  intro hwp
+  show (MachineData.storeAvx s addr v ret).All post
+  simp only [MachineData.storeAvx, h]
+  exact hwp
 
-section InstrSpecs
-variable [Labels] [AddressSize] {w : Width}
-  (p : Std.Rco Int64) (s : MachineData)
-  (next : MachineData → Effects) (jmp : Int64 → MachineData → Effects)
-  (post : MachineState → Prop) (epost : EPost.Nil)
+/-! ## The kraken Sym.simp set
 
-@[spec] theorem Operation.mov_spec (dst : Dst w) (src : Operand w) :
-    ⦃ wp (src.interp s p (fun val s => s.set dst val p next)) post epost ⦄
-      Operation.interp (.mov dst src) p s next jmp ⦃ post; epost ⦄ :=
-  ⟨fun h => h⟩
+Equations of the pure interpreter functions and the `UInt64`/`BitVec` coercion
+round-trips, so sym-mode `simp` normalizes register-file and address terms. -/
 
-@[spec] theorem Operation.dec_spec (dst : Dst w) :
-    ⦃ wp (dst.interp s p (fun a s =>
-        let v := a - 1
-        let status := StatusFlags.from_result v {
-          cf := s.status.cf
-          af := (v.take 4).unsigned != (a.take 4).unsigned - 1,
-          of := v.signed != a.signed - 1 }
-        { s with status }.set dst v p next)) post epost ⦄
-      Operation.interp (.dec dst) p s next jmp ⦃ post; epost ⦄ :=
-  ⟨fun h => h⟩
+attribute [sym_simp] MachineData.setReg Reg64s.set Reg64s.set64 Reg64s.get Reg64s.get64
+  Reg.base Reg.offset ConstExpr.interp BitVec.take BitVec.drop BitVec.replaceLow
+  AddrExpr.interp BitVec.toAddressSize BitVec.signed StatusFlags.from_result
 
-@[spec] theorem Operation.push_spec (src : Operand w) :
-    ⦃ wp (src.interp s p (fun v s =>
-        let rsp := s.regs.get64 .rsp - w.bytesv
-        { s with regs := s.regs.set64 .rsp rsp }.store rsp v next)) post epost ⦄
-      Operation.interp (.push src) p s next jmp ⦃ post; epost ⦄ :=
-  ⟨fun h => h⟩
+@[sym_simp] theorem UInt64.ofNat_lit (n : Nat) : (OfNat.ofNat n : UInt64) = UInt64.ofNat n := rfl
 
-@[spec] theorem Operation.pop_spec (dst : Dst w) :
-    ⦃ wp (let rsp := s.regs.get64 .rsp
-          s.load rsp w (fun val s =>
-          let s := { s with regs := s.regs.set64 .rsp (rsp + w.bytesv) }
-          s.set dst val p next)) post epost ⦄
-      Operation.interp (.pop dst) p s next jmp ⦃ post; epost ⦄ :=
-  ⟨fun h => h⟩
+attribute [sym_simp] UInt64.ofBitVec_sub UInt64.ofBitVec_add UInt64.ofBitVec_toBitVec
+  UInt64.ofBitVec_ofNat UInt64.toBitVec_ofBitVec UInt64.toBitVec_sub UInt64.toBitVec_ofNat
+  Int64.toBitVec_ofNat BitVec.ofInt_add BitVec.ofInt_mul BitVec.ofInt_toInt BitVec.setWidth_eq
+  UInt64.sub_add_cancel
 
-@[spec] theorem Operation.lea_spec (dst : Reg w) (src : AddrExpr) :
-    ⦃ wp (next (s.setReg dst ((src.interp s.regs p).zeroExtend _))) post epost ⦄
-      Operation.interp (.lea dst src) p s next jmp ⦃ post; epost ⦄ :=
-  ⟨fun h => h⟩
+/-! ## Specs for the remaining effect nodes: straightline code performs no MMIO
+and reaches no data blocks, so their weakest precondition is `False`. -/
 
-end InstrSpecs
+@[spec] theorem Effects.unimplemented_spec (msg : String) (post : MachineState → Prop)
+    (epost : EPost.Nil) :
+    ⦃ (False : Prop) ⦄ Effects.unimplemented msg ⦃ post; epost ⦄ :=
+  ⟨fun h => h.elim⟩
+
+@[spec] theorem Effects.nonmem_load_spec (dmem : DataMem) (addr : BitVec 64) (w : Width)
+    (ret : w.type → DataMem → Effects) (post : MachineState → Prop) (epost : EPost.Nil) :
+    ⦃ (False : Prop) ⦄ Effects.nonmem_load dmem addr w ret ⦃ post; epost ⦄ :=
+  ⟨fun h => h.elim⟩
+
+@[spec] theorem Effects.nonmem_store_spec (dmem : DataMem) (addr : BitVec 64) {w : Width}
+    (v : w.type) (ret : DataMem → Effects) (post : MachineState → Prop) (epost : EPost.Nil) :
+    ⦃ (False : Prop) ⦄ Effects.nonmem_store dmem addr v ret ⦃ post; epost ⦄ :=
+  ⟨fun h => h.elim⟩
+
+/-! ## Spec generation for the CPS interpreter
+
+Each equation `f args = rhs` of an `Effects`-returning interpreter function
+yields the spec `⦃ wp rhs post epost ⦄ f args ⦃ post; epost ⦄`; the proof is
+definitional since the equations are iota reductions. -/
+
+open Lean Meta Elab Term Command in
+elab "gen_cps_specs " fs:ident+ : command => do
+  for f in fs do
+    let fname ← liftTermElabM <| realizeGlobalConstNoOverloadWithInfo f
+    let some eqns ← liftTermElabM <| getEqnsFor? fname
+      | throwError "no equation theorems for {fname}"
+    let mut i := 0
+    for eqn in eqns do
+      i := i + 1
+      let thmName := fname ++ Name.mkSimple s!"cps_spec_{i}"
+      liftTermElabM do
+        let info ← getConstInfo eqn
+        let (thmType, thmValue) ← forallTelescope info.type fun xs eqTy => do
+          let some (_, lhs, rhs) := eqTy.eq? | throwError "not an equation: {eqTy}"
+          withLocalDeclD `post (← mkArrow (mkConst ``MachineState) (mkSort .zero)) fun post =>
+          withLocalDeclD `epost (mkConst ``Std.Internal.Do.EPost.Nil) fun epost => do
+            let pre ← mkAppM ``Std.Internal.Do.WP.wp #[rhs, post, epost]
+            let triple ← mkAppM ``Std.Internal.Do.Triple #[lhs, pre, post, epost]
+            let eqPrf := mkAppN (mkConst eqn (info.levelParams.map .param)) xs
+            let lewp ← mkAppM ``Std.Internal.Do.wp_le_wp_of_eq #[eqPrf, post, epost]
+            let prf ← mkAppM ``Std.Internal.Do.Triple.intro #[lewp]
+            return (← mkForallFVars (xs ++ #[post, epost]) triple,
+                    ← mkLambdaFVars (xs ++ #[post, epost]) prf)
+        addDecl <| .thmDecl {
+          name := thmName, levelParams := info.levelParams, type := thmType, value := thmValue }
+        Term.applyAttributes thmName #[{ name := `spec, stx := ← `(attr| spec), kind := .global }]
+
+gen_cps_specs Directives.interp Directive.interp Instr.interp Operation.interp
+  AvxOperation.interp Operand.interp AvxOperand.interp RegOrMem.interp AvxRegOrMem.interp
+  RelRegOrMem.interp Reg.interp MachineData.set MachineData.setAvx MachineData.setAvxLegacy
+
 
 /-! ## Stepping examples -/
 
@@ -162,12 +207,8 @@ example [layout : Layout] s : straightlineStep (layout sp4) (s, layout.start) (f
   simp [List.mapIdx, List.mapIdx.go]
   apply Effects.all_of_triple
   sym =>
-    vcgen -internalize [Directives.interp, Directive.interp, Instr.interp,
-      Operand.interp, RegOrMem.interp, Reg.interp, MachineData.set]
-    all_goals tactic =>
-      (simp only [ConstExpr.interp, MachineData.setReg, Reg64s.set, Reg64s.set64, Reg64s.get,
-         Reg64s.get64, Reg.base, Reg.offset, BitVec.take, BitVec.drop];
-       decide)
+    vcgen -internalize
+    all_goals (simp; cbv; tactic => rfl)
 
 def sp6 := parse("push %rax
 mov $0, %rax
@@ -197,8 +238,7 @@ theorem sp6_correct [layout : Layout] (s₀ : MachineData)
   simp [List.mapIdx, List.mapIdx.go]
   apply Effects.all_of_triple
   sym =>
-    vcgen -internalize [Directives.interp, Directive.interp, Instr.interp,
-      Operand.interp, RegOrMem.interp, Reg.interp, MachineData.set]
+    vcgen -internalize
     all_goals tactic =>
       first
       | (simp [MachineData.setReg, Reg64s.set, Reg64s.set64, Reg64s.get, Reg64s.get64,
@@ -320,8 +360,7 @@ theorem sdyn_correct [layout : Layout] (s₀ : MachineData)
   simp [List.mapIdx, List.mapIdx.go]
   apply Effects.all_of_triple
   sym =>
-    vcgen -internalize [Directives.interp, Directive.interp, Instr.interp,
-      Operand.interp, RegOrMem.interp, Reg.interp, MachineData.set]
+    vcgen -internalize
     all_goals tactic =>
       first
       | (simp [MachineData.setReg, Reg64s.set, Reg64s.set64, Reg64s.get, Reg64s.get64,
