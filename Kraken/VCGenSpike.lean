@@ -8,12 +8,14 @@ import Kraken.OmniSemantics
 import Kraken.X64Sep
 import Kraken.Parser
 import Kraken.Eval
+import Kraken.Separation
 import Std.Tactic.Do
 
 set_option mvcgen.warning false
 set_option grind.warning false
 
 open Std.Internal.Do
+open Std.ExtHashMap
 
 /-! ## The WP instance -/
 
@@ -131,6 +133,11 @@ variable [Labels] [AddressSize] {w : Width}
       Operation.interp (.pop dst) p s next jmp ⦃ post; epost ⦄ :=
   ⟨fun h => h⟩
 
+@[spec] theorem Operation.lea_spec (dst : Reg w) (src : AddrExpr) :
+    ⦃ wp (next (s.setReg dst ((src.interp s.regs p).zeroExtend _))) post epost ⦄
+      Operation.interp (.lea dst src) p s next jmp ⦃ post; epost ⦄ :=
+  ⟨fun h => h⟩
+
 end InstrSpecs
 
 /-! ## Stepping examples -/
@@ -208,3 +215,135 @@ theorem sp6_correct [layout : Layout] (s₀ : MachineData)
          have hv : UInt64.ofBitVec (BitVec.ofInt 64 (Int.ofBytes (Int.toBytes 8 rax.toBitVec.toInt))) = rax := by
            rw [BitVec.ofInt_ofBytes_toBytes 64 8 rfl, UInt64.ofBitVec_toBitVec]
          exact hv)
+
+def sdyn := parse("
+    movq $99, -8(%rsp)
+    movq %rsp, %rbp
+    leaq -1024(%rsp, %r9, 8), %rsp
+    movq $42, %rax
+    movq %rax, 16(%rsp, %r15, 8)
+    movq $0, %rax
+    movq 16(%rsp, %r15, 8), %rax
+    movq %rbp, %rsp
+    movq -8(%rsp), %rbx
+")
+
+set_option maxHeartbeats 1000000 in
+theorem sdyn_correct [layout : Layout] (s₀ : MachineData)
+    (stack : List UInt8) (lstack : stack.length = 1024) (R : DataMem → Prop)
+    (h : s₀.regs.r9.toNat + s₀.regs.r15.toNat < 125)
+    (h_mem : s₀.dmem =⋆ Eq (stack.At (s₀.regs.rsp.toBitVec - 1024)) ⋆ R) :
+    Eventually (straightlineStep (layout sdyn))
+      (fun s' => s'.1.regs.rax = 42 ∧ s'.1.regs.rbx = 99 ∧ s'.1.regs.rsp = s₀.regs.rsp)
+      (s₀, layout.start) := by
+  apply step_cps
+  cases s₀ with | mk regs zmms flags mem =>
+  cases regs with | mk rax rbx rcx rdx rsi rdi rsp rbp r8 r9 r10 r11 r12 r13 r14 r15 =>
+  simp only at h_mem h
+  -- the 1024-byte stack region, split at the last 8 bytes (the -8(%rsp) slot)
+  have h_split : stack = stack.take 1016 ++ stack.drop 1016 := (List.take_append_drop 1016 stack).symm
+  have h_len_take : (stack.take 1016).length = 1016 := by simp [lstack]
+  have h_len_drop : (stack.drop 1016).length = 8 := by simp [lstack]
+  rw [h_split, Mem.At_append_sep _ _ _ (by rw [h_len_take, h_len_drop]; decide), sep_assoc] at h_mem
+  rw [h_len_take] at h_mem
+  -- slot for -8(%rsp): last 8 bytes, at rsp - 8
+  have h_addr3 : rsp.toBitVec - 1024 + 1016#64 = rsp.toBitVec - 8#64 := by bv_decide
+  rw [h_addr3] at h_mem
+  -- facts for instruction 1: store $99 to rsp - 8
+  replace h_mem : (Eq ((stack.drop 1016).At (rsp.toBitVec - 8#64)) ⋆
+      (Eq ((stack.take 1016).At (rsp.toBitVec - 1024)) ⋆ R)) mem :=
+    cast (congrFun (by ac_rfl) _) h_mem
+  have h_L1 : Mem.loadInt mem (rsp.toBitVec - 8#64) 8 = some (Int.ofBytes (stack.drop 1016)) :=
+    Mem.loadInt_sep _ _ 8 _ mem h_mem h_len_drop (by decide)
+  have h_mem1 := Mem.storeInt_sep (rsp.toBitVec - 8#64) 8 (stack.drop 1016) _ mem ⟨h_mem, h_len_drop⟩ 99
+  -- split the low 1016 bytes at the dynamic slot offset o = 16 + 8*(r9+r15)
+  have h_o : 16 + 8 * (r9.toNat + r15.toNat) + 8 ≤ 1016 := by omega
+  have h_lt1 : ((stack.take 1016).take (16 + 8 * (r9.toNat + r15.toNat))).length
+      = 16 + 8 * (r9.toNat + r15.toNat) := by simp [lstack]; omega
+  have h_lt2 : (((stack.take 1016).drop (16 + 8 * (r9.toNat + r15.toNat))).take 8).length = 8 := by
+    simp [lstack]; omega
+  rw [show stack.take 1016
+        = (stack.take 1016).take (16 + 8 * (r9.toNat + r15.toNat))
+          ++ (stack.take 1016).drop (16 + 8 * (r9.toNat + r15.toNat))
+      from (List.take_append_drop _ _).symm,
+      Mem.At_append_sep _ _ _ (by simp [lstack]; omega),
+      show (stack.take 1016).drop (16 + 8 * (r9.toNat + r15.toNat))
+        = ((stack.take 1016).drop (16 + 8 * (r9.toNat + r15.toNat))).take 8
+          ++ ((stack.take 1016).drop (16 + 8 * (r9.toNat + r15.toNat))).drop 8
+      from (List.take_append_drop _ _).symm,
+      Mem.At_append_sep _ _ _ (by simp [lstack]; omega),
+      h_lt1, h_lt2, sep_assoc] at h_mem1
+  -- facts for instruction 5/7: store 42 to, then load from, the dynamic slot
+  replace h_mem1 : (Eq
+        ((List.take 8 (List.drop (16 + 8 * (r9.toNat + r15.toNat)) (List.take 1016 stack))).At
+          (rsp.toBitVec - 1024 + BitVec.ofNat 64 (16 + 8 * (r9.toNat + r15.toNat)))) ⋆
+      (Eq ((Int.toBytes 8 99).At (rsp.toBitVec - 8#64)) ⋆
+        Eq ((List.take (16 + 8 * (r9.toNat + r15.toNat)) (List.take 1016 stack)).At (rsp.toBitVec - 1024)) ⋆
+        Eq ((List.drop 8 (List.drop (16 + 8 * (r9.toNat + r15.toNat)) (List.take 1016 stack))).At
+          (rsp.toBitVec - 1024 + BitVec.ofNat 64 (16 + 8 * (r9.toNat + r15.toNat)) + 8#64)) ⋆
+        R)) (Mem.storeInt mem (rsp.toBitVec - 8#64) 8 99) :=
+    cast (congrFun (by ac_rfl) _) h_mem1
+  have h_L2 := Mem.loadInt_sep _ _ 8 _ _ h_mem1 h_lt2 (by decide)
+  have h_mem2 := Mem.storeInt_sep
+    (rsp.toBitVec - 1024 + BitVec.ofNat 64 (16 + 8 * (r9.toNat + r15.toNat))) 8
+    _ _ _ ⟨h_mem1, h_lt2⟩ 42
+  have h_L3 := Mem.loadInt_sep _ _ 8 _ _ h_mem2 (Int.toBytes_length 8 _) (by decide)
+  -- fact for instruction 9: load 99 back from rsp - 8
+  replace h_mem2 : (Eq ((Int.toBytes 8 99).At (rsp.toBitVec - 8#64)) ⋆
+      (Eq ((Int.toBytes 8 42).At
+          (rsp.toBitVec - 1024 + BitVec.ofNat 64 (16 + 8 * (r9.toNat + r15.toNat)))) ⋆
+        Eq ((List.take (16 + 8 * (r9.toNat + r15.toNat)) (List.take 1016 stack)).At (rsp.toBitVec - 1024)) ⋆
+        Eq ((List.drop 8 (List.drop (16 + 8 * (r9.toNat + r15.toNat)) (List.take 1016 stack))).At
+          (rsp.toBitVec - 1024 + BitVec.ofNat 64 (16 + 8 * (r9.toNat + r15.toNat)) + 8#64)) ⋆
+        R))
+      (Mem.storeInt (Mem.storeInt mem (rsp.toBitVec - 8#64) 8 99)
+        (rsp.toBitVec - 1024 + BitVec.ofNat 64 (16 + 8 * (r9.toNat + r15.toNat))) 8 42) :=
+    cast (congrFun (by ac_rfl) _) h_mem2
+  have h_L4 := Mem.loadInt_sep _ _ 8 _ _ h_mem2 (Int.toBytes_length 8 _) (by decide)
+  simp only [BitVec.ofNat_eq_ofNat] at h_L1 h_L2 h_L3 h_L4
+  -- bridge the interpreter's address normal forms to the fact addresses
+  have hA3 : rsp.toBitVec + 18446744073709551608#64 = rsp.toBitVec - 8#64 := by bv_decide
+  have hAD : BitVec.ofInt 64 ((rsp.toBitVec.toInt + r9.toBitVec.toInt * 8 + -1024).bmod 18446744073709551616)
+        + r15.toBitVec * 8#64 + 16#64
+      = rsp.toBitVec - 1024 + BitVec.ofNat 64 (16 + 8 * (r9.toNat + r15.toNat)) := by
+    rw [show ((rsp.toBitVec.toInt + r9.toBitVec.toInt * 8 + -1024).bmod 18446744073709551616)
+          = (BitVec.ofInt 64 (rsp.toBitVec.toInt + r9.toBitVec.toInt * 8 + -1024)).toInt
+        from (BitVec.toInt_ofInt (n := 64) _).symm,
+      BitVec.ofInt_toInt]
+    simp only [Nat.mul_add, ← Nat.add_assoc, BitVec.ofNat_add, BitVec.ofNat_mul,
+      BitVec.ofNat_uInt64ToNat, BitVec.ofInt_add, BitVec.ofInt_mul, BitVec.ofInt_toInt,
+      BitVec.ofInt_neg, BitVec.ofInt_ofNat]
+    grind
+  delta sdyn
+  dsimp only [straightlineStep, Executable.straightline]
+  rw [Executable.directivesFromStart']
+  simp [List.mapIdx, List.mapIdx.go]
+  apply Effects.all_of_triple
+  sym =>
+    vcgen -internalize [Directives.interp, Directive.interp, Instr.interp,
+      Operand.interp, RegOrMem.interp, Reg.interp, MachineData.set]
+    all_goals tactic =>
+      first
+      | (simp [MachineData.setReg, Reg64s.set, Reg64s.set64, Reg64s.get, Reg64s.get64,
+          Reg.base, Reg.offset, ConstExpr.interp, AddrExpr.interp, BitVec.toAddressSize,
+          BitVec.signed, BitVec.take, BitVec.drop, Width.bits,
+          Int64.toBitVec_ofNat, UInt64.ofBitVec_ofNat, UInt64.toBitVec_sub, UInt64.toBitVec_ofNat,
+          UInt64.ofBitVec_add, UInt64.ofBitVec_sub, UInt64.ofBitVec_toBitVec,
+          BitVec.ofInt_add, BitVec.ofInt_mul, BitVec.ofInt_toInt,
+          hA3, hAD, h_L1, h_L2, h_L3, h_L4] <;> rfl)
+      | (simp [MachineData.setReg, Reg64s.set, Reg64s.set64, Reg64s.get, Reg64s.get64,
+          Reg.base, Reg.offset, ConstExpr.interp, AddrExpr.interp, BitVec.toAddressSize,
+          BitVec.signed, BitVec.take, BitVec.drop, Width.bits,
+          Int64.toBitVec_ofNat, UInt64.ofBitVec_ofNat, UInt64.toBitVec_sub, UInt64.toBitVec_ofNat,
+          UInt64.ofBitVec_add, UInt64.ofBitVec_sub, UInt64.ofBitVec_toBitVec,
+          BitVec.ofInt_add, BitVec.ofInt_mul, BitVec.ofInt_toInt,
+          hA3, hAD, h_L1, h_L2, h_L3, h_L4];
+         apply Eventually.done;
+         simp [MachineData.setReg, Reg64s.set, Reg64s.set64, Reg64s.get, Reg64s.get64,
+           Reg.base, Reg.offset, ConstExpr.interp, BitVec.take, BitVec.drop, Width.bits,
+           Int64.toBitVec_ofNat, UInt64.ofBitVec_ofNat, UInt64.toBitVec_ofNat,
+           UInt64.ofBitVec_add, UInt64.ofBitVec_sub, UInt64.ofBitVec_toBitVec];
+         and_intros <;> first
+           | exact (by decide : UInt64.ofBitVec (BitVec.ofInt 64 (Int.ofBytes (Int.toBytes 8 42))) = 42)
+           | exact (by decide : UInt64.ofBitVec (BitVec.ofInt 64 (Int.ofBytes (Int.toBytes 8 99))) = 99)
+           | rfl)
