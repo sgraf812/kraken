@@ -33,6 +33,10 @@ DISCHARGE = {
     vcgen -internalize
     all_goals tactic => (simp_all; try decide)
 """,
+  "finish": """  sym =>
+    vcgen simplifying_assumptions
+    all_goals finish
+""",
 }
 
 PREAMBLE = """  cases s with | mk regs zmms flags mem =>
@@ -71,7 +75,8 @@ def multireg_family(n, variant):
 def main():
     outdir = pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else pathlib.Path("bench/generated")
     outdir.mkdir(parents=True, exist_ok=True)
-    for variant, imp in [("baseline", "Kraken.VCGenSpike"), ("accessor", "Kraken.AccessorSpecs")]:
+    for variant, imp in [("baseline", "Kraken.VCGenSpike"), ("accessor", "Kraken.AccessorSpecs"),
+                         ("finish", "Kraken.AccessorSpecs")]:
         for fam, gen in [("dec", dec_family), ("adc", adc_family), ("multireg", multireg_family)]:
             for n in SIZES:
                 path = outdir / f"{fam}{n}_{variant}.lean"

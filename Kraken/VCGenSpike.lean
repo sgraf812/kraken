@@ -212,8 +212,10 @@ state chain is never unfolded into record literals. -/
 /-! ## Grind theory for interpreter values
 
 Characterization lemmas for the value-level interpreter functions and the
-integer coercion round-trips, in E-matchable form. With these, `finish`
-discharges VCs without per-call-site lemma lists. -/
+integer coercion round-trips, in E-matchable form. A `UInt64` literal is
+normalized to `UInt64.ofBitVec` of a `BitVec` literal, so register-value goals
+reduce through constructor injectivity to the `BitVec` `grind` ring. With these,
+`finish` discharges VCs without per-call-site lemma lists. -/
 
 section
 variable (labels : Labels) (p : Std.Rco Int64)
@@ -243,7 +245,7 @@ end
     (Int64.ofNat n).toBitVec = BitVec.ofNat 64 n := rfl
 @[grind =] theorem Int64.toBitVec_lit (n : Nat) :
     (OfNat.ofNat n : Int64).toBitVec = BitVec.ofNat 64 n := rfl
-@[grind =] theorem UInt64.ofNat_lit' (n : Nat) :
+@[grind norm] theorem UInt64.ofNat_lit' (n : Nat) :
     (OfNat.ofNat n : UInt64) = UInt64.ofBitVec (BitVec.ofNat 64 n) := rfl
 @[grind =] theorem BitVec.setWidth_64_64 (x : BitVec 64) :
     BitVec.setWidth 64 x = x := BitVec.setWidth_eq x
