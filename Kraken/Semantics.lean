@@ -708,7 +708,7 @@ instance : CoeFun Layout (fun _ => Program → Executable) where coe := Layout.a
 def Executable.withAddresses (e : Executable)  : List (Int64 × Directive × Nat) :=
   (List.scanl (fun (p, _, _) (d, z) => (p+.ofNat z, d, z)) (e.1, .byteArray (.mk #[]), 0) e.2)
 
-def Executable.labels (e : Executable) : Labels :=
+@[instance_reducible] def Executable.labels (e : Executable) : Labels :=
   { label l := (e.withAddresses.findSome?
       (fun (p, d, _) => if d = .label l then .some p else .none)).getD (-1) }
 
