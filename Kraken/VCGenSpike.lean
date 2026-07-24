@@ -185,6 +185,69 @@ gen_cps_specs Directives.interp Directive.interp Instr.interp Operation.interp
   RelRegOrMem.interp Reg.interp MachineData.set MachineData.setAvx MachineData.setAvxLegacy
 
 
+/-! ## Read-over-write API: characterize register reads by rewriting, so
+discharging queries only the registers the postcondition mentions and the
+state chain is never unfolded into record literals. -/
+
+@[sym_simp, simp, grind =] theorem Reg64s.get64_set64 (s : Reg64s) (r r' : Reg64) (v : Width.W64.type) :
+    (s.set64 r v).get64 r' = if r' = r then v else s.get64 r' := by
+  cases r <;> cases r' <;> simp [Reg64s.set64, Reg64s.get64]
+
+@[sym_simp, simp, grind =] theorem Reg64s.get_low64 (s : Reg64s) (r : Reg64) :
+    s.get (.low r .W64) = s.get64 r := by
+  simp [Reg64s.get, Reg.base, Reg.offset, BitVec.take, BitVec.drop]
+
+@[sym_simp, simp, grind =] theorem Reg64s.rax_set64 (s : Reg64s) (r : Reg64) (v : Width.W64.type) :
+    (s.set64 r v).rax = if r = .rax then .ofBitVec v else s.rax := by
+  cases r <;> simp [Reg64s.set64]
+
+@[sym_simp, simp, grind =] theorem MachineData.regs_setReg (s : MachineData) {w} (r : Reg w) (v : w.type) :
+    (s.setReg r v).regs = s.regs.set r v := rfl
+
+@[sym_simp, simp] theorem MachineData.regs_mk (r z st d) : (MachineData.mk r z st d).regs = r := rfl
+@[sym_simp, simp] theorem MachineData.dmem_mk (r z st d) : (MachineData.mk r z st d).dmem = d := rfl
+@[sym_simp, simp] theorem MachineData.status_mk (r z st d) : (MachineData.mk r z st d).status = st := rfl
+@[sym_simp, simp] theorem MachineData.zmms_mk (r z st d) : (MachineData.mk r z st d).zmms = z := rfl
+
+/-! ## Grind theory for interpreter values
+
+Characterization lemmas for the value-level interpreter functions and the
+integer coercion round-trips, in E-matchable form. With these, `finish`
+discharges VCs without per-call-site lemma lists. -/
+
+section
+variable (labels : Labels) (p : Std.Rco Int64)
+
+@[grind =] theorem ConstExpr.interp_label (l : Label) :
+    ConstExpr.interp labels (.label l) p = labels.label l := rfl
+@[grind =] theorem ConstExpr.interp_int64 (i : Int64) :
+    ConstExpr.interp labels (.int64 i) p = i := rfl
+@[grind =] theorem ConstExpr.interp_before :
+    ConstExpr.interp labels .before_current_instruction p = p.lower := rfl
+@[grind =] theorem ConstExpr.interp_after :
+    ConstExpr.interp labels .after_current_instruction p = p.upper := rfl
+@[grind =] theorem ConstExpr.interp_add (e1 e2 : ConstExpr) :
+    ConstExpr.interp labels (.add e1 e2) p
+      = ConstExpr.interp labels e1 p + ConstExpr.interp labels e2 p := rfl
+@[grind =] theorem ConstExpr.interp_sub (e1 e2 : ConstExpr) :
+    ConstExpr.interp labels (.sub e1 e2) p
+      = ConstExpr.interp labels e1 p - ConstExpr.interp labels e2 p := rfl
+
+end
+
+@[grind =] theorem Reg64s.set_low64 (s : Reg64s) (r : Reg64) (v : Width.W64.type) :
+    Reg64s.set s (.low r .W64) v = s.set64 r v := rfl
+
+@[grind =] theorem Int64.ofNat_lit (n : Nat) : (OfNat.ofNat n : Int64) = Int64.ofNat n := rfl
+@[grind =] theorem Int64.toBitVec_ofNat_lit (n : Nat) :
+    (Int64.ofNat n).toBitVec = BitVec.ofNat 64 n := rfl
+@[grind =] theorem Int64.toBitVec_lit (n : Nat) :
+    (OfNat.ofNat n : Int64).toBitVec = BitVec.ofNat 64 n := rfl
+@[grind =] theorem UInt64.ofNat_lit' (n : Nat) :
+    (OfNat.ofNat n : UInt64) = UInt64.ofBitVec (BitVec.ofNat 64 n) := rfl
+@[grind =] theorem BitVec.setWidth_64_64 (x : BitVec 64) :
+    BitVec.setWidth 64 x = x := BitVec.setWidth_eq x
+
 /-! ## Stepping examples -/
 
 open Kraken.Parser
@@ -386,27 +449,3 @@ theorem sdyn_correct [layout : Layout] (s₀ : MachineData)
            | exact (by decide : UInt64.ofBitVec (BitVec.ofInt 64 (Int.ofBytes (Int.toBytes 8 42))) = 42)
            | exact (by decide : UInt64.ofBitVec (BitVec.ofInt 64 (Int.ofBytes (Int.toBytes 8 99))) = 99)
            | rfl)
-
-/-! ## Read-over-write API: characterize register reads by rewriting, so
-discharging queries only the registers the postcondition mentions and the
-state chain is never unfolded into record literals. -/
-
-@[sym_simp, simp, grind =] theorem Reg64s.get64_set64 (s : Reg64s) (r r' : Reg64) (v : Width.W64.type) :
-    (s.set64 r v).get64 r' = if r' = r then v else s.get64 r' := by
-  cases r <;> cases r' <;> simp [Reg64s.set64, Reg64s.get64]
-
-@[sym_simp, simp, grind =] theorem Reg64s.get_low64 (s : Reg64s) (r : Reg64) :
-    s.get (.low r .W64) = s.get64 r := by
-  simp [Reg64s.get, Reg.base, Reg.offset, BitVec.take, BitVec.drop]
-
-@[sym_simp, simp, grind =] theorem Reg64s.rax_set64 (s : Reg64s) (r : Reg64) (v : Width.W64.type) :
-    (s.set64 r v).rax = if r = .rax then .ofBitVec v else s.rax := by
-  cases r <;> simp [Reg64s.set64]
-
-@[sym_simp, simp, grind =] theorem MachineData.regs_setReg (s : MachineData) {w} (r : Reg w) (v : w.type) :
-    (s.setReg r v).regs = s.regs.set r v := rfl
-
-@[sym_simp, simp] theorem MachineData.regs_mk (r z st d) : (MachineData.mk r z st d).regs = r := rfl
-@[sym_simp, simp] theorem MachineData.dmem_mk (r z st d) : (MachineData.mk r z st d).dmem = d := rfl
-@[sym_simp, simp] theorem MachineData.status_mk (r z st d) : (MachineData.mk r z st d).status = st := rfl
-@[sym_simp, simp] theorem MachineData.zmms_mk (r z st d) : (MachineData.mk r z st d).zmms = z := rfl
