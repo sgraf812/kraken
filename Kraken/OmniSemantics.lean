@@ -1,28 +1,21 @@
 /-
 Kraken - Proof Tactics
 
-Core tactics and theorems for stepping through assembly proofs.
-Compatible with Lean 4.22.0+.
-
-For semantics, see Kraken/Semantics.lean.
-For advanced tactics (SymM), see kraken-experimental/KrakenExp/Tactics.lean.
+Straightline judgment over the `EStateM` instruction semantics, expressed with
+the stock `WP`/`Triple` instance for `EStateM` from `Std.Internal.Do`.
 -/
 
 import Kraken.Semantics
+import Std.Tactic.Do
+
+open Std.Internal.Do
+
+set_option mvcgen.warning false
+set_option grind.warning false
 
 -- PROOF INFRASTRUCTURE
 
 abbrev Post {State : Type} := State → Prop
-
-def Effects.All (post : MachineState → Prop) : Effects → Prop
-  | .done a => post a
-  | .unimplemented _ => False
-  | .nonmem_load .. => False
-  | .nonmem_store .. => False
-  | @Effects.undefined α _ cont => ∀ v: α, (cont v).All post
-  | .require_read_access _ _ cont => (cont ()).All post
-  | .require_write_access _ _ cont => (cont ()).All post
-  | .require_exec_access _ cont => (cont ()).All post
 
 -- NOTE: 'initial' cannot be moved to the left of the colon as a parameter
 -- because it varies in the recursive call in the 'step' constructor (it becomes 'mid').
@@ -56,44 +49,22 @@ theorem eventually_trans {State : Type} (trans : State → Post → Prop) (p q :
         apply Eventually.step
         <;> assumption
 
-theorem eventually_weaken {State : Type} (trans : State → Post → Prop) (p q : Post) (initial : State)
-  (h : ∀ s, p s → q s) :
-    Eventually trans p initial → Eventually trans q initial
-  := by
-    intro hp
-    induction ih: hp  -- Q: why does this not work with `induction ... with`?
-    . apply Eventually.done
-      grind
-    . apply Eventually.step
-      <;> try assumption
-      grind
+/-- Exception postcondition of a straightline run: a `jump` exit re-enters the
+same postcondition at the jump target; every other exit is unreachable in
+straightline register-only code. -/
+def exitPost (post : MachineState → Prop) : X64Exit → MachineData → Prop
+  | .jump pc, sd => post (sd, pc)
+  | _, _ => False
 
--- A loop down to 0
-theorem reg_dec_loop {State : Type} (trans : State → Post → Prop) (post : Post) (initial : State) (invariant : Nat → Post) (n : Nat) :
-  -- if:
-  -- invariant holds before entering the loop
-  invariant n initial ∧
-  -- final iteration allows proving `post`
-  (∀ state, invariant 0 state → Eventually trans post state) ∧
-  -- while iterating, we eventually re-establish the invariant
-  (∀ state k, k ≠ 0 → invariant k state → Eventually trans (invariant (k - 1)) state) →
-  -- then: we can prove the post
-  Eventually trans post initial
-  := by
-    intro misc
-    rcases misc with ⟨ initial_invariant, case_zero, case_nonzero ⟩
-    if n = 0 then
-      apply case_zero
-      grind
-    else
-      apply eventually_trans trans (invariant (n - 1)) post
-      grind
-      intros srec _
-      apply reg_dec_loop trans post srec invariant (n - 1)
-      grind
+/-- The straightline judgment: running `e` from `s.2` with initial state `s.1`
+lands in `post`, whether it falls through (fall-through pc in the value
+postcondition) or jumps (target pc in the exception postcondition). -/
+def straightlineStep [Layout] (e : Executable) (s : MachineState) (post : @Post MachineState) : Prop :=
+  ⦃fun sd => sd = s.1⦄
+    (e.straightline s.2)
+  ⦃fun pc sd => post (sd, pc); fun ex sd => exitPost post ex sd⦄
 
-def step1 [Layout] (p: Executable) (s: MachineState) (post: @Post MachineState) : Prop :=
-  (Executable.step p s .done).All post
-
-def straightlineStep [Layout] (p: Executable) (s: MachineState) (post: @Post MachineState) : Prop :=
-  (Executable.straightline p s .done).All post
+def step1 [Layout] (e : Executable) (s : MachineState) (post : @Post MachineState) : Prop :=
+  ⦃fun sd => sd = s.1⦄
+    (e.step s.2)
+  ⦃fun pc sd => post (sd, pc); fun ex sd => exitPost post ex sd⦄

@@ -168,13 +168,6 @@ def RegZmms.setLegacy (s : RegZmms) {w} (r : AvxReg w) (v : w.type) : RegZmms :=
 
 structure Labels where label : Label → Int64
 
-section Interp
-
-variable (labels : Labels) (address_size : AddressSize)
-
-def BitVec.toAddressSize (w: BitVec 64): BitVec address_size.address_size.bits :=
-  w.take address_size.address_size.bits
-
 structure StatusFlags where
   cf : Bool
   pf : Bool
@@ -193,86 +186,52 @@ structure MachineData where -- does not include code or program position
   dmem : DataMem := ∅
   deriving Repr, BEq, DecidableEq
 
--- We only allow nondeterministic choices for a fixed set of types.
-class inductive NondetSupportingType : Type -> Type
-  | bitvec (w : Width) : NondetSupportingType w.type
-  | avx_bitvec (aw : AvxWidth) : NondetSupportingType aw.type
-  | bool : NondetSupportingType Bool
-  | statusFlags : NondetSupportingType StatusFlags
-
-def NondetSupportingType.from_hash {α} [t : NondetSupportingType α] (h : UInt64) : α :=
-  match t with
-  | .bool => h % 2 != 0
-  | .statusFlags => let h := h.toBitVec; (.mk h[0] h[1] h[2] h[3] h[4] h[5])
-  | .bitvec w => h.toBitVec.setWidth w.bits
-  | .avx_bitvec w => h.toBitVec.setWidth w.bits
-
-instance (w : Width) : NondetSupportingType w.type := .bitvec w
-instance (w : AvxWidth) : NondetSupportingType w.type := .avx_bitvec w
-instance : NondetSupportingType Bool := .bool
-instance : NondetSupportingType StatusFlags := .statusFlags
-
-inductive Effects
-  | done (a : MachineData × Int64)
+/-- Exceptional exits from a monadic run of the instruction semantics.
+`jump` carries a control-flow target out of the state monad; the remaining
+constructors flag effects the straightline model leaves unresolved. -/
+inductive X64Exit
+  | jump (pc : Int64)
   | unimplemented (msg : String)
-  -- loads and stores *outside* the data memory, eg. MMIO, might still affect the data memory:
-  -- for instance, MMIO reads/writes at certain device register addresses might change what
-  -- data memory the process logically owns vs what memory is owned by devices
-  | nonmem_load (dmem : DataMem) (addr : BitVec 64) (w : Width) (ret : w.type → DataMem → Effects)
-  | nonmem_store (dmem : DataMem) (addr : BitVec 64) {w : Width} (v : w.type) (ret: DataMem → Effects)
-  | undefined {α : Type} [NondetSupportingType α] (ret : α → Effects)
-  | require_read_access (addr : BitVec 64) (w : Width) (ok : Unit → Effects)
-  | require_write_access (addr : BitVec 64) (w : Width) (ok : Unit → Effects)
-  | require_exec_access (p: Std.Rco Int64) (ok : Unit → Effects)
-export Effects (unimplemented nonmem_load nonmem_store undefined require_read_access require_write_access require_exec_access)
+  | nonmemLoad (dmem : DataMem) (addr : BitVec 64) (w : Width)
+  | nonmemStore (dmem : DataMem) (addr : BitVec 64) (w : Width)
+  | undefinedFlags
+  deriving Repr
 
--- the unused `Std.Rco Int64` argument and the unmodified `MachineData` return
--- value are present for uniformity with RegOrMem.interp
-def Reg.interp {w} (r : Reg w) (s : MachineData) (_ : Std.Rco Int64)
-  (ret : w.type → MachineData → Effects) : Effects :=
-  ret (s.regs.get r) s
+/-- The instruction-semantics monad: error-state over `MachineData`. -/
+abbrev X64M := EStateM X64Exit MachineData
 
--- Since MMIO can cause devices to do arbitrary actions, a load might actually
--- *modify* memory. For instance:
--- A TEST instruction might load a flag from an MMIO address and bitwise-and it with
--- an immediate, and if the result is non-zero, it might mean that some device has
--- finished processing a buffer and therefore now passes ownership of that buffer
--- to the CPU.
--- Note that `ret` takes a whole `MachineData` instead of only `DataMem`, which
--- provides a bit more flexibility than we need: MachineData.load might change
--- dmem, but will not change the registers or status flags.
--- But this superfluous flexibility helps us simplify the state-threading:
--- Instead of writing `fun v dmem => ... { s with dmem } ...` everywhere, we
--- can just write `fun v s => ...` and the new `s` will shadow the old `s`.
-def MachineData.load
-  (s : MachineData) (addr : BitVec 64) (w : Width)
-  (ret : w.type → MachineData → Effects): Effects :=
-  require_read_access addr w (fun _unit =>
-    match Mem.loadInt s.dmem addr w.bytes with
-    | .some i => ret (.ofInt _ i) s
-    | .none => nonmem_load s.dmem addr w (fun v dmem => ret v { s with dmem }))
+section Interp
 
-def MachineData.loadAvx
-  (s : MachineData) (addr : BitVec 64) (w : AvxWidth)
-  (ret : w.type → MachineData → Effects): Effects :=
-  require_read_access addr .W64 (fun _unit =>
-match Mem.loadInt s.dmem addr w.bytes with
-    | .some i => ret (.ofInt _ i) s
-    | .none => unimplemented "AVX nonmem load not supported")
+variable (labels : Labels) (address_size : AddressSize)
 
-def MachineData.store (s : MachineData) (addr : BitVec 64) {w : Width} (v : w.type) (ret: MachineData → Effects) : Effects :=
-  require_write_access addr w (fun _unit =>
-    match Mem.loadInt s.dmem addr w.bytes with
-    | .some _ =>
-        ret { s with dmem := Mem.storeInt s.dmem addr w.bytes v.toInt }
-    | .none => nonmem_store s.dmem addr v (fun dmem' => ret { s with dmem := dmem' }))
+def BitVec.toAddressSize (w: BitVec 64): BitVec address_size.address_size.bits :=
+  w.take address_size.address_size.bits
 
-def MachineData.storeAvx (s : MachineData) (addr : BitVec 64) {w : AvxWidth} (v : w.type) (ret: MachineData → Effects) : Effects :=
-  require_write_access addr .W64 (fun _unit =>
-match Mem.loadInt s.dmem addr w.bytes with
-    | .some _ =>
-        ret { s with dmem := Mem.storeInt s.dmem addr w.bytes v.toInt }
-    | .none => unimplemented "AVX nonmem store not supported")
+-- A load inside the mapped data memory returns the stored value. Outside it,
+-- straightline execution throws: MMIO and other nonmemory effects are not modeled.
+def MachineData.load (addr : BitVec 64) (w : Width) : X64M w.type := do
+  let s ← get
+  match Mem.loadInt s.dmem addr w.bytes with
+  | .some i => pure (.ofInt _ i)
+  | .none => throw (.nonmemLoad s.dmem addr w)
+
+def MachineData.loadAvx (addr : BitVec 64) (w : AvxWidth) : X64M w.type := do
+  let s ← get
+  match Mem.loadInt s.dmem addr w.bytes with
+  | .some i => pure (.ofInt _ i)
+  | .none => throw (.unimplemented "AVX nonmem load not supported")
+
+def MachineData.store (addr : BitVec 64) {w : Width} (v : w.type) : X64M Unit := do
+  let s ← get
+  match Mem.loadInt s.dmem addr w.bytes with
+  | .some _ => set { s with dmem := Mem.storeInt s.dmem addr w.bytes v.toInt }
+  | .none => throw (.nonmemStore s.dmem addr w)
+
+def MachineData.storeAvx (addr : BitVec 64) {w : AvxWidth} (v : w.type) : X64M Unit := do
+  let s ← get
+  match Mem.loadInt s.dmem addr w.bytes with
+  | .some _ => set { s with dmem := Mem.storeInt s.dmem addr w.bytes v.toInt }
+  | .none => throw (.unimplemented "AVX nonmem store not supported")
 
 def ConstExpr.interp : ConstExpr → Std.Rco _root_.Int64 → _root_.Int64
   | .label l, _ => labels.label l
@@ -292,19 +251,18 @@ def AddrExpr.interp (a : AddrExpr) (s : Reg64s) (p : Std.Rco Int64) :=
              | .none => 0
   BitVec.ofInt address_size.address_size.bits (base + idx + (a.disp.interp labels p).toInt)
 
-def RegOrMem.interp {w}
-  (o : RegOrMem w) (s : MachineData) (p : Std.Rco Int64)
-  (ret : w.type → MachineData → Effects) :=
-match o with
-  | .reg r => ret (s.regs.get r) s
-  | .mem a => s.load ((a.interp labels address_size s.regs p).zeroExtend _) w ret
+def Reg.interp {w} (r : Reg w) : X64M w.type := do
+  return (← get).regs.get r
 
-def AvxRegOrMem.interp {w}
-  (o : AvxRegOrMem w) (s : MachineData) (p : Std.Rco Int64)
-  (ret : w.type → MachineData → Effects) :=
-match o with
-  | .avx r => ret (s.zmms.get r) s
-  | .mem a => s.loadAvx ((a.interp labels address_size s.regs p).zeroExtend _) w ret
+def RegOrMem.interp {w} (o : RegOrMem w) (p : Std.Rco Int64) : X64M w.type := do
+  match o with
+  | .reg r => return (← get).regs.get r
+  | .mem a => MachineData.load ((a.interp labels address_size (← get).regs p).zeroExtend _) w
+
+def AvxRegOrMem.interp {w} (o : AvxRegOrMem w) (p : Std.Rco Int64) : X64M w.type := do
+  match o with
+  | .avx r => return (← get).zmms.get r
+  | .mem a => MachineData.loadAvx ((a.interp labels address_size (← get).regs p).zeroExtend _) w
 
 def MachineData.setReg (s : MachineData) {w} (r : Reg w) (v : w.type) : MachineData :=
   { s with regs := s.regs.set r v }
@@ -315,34 +273,29 @@ def MachineData.setAvxReg (s : MachineData) {w : AvxWidth} (r : AvxReg w) (v : w
 def MachineData.setAvxLegacyReg (s : MachineData) {w : AvxWidth} (r : AvxReg w) (v : w.type) : MachineData :=
   { s with zmms := s.zmms.setLegacy r v }
 
-def MachineData.set {w} (s : MachineData) (d : Dst w) (v : w.type) (p : Std.Rco Int64) (ret : MachineData → Effects) : Effects :=
+def MachineData.set {w} (d : Dst w) (v : w.type) (p : Std.Rco Int64) : X64M Unit := do
   match d with
-  | .reg r => ret (s.setReg r v)
-  | .mem a => s.store ((a.interp labels address_size s.regs p).zeroExtend _) v ret
+  | .reg r => modify (·.setReg r v)
+  | .mem a => MachineData.store ((a.interp labels address_size (← get).regs p).zeroExtend _) v
 
-def MachineData.setAvx {aw} (s : MachineData) (d : AvxDst aw) (v : aw.type) (p : Std.Rco Int64) (ret : MachineData → Effects) : Effects :=
-match d with
-  | .avx r => ret (s.setAvxReg r v)
-  | .mem a => s.storeAvx ((a.interp labels address_size s.regs p).zeroExtend _) v ret
+def MachineData.setAvx {aw} (d : AvxDst aw) (v : aw.type) (p : Std.Rco Int64) : X64M Unit := do
+  match d with
+  | .avx r => modify (·.setAvxReg r v)
+  | .mem a => MachineData.storeAvx ((a.interp labels address_size (← get).regs p).zeroExtend _) v
 
-def MachineData.setAvxLegacy {w} (s : MachineData) (d : AvxDst w) (v : w.type) (p : Std.Rco Int64) (ret : MachineData → Effects) : Effects :=
-match d with
-  | .avx r => ret (s.setAvxLegacyReg r v)
-  | .mem a => s.storeAvx ((a.interp labels address_size s.regs p).zeroExtend _) v ret
+def MachineData.setAvxLegacy {w} (d : AvxDst w) (v : w.type) (p : Std.Rco Int64) : X64M Unit := do
+  match d with
+  | .avx r => modify (·.setAvxLegacyReg r v)
+  | .mem a => MachineData.storeAvx ((a.interp labels address_size (← get).regs p).zeroExtend _) v
 
-def Operand.interp {w}
-  (o : Operand w) (s : MachineData) (p : Std.Rco Int64)
-  (ret : w.type → MachineData → Effects) :=
+def Operand.interp {w} (o : Operand w) (p : Std.Rco Int64) : X64M w.type := do
   match o with
-  | regOrMem rm => rm.interp labels address_size s p ret
-  | .imm v => ret ((v.interp labels p).toBitVec.truncate _) s
-  -- we rely on assemblers erroring out on too-large immediates in uniform ops
+  | .regOrMem rm => rm.interp labels address_size p
+  | .imm v => pure ((v.interp labels p).toBitVec.truncate _)
 
-def AvxOperand.interp {aw}
-  (o : AvxOperand aw) (s : MachineData) (p : Std.Rco Int64)
-  (ret : aw.type → MachineData → Effects) :=
-match o with
-  | regOrMem rm => rm.interp labels address_size s p ret
+def AvxOperand.interp {aw} (o : AvxOperand aw) (p : Std.Rco Int64) : X64M aw.type := do
+  match o with
+  | .regOrMem rm => rm.interp labels address_size p
 
 def CondCode.interp (cc : CondCode) (s : StatusFlags) : Bool := match cc with
   | .z  => s.zf | .nz => !s.zf | .c  => s.cf | .nc => !s.cf
@@ -352,15 +305,13 @@ def ShiftCountExpr.interp (c : ShiftCountExpr) (s : MachineData) (p : Std.Rco In
   | .cl => s.regs.rcx.toBitVec.take 8
   | .imm8 v => (v.interp labels p).toBitVec.take _
 def ShiftCountExpr.interpMasked (c : ShiftCountExpr) (s : MachineData) (p : Std.Rco Int64) (w : Width) : Nat :=
-  (c.interp labels s p).toNat &&& match w with | .W64 => 0x3f | _ => 0x1f -- "masked to 5 bits (or 6 bits with a 64-bit operand)"
+  (c.interp labels s p).toNat &&& match w with | .W64 => 0x3f | _ => 0x1f
 
-def RelRegOrMem.interp
-  (o : RelRegOrMem) (s : MachineData) (p : Std.Rco Int64)
-  (ret : BitVec 64 → MachineData → Effects) :=
+def RelRegOrMem.interp (o : RelRegOrMem) (p : Std.Rco Int64) : X64M (BitVec 64) := do
   match o with
-  | .rel c => ret (p.upper + c.interp labels p).toBitVec s
-  | .reg r => ret (s.regs.get r) s
-  | .mem a => s.load ((a.interp labels address_size s.regs p).zeroExtend _) .W64 ret
+  | .rel c => pure (p.upper + c.interp labels p).toBitVec
+  | .reg r => return (← get).regs.get r
+  | .mem a => MachineData.load ((a.interp labels address_size (← get).regs p).zeroExtend _) .W64
 
 structure StatusFlags.from_result.Remaining where
   cf : Bool
@@ -384,326 +335,212 @@ def StatusFlags.from_result {w} (result : BitVec w) (f : from_result.Remaining) 
     zf := result == BitVec.zero _
     sf := result.msb, cf := f.cf, af := f.af, of := f.of }
 
-
-
 set_option maxHeartbeats 1000000
-def Operation.interp
-  {w} (i : Operation w) (p : Std.Rco Int64) (s : MachineData)
-  (next : MachineData → Effects) (jmp : Int64 → MachineData → Effects) : Effects :=
-  match (generalizing := false) (motive := Operation w → Effects) i with
-  | .mov dst src => src.interp labels address_size s p (fun val s => s.set labels address_size dst val p next)
-  | .movsx dst src => src.interp labels address_size s p (fun val s => s.set labels address_size dst (val.signExtend _) p next)
-  | .movzx dst src => src.interp labels address_size s p (fun val s => s.set labels address_size dst (val.zeroExtend _) p next)
+def Operation.interp {w} (i : Operation w) (p : Std.Rco Int64) : X64M Unit := do
+  match i with
+  | .mov dst src =>
+    let val ← src.interp labels address_size p
+    MachineData.set labels address_size dst val p
+  | .movsx dst src =>
+    let val ← src.interp labels address_size p
+    MachineData.set labels address_size dst (val.signExtend _) p
+  | .movzx dst src =>
+    let val ← src.interp labels address_size p
+    MachineData.set labels address_size dst (val.zeroExtend _) p
   | .push src =>
-    src.interp labels address_size s p (fun v s =>
+    let v ← src.interp labels address_size p
+    let s ← get
     let rsp := s.regs.get64 .rsp - w.bytesv
-    { s with regs := s.regs.set64 .rsp rsp }.store rsp v next)
+    set { s with regs := s.regs.set64 .rsp rsp }
+    MachineData.store rsp v
   | .pop dst =>
-    let rsp := s.regs.get64 .rsp
-    s.load rsp w (fun val s =>
-    let s := { s with regs := s.regs.set64 .rsp (rsp + w.bytesv) }
-    s.set labels address_size dst val p next)
+    let rsp := (← get).regs.get64 .rsp
+    let val ← MachineData.load rsp w
+    modify (fun s => { s with regs := s.regs.set64 .rsp (rsp + w.bytesv) })
+    MachineData.set labels address_size dst val p
   | .setcc cc dst =>
-    s.set labels address_size dst (cc.interp s.status) p next
+    MachineData.set labels address_size dst (cc.interp (← get).status) p
   | .cmovcc cc dst src =>
-    src.interp labels address_size s p (fun src s =>
+    let src ← src.interp labels address_size p
+    let s ← get
     let v := if cc.interp s.status then src else s.regs.get dst
-    next (s.setReg dst v))
+    set (s.setReg dst v)
 -- Arithmetic
-  | .lea dst src => next (s.setReg dst ((src.interp labels address_size s.regs p).zeroExtend _))
+  | .lea dst src =>
+    let s ← get
+    set (s.setReg dst ((src.interp labels address_size s.regs p).zeroExtend _))
   | .add dst src =>
-    src.interp labels address_size s p (fun a s =>
-    dst.interp labels address_size s p (fun b s =>
+    let a ← src.interp labels address_size p
+    let b ← dst.interp labels address_size p
     let v := a + b
-    let status := .from_result v {
+    let status := StatusFlags.from_result v {
       cf := v.unsigned != a.unsigned + b.unsigned
       af := (v.take 4).unsigned != (a.take 4).unsigned + (b.take 4).unsigned,
       of := v.signed != a.signed + b.signed }
-    { s with status }.set labels address_size dst v p next))
+    modify (fun s => { s with status })
+    MachineData.set labels address_size dst v p
   | .adc dst src =>
-    src.interp labels address_size s p (fun a s =>
-    dst.interp labels address_size s p (fun b s =>
-    let c := s.status.cf
+    let a ← src.interp labels address_size p
+    let b ← dst.interp labels address_size p
+    let c := (← get).status.cf
     let v := a + b + c
-    let status := .from_result v {
+    let status := StatusFlags.from_result v {
       cf := v.unsigned != a.unsigned + b.unsigned + c
       af := (v.take 4).unsigned != (a.take 4).unsigned + (b.take 4).unsigned + c,
       of := v.signed != a.signed + b.signed + c }
-    { s with status }.set labels address_size dst v p next))
+    modify (fun s => { s with status })
+    MachineData.set labels address_size dst v p
   | .adcx dst src =>
-    src.interp labels address_size s p (fun a s =>
-    dst.interp s p (fun b s =>
+    let a ← src.interp labels address_size p
+    let s ← get
+    let b := s.regs.get dst
     let v := a + b + s.status.cf
     let cf := v.unsigned != a.unsigned + b.unsigned + s.status.cf
-    next { s with regs := s.regs.set dst v, status := { s.status with cf := cf }}))
+    set { s with regs := s.regs.set dst v, status := { s.status with cf := cf } }
   | .adox dst src =>
-    src.interp labels address_size s p (fun a s =>
-    dst.interp s p (fun b s =>
+    let a ← src.interp labels address_size p
+    let s ← get
+    let b := s.regs.get dst
     let v := a + b + s.status.of
     let of := v.unsigned != a.unsigned + b.unsigned + s.status.of
-    next { s with regs := s.regs.set dst v, status := { s.status with of := of }}))
+    set { s with regs := s.regs.set dst v, status := { s.status with of := of } }
   | .inc dst =>
-    dst.interp labels address_size s p (fun a s =>
+    let a ← dst.interp labels address_size p
+    let cf := (← get).status.cf
     let v := a + 1
-    let status := .from_result v {
-      cf := s.status.cf
+    let status := StatusFlags.from_result v {
+      cf := cf
       af := (v.take 4).unsigned != (a.take 4).unsigned + 1,
       of := v.signed != a.signed + 1 }
-    { s with status }.set labels address_size dst v p next)
+    modify (fun s => { s with status })
+    MachineData.set labels address_size dst v p
   | .dec dst =>
-    dst.interp labels address_size s p (fun a s =>
+    let a ← dst.interp labels address_size p
+    let cf := (← get).status.cf
     let v := a - 1
-    let status := .from_result v {
-      cf := s.status.cf
+    let status := StatusFlags.from_result v {
+      cf := cf
       af := (v.take 4).unsigned != (a.take 4).unsigned - 1,
       of := v.signed != a.signed - 1 }
-    { s with status }.set labels address_size dst v p next)
+    modify (fun s => { s with status })
+    MachineData.set labels address_size dst v p
   | .neg dst =>
-    dst.interp labels address_size s p (fun b s =>
+    let b ← dst.interp labels address_size p
     let v := -b
-    let status := .from_result v {
+    let status := StatusFlags.from_result v {
       cf := b != 0
       af := (b.take 4) != 0,
       of := v.signed != - b.signed }
-    { s with status }.set labels address_size dst v p next)
+    modify (fun s => { s with status })
+    MachineData.set labels address_size dst v p
   | .sub dst src =>
-    src.interp labels address_size s p (fun a s =>
-    dst.interp labels address_size s p (fun b s =>
+    let a ← src.interp labels address_size p
+    let b ← dst.interp labels address_size p
     let v := b - a
-    let status := .from_result v {
+    let status := StatusFlags.from_result v {
       cf := v.unsigned != b.unsigned - a.unsigned
       af := (v.take 4).unsigned != (b.take 4).unsigned - (a.take 4).unsigned,
       of := v.signed != b.signed - a.signed }
-    { s with status }.set labels address_size dst v p next))
+    modify (fun s => { s with status })
+    MachineData.set labels address_size dst v p
   | .sbb dst src =>
-    src.interp labels address_size s p (fun a s =>
-    dst.interp labels address_size s p (fun b s =>
-    let c := s.status.cf
+    let a ← src.interp labels address_size p
+    let b ← dst.interp labels address_size p
+    let c := (← get).status.cf
     let v := b - a - c
-    let status := .from_result v {
+    let status := StatusFlags.from_result v {
       cf := v.unsigned != b.unsigned - a.unsigned - c
       af := (v.take 4).unsigned != (b.take 4).unsigned - (a.take 4).unsigned - c,
       of := v.signed != b.signed - a.signed - c }
-    { s with status }.set labels address_size dst v p next))
+    modify (fun s => { s with status })
+    MachineData.set labels address_size dst v p
   | .cmp a b =>
-    a.interp labels address_size s p (fun a s =>
-    b.interp labels address_size s p (fun b s =>
+    let a ← a.interp labels address_size p
+    let b ← b.interp labels address_size p
     let v := a - b
-    let status := .from_result v {
+    let status := StatusFlags.from_result v {
       cf := v.unsigned != a.unsigned - b.unsigned
       af := (v.take 4).unsigned != (a.take 4).unsigned - (b.take 4).unsigned,
       of := v.signed != a.signed - b.signed }
-    next { s with status }))
-  | .mul src =>
-    let a := s.regs.get (Reg.low .rax w)
-    src.interp labels address_size s p (fun b s =>
-    let v := a * b
-    let vn := a.unsigned * b.unsigned
-    let s := if w == .W8
-      then s.setReg (.low .rax .W16) (.ofInt _ vn)
-      else (s.setReg (.low .rax w) v).setReg (.low .rdx w) (.ofInt _ (vn >>> w.bits))
-    undefined (λ sf => undefined (λ zf => undefined (λ af => undefined (λ pf =>
-    next { s with status := { cf := v.unsigned != vn, pf, af, zf, sf, of := v.unsigned != vn }})))))
+    modify (fun s => { s with status })
   | .mulx r_hi r_lo src1 =>
-    src1.interp labels address_size s p (fun a s =>
+    let a ← src1.interp labels address_size p
+    let s ← get
     let b := s.regs.get (.low .rdx w)
     let v := a.unsigned * b.unsigned
-    let s := s.setReg r_lo (.ofInt _ v) -- if r_hi = r_li, hi is written:
-    let s := s.setReg r_hi (.ofInt _ (v >>> w.bits))
-    next s)
-  -- imul1 and imul collectively describe variants of the same
-  -- syntax level `imul` instruction, where imul1 is the 1-operand case
-  | .imul1 src =>
-    let a := s.regs.get (Reg.low .rax w)
-    src.interp labels address_size s p (fun b s =>
-    let v := a.toInt * b.toInt
-    let s := if w == .W8 then
-      s.setReg (.low .rax .W16) (BitVec.ofInt 16 v)
-    else
-      let result := BitVec.ofInt (w.bits * 2) v
-      let low := result.take w.bits
-      let high := (result.drop w.bits).setWidth _
-      (s.setReg (.low .rax w) low).setReg (.low .rdx w) high
-    undefined (λ sf => undefined (λ zf => undefined (λ af => undefined (λ pf =>
-    let low := BitVec.ofInt w.bits v
-    let cf := v != low.toInt
-    next { s with status := { cf := cf, pf, af, zf, sf, of := cf }})))))
-  | .imul dst src1 src2 =>
-    src1.interp labels address_size s p (fun a s =>
-    src2.interp labels address_size s p (fun b s =>
-    let v := a * b
-    s.set labels address_size (match (generalizing := false) (motive := Option (RegOrMem w) → RegOrMem w)
-             dst with | .some dst => dst | _ => src1) v p (fun s =>
-    let cf := v.signed != a.signed * b.signed
-    undefined (λ sf => undefined (λ zf => undefined (λ af => undefined (λ pf =>
-    next { s with status := { cf := cf, pf, af, zf, sf, of := cf }})))))))
--- Bitwise
-  | .test a b =>
-    a.interp labels address_size s p (fun a s =>
-    b.interp labels address_size s p (fun b s =>
-    let v := a &&& b
-    undefined (fun af =>
-    let status := .from_result v { cf := false, af, of := false}
-    next { s with status})))
-  | .and dst src | .or dst src | .xor dst src =>
-    dst.interp labels address_size s p (fun a s =>
-    src.interp labels address_size s p (fun b s =>
-    let v := match i with | .and _ _ => a &&& b | .or _ _ => a ||| b | _ => a ^^^ b
-    undefined (fun af =>
-    let status := .from_result v { cf := false, of := false, af }
-    { s with status }.set labels address_size dst v p next)))
+    modify (fun s => (s.setReg r_lo (.ofInt _ v)).setReg r_hi (.ofInt _ (v >>> w.bits)))
   | .not dst =>
-    dst.interp labels address_size s p (fun a s =>
-    let v := ~~~a
-    s.set labels address_size dst v p next)
-  | .shl dst count =>
-    dst.interp labels address_size s p (fun a s =>
-    let count := count.interpMasked labels s p w
-    if count == 0 then next s else
-    let v := a <<< count
-    undefined (λ af =>
-    (λ setcf => if count < w.bits then setcf (a <<< (count-1)).msb else undefined setcf) (λ cf =>
-    (λ setof => if count == 1 then setof (v.msb != a.msb) else undefined setof) (λ of =>
-    { s with status := .from_result v { s.status with cf, af, of } }.set labels address_size dst v p next))))
-  | .shr dst count =>
-    dst.interp labels address_size s p (fun a s =>
-    let count := count.interpMasked labels s p w
-    if count == 0 then next s else
-    let v := a.ushiftRight count
-    undefined (λ af =>
-    (λ setcf => if count < w.bits then setcf (a.getLsbD (count-1)) else undefined setcf) (λ cf =>
-    (λ setof => if count == 1 then setof a.msb else undefined setof) (λ of =>
-    { s with status := .from_result v { s.status with cf, af, of } }.set labels address_size dst v p next))))
-  | .sar dst count =>
-    dst.interp labels address_size s p (fun a s =>
-    let count := count.interpMasked labels s p w
-    if count == 0 then next s else
-    let v := a.sshiftRight count
-    undefined (λ af =>
-    (λ setcf => if count < w.bits then setcf (a.getLsbD (count-1)) else undefined setcf) (λ cf =>
-    (λ setof => if count == 1 then setof false else undefined setof) (λ of =>
-    { s with status := .from_result v { s.status with cf, af, of } }.set labels address_size dst v p next))))
-  | .shrd dst src count =>
-    dst.interp labels address_size s p (fun a s =>
-    src.interp s p (fun b s =>
-    let count := count.interpMasked labels s p w
-    if count == 0 then next s else
-    let v := (((b.append a) >>> count).take w.bits).setWidth _
-    (λ setstatus => if count >= w.bits then undefined setstatus else
-      let cf := a.getLsbD (count-1)
-      undefined (λ af =>
-      (λ setof => if count == 1 then setof (v.msb != a.msb) else undefined setof) (λ of =>
-      setstatus (.from_result v { cf, af, of})))) (λ status =>
-    { s with status }.set labels address_size dst v p next)))
-  | .shld dst src count =>
-    dst.interp labels address_size s p (fun a s =>
-    src.interp s p (fun b s =>
-    let count := count.interpMasked labels s p w
-    if count == 0 then next s else
-    let v := (((a.append b) <<< count).drop w.bits).setWidth _
-    (λ setstatus => if count >= w.bits then undefined setstatus else
-      let cf := (a <<< (count-1)).msb
-      undefined (λ af =>
-      (λ setof => if count == 1 then setof (v.msb != a.msb) else undefined setof) (λ of =>
-      setstatus (.from_result v { cf, af, of})))) (λ status =>
-    { s with status }.set labels address_size dst v p next)))
-  | .rol dst count =>
-    dst.interp labels address_size s p (fun a s =>
-    let count := count.interpMasked labels s p w
-    if count == 0 then next s else
-    let v := a.rotateLeft count
-    let cf := v.getLsbD 0
-    (λ setof => if count == 1 then setof (v.msb != a.msb) else undefined setof) (λ of =>
-    { s with status := { s.status with cf, of } }.set labels address_size dst v p next))
-  | .ror dst count =>
-    dst.interp labels address_size s p (fun a s =>
-    let count := count.interpMasked labels s p w
-    if count == 0 then next s else
-    let v := a.rotateRight count
-    let cf := v.msb
-    (λ setof => if count == 1 then setof (v.msb != a.msb) else undefined setof) (λ of =>
-    { s with status := { s.status with cf, of } }.set labels address_size dst v p next))
-  | .rcr dst count =>
-    dst.interp labels address_size s p (fun a s =>
-    let count := count.interpMasked labels s p w
-    if count == 0 then next s else
-    let t := (BitVec.ofBool s.status.cf ++ a).rotateRight count
-    let (cf, v) := (t.msb, t.take w.bits)
-    (λ setof => if count == 1 then setof (v.msb != a.msb) else undefined setof) (λ of =>
-    { s with status := { s.status with cf, of } }.set labels address_size dst v p next))
-  | .rcl dst count =>
-    dst.interp labels address_size s p (fun a s =>
-    let count := count.interpMasked labels s p w
-    if count == 0 then next s else
-    let t := (BitVec.ofBool s.status.cf ++ a).rotateLeft count
-    let (cf, v) := (t.msb, t.take w.bits)
-    (λ setof => if count == 1 then setof (v.msb != a.msb) else undefined setof) (λ of =>
-    { s with status := { s.status with cf, of } }.set labels address_size dst v p next))
+    let a ← dst.interp labels address_size p
+    MachineData.set labels address_size dst (~~~a) p
   | .bswap dst =>
-    let a := s.regs.get dst
-    match (generalizing := false) (motive := Width → Effects) w with
+    let a := (← get).regs.get dst
+    match w with
     | .W32 =>
       let v := a.take 8 ++ a.extractLsb' 8 8 ++ a.extractLsb' 16 8 ++ a.drop 24
-      next (s.setReg dst (v.setWidth _))
+      modify (fun s => s.setReg dst (v.setWidth _))
     | .W64 =>
       let v := a.take 8 ++ a.extractLsb' 8 8 ++ a.extractLsb' 16 8 ++ a.extractLsb' 24 8
             ++ a.extractLsb' 32 8 ++ a.extractLsb' 40 8 ++ a.extractLsb' 48 8 ++ a.drop 56
-      next (s.setReg dst (v.setWidth _))
-    | _ => undefined (fun v => next (s.setReg dst v))
+      modify (fun s => s.setReg dst (v.setWidth _))
+    | _ => throw .undefinedFlags -- TODO: model undefined flags for bswap on W8/W16
   | .jcc cc l =>
-    if cc.interp s.status
-    then jmp (labels.label l) s
-    else next s
+    if cc.interp (← get).status
+    then throw (.jump (labels.label l))
+    else pure ()
   | .jmp tgt =>
-    tgt.interp labels address_size s p (fun a s =>
-    jmp (.ofBitVec a) s)
+    let a ← tgt.interp labels address_size p
+    throw (.jump (.ofBitVec a))
   | .call tgt =>
-    tgt.interp labels address_size s p (fun a s =>
+    let a ← tgt.interp labels address_size p
+    let s ← get
     let rsp := s.regs.get64 .rsp - Width.W64.bytesv
-    { s with regs := s.regs.set64 .rsp rsp }.store rsp (w:=.W64) p.upper.toBitVec (jmp (.ofBitVec a)))
+    set { s with regs := s.regs.set64 .rsp rsp }
+    MachineData.store rsp (w := .W64) p.upper.toBitVec
+    throw (.jump (.ofBitVec a))
   | .ret =>
-    let rsp := s.regs.get64 .rsp
-    s.load rsp .W64 (fun ra s =>
-    jmp (.ofBitVec ra) { s with regs := s.regs.set64 .rsp (rsp + 8) })
-  | nop _ | nopalign _ _ => next s
+    let rsp := (← get).regs.get64 .rsp
+    let ra ← MachineData.load rsp .W64
+    modify (fun s => { s with regs := s.regs.set64 .rsp (rsp + 8) })
+    throw (.jump (.ofBitVec ra))
+  | nop _ | nopalign _ _ => pure ()
+  -- TODO: the following instructions leave some status flags undefined; the
+  -- straightline model throws rather than committing to a nondeterministic value.
+  | .mul .. | .imul1 .. | .imul .. | .test .. | .and .. | .or .. | .xor ..
+  | .shl .. | .shr .. | .sar .. | .shld .. | .shrd ..
+  | .rol .. | .ror .. | .rcl .. | .rcr .. => throw .undefinedFlags
 
 -- AVX Operations Interpreter
-def AvxOperation.interp
-  {w} (i : AvxOperation w) (p : Std.Rco Int64) (s : MachineData)
-  (next : MachineData → Effects) : Effects :=
-match i with
-  | .movups dst src => src.interp labels address_size s p (fun val s => s.setAvxLegacy labels address_size dst val p next)
-  | .vmovups dst src => src.interp labels address_size s p (fun val s => s.setAvx labels address_size dst val p next)
+def AvxOperation.interp {w} (i : AvxOperation w) (p : Std.Rco Int64) : X64M Unit := do
+  match i with
+  | .movups dst src =>
+    let val ← src.interp labels address_size p
+    MachineData.setAvxLegacy labels address_size dst val p
+  | .vmovups dst src =>
+    let val ← src.interp labels address_size p
+    MachineData.setAvx labels address_size dst val p
 
 end Interp
 
-def Instr.interp (labels : Labels)
-  (i : Instr) (s : MachineData) (p : Std.Rco Int64)
-  (next : MachineData → Effects) (jmp : Int64 → MachineData → Effects) : Effects :=
-  require_exec_access p (fun _unit =>
-    match i with
-      | .regular addr_sz op_sz op =>
-          Operation.interp (w := op_sz) labels (.mk addr_sz) op p s next jmp
-      | .avx addr_sz op_sz op =>
-          AvxOperation.interp (w := op_sz) labels (.mk addr_sz) op p s next
-  )
+def Instr.interp (labels : Labels) (i : Instr) (p : Std.Rco Int64) : X64M Unit :=
+  match i with
+    | .regular addr_sz op_sz op =>
+        Operation.interp (w := op_sz) labels (.mk addr_sz) op p
+    | .avx addr_sz op_sz op =>
+        AvxOperation.interp (w := op_sz) labels (.mk addr_sz) op p
 
-def Directive.interp (labels : Labels)
-  (d : Directive) (s : MachineData) (p : Std.Rco Int64)
-  (next : MachineData → Effects) (jmp : Int64 → MachineData → Effects) : Effects :=
+def Directive.interp (labels : Labels) (d : Directive) (p : Std.Rco Int64) : X64M Unit :=
   match d with
-  | .label _ => next s
-  | .instr i => i.interp labels s p next jmp
-  | .byteArray _ => .unimplemented s!"Unimplemented: execution reached data block at {p.1}"
+  | .label _ => pure ()
+  | .instr i => i.interp labels p
+  | .byteArray _ => throw (.unimplemented s!"Unimplemented: execution reached data block at {p.1}")
 
 def Directives.interp (labels : Labels)
-  (ds : List (Directive × Nat)) (s : MachineData) (pc : Int64)
-  (ret : Int64 → MachineData → Effects) : Effects :=
+  (ds : List (Directive × Nat)) (pc : Int64) : X64M Int64 := do
   match ds with
-  | [] => ret pc s
+  | [] => pure pc
   | (d, sz) :: ds =>
-    d.interp labels s (.mk pc (pc+.ofNat sz)) (jmp:=ret) (next := (fun s =>
-    interp labels ds s (pc+.ofNat sz) ret))
+    d.interp labels (.mk pc (pc+.ofNat sz))
+    Directives.interp labels ds (pc+.ofNat sz)
 
 class Layout where (start : Int64) (size : Nat → Nat)
 def Layout.apply (l : Layout) (prog : Program) : Executable :=
@@ -728,27 +565,23 @@ def Executable.directivesFromLabel (e : Executable) (l : Label) : List (Directiv
 
 abbrev MachineState := MachineData × Int64
 
-def Executable.step (e : Executable) (s : MachineState) (ret : MachineState → Effects) : Effects :=
-  Directives.interp e.labels (e.directivesAtAddress s.2) s.1 s.2 (fun pc s => ret (s, pc))
+def Executable.step (e : Executable) (pc : Int64) : X64M Int64 :=
+  Directives.interp e.labels (e.directivesAtAddress pc) pc
 
-def Executable.straightline (e : Executable) (s : MachineState) (ret : MachineState → Effects) : Effects :=
-  Directives.interp e.labels (e.directivesFromAddress s.2) s.1 s.2 (fun pc s => ret (s, pc))
+def Executable.straightline (e : Executable) (pc : Int64) : X64M Int64 :=
+  Directives.interp e.labels (e.directivesFromAddress pc) pc
 
 -- -- Concrete evaluators for expedient testing
 
 partial def Executable.eval (e : Executable) (s : MachineState) (until_ : MachineState → Bool) : Except String (MachineState) :=
-  if until_ s then .ok s else handleEffects (e.straightline s .done)
-where
-  handleEffects es :=
-    match es with
-    | .done s => eval e s until_
-    | .unimplemented msg => .error msg
-    | .require_read_access _ _ ok => handleEffects (ok ())
-    | .require_write_access _ _ ok => handleEffects (ok ())
-    | .require_exec_access _ ok => handleEffects (ok ())
-    | .nonmem_load _ addr _ _ => .error s!"Load at unmapped address {repr addr}"
-    | .nonmem_store _ addr _ _ => .error s!"Store at unmapped address {repr addr}"
-    | @Effects.undefined _ t cont => handleEffects (cont (t.from_hash (hash s.1.regs)))
+  if until_ s then .ok s else
+  match (e.straightline s.2).run s.1 with
+  | .ok pc s' => eval e (s', pc) until_
+  | .error (.jump pc) s' => eval e (s', pc) until_
+  | .error (.unimplemented msg) _ => .error msg
+  | .error (.nonmemLoad _ addr _) _ => .error s!"Load at unmapped address {repr addr}"
+  | .error (.nonmemStore _ addr _) _ => .error s!"Store at unmapped address {repr addr}"
+  | .error .undefinedFlags _ => .error "undefined flags encountered"
 
 def Directive.fakeSize (hashOfProgram : UInt64) (d : Directive) : Nat :=
   match d with
