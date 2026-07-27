@@ -245,7 +245,7 @@ end
     (Int64.ofNat n).toBitVec = BitVec.ofNat 64 n := rfl
 @[grind =] theorem Int64.toBitVec_lit (n : Nat) :
     (OfNat.ofNat n : Int64).toBitVec = BitVec.ofNat 64 n := rfl
-@[simp] theorem UInt64.ofNat_lit' (n : Nat) :
+theorem UInt64.ofNat_lit' (n : Nat) :
     (OfNat.ofNat n : UInt64) = UInt64.ofBitVec (BitVec.ofNat 64 n) := rfl
 @[grind =] theorem BitVec.setWidth_64_64 (x : BitVec 64) :
     BitVec.setWidth 64 x = x := BitVec.setWidth_eq x
