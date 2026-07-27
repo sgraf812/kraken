@@ -10,6 +10,11 @@ set_option grind.warning false
 
 open Std.Internal.Do
 
+/- Carry-chain theory: unfold `.unsigned` and `Bool.toNat` so grind can
+case-split the carry and fold ground chains in the BitVec ring. -/
+attribute [grind =] BitVec.unsigned
+attribute [grind] BitVec.toNat_add BitVec.toNat_ofNat Bool.toNat
+
 @[sym_simp, simp, grind =] theorem StatusFlags.cf_from_result {w} (v : BitVec w)
     (f : StatusFlags.from_result.Remaining) :
     (StatusFlags.from_result v f).cf = f.cf := rfl
@@ -62,6 +67,22 @@ variable (labels : Labels) (address_size : AddressSize)
   simp only [Operation.interp, Operand.interp, RegOrMem.interp, Reg.interp, MachineData.set,
     MachineData.setReg, Reg64s.set_low64, Reg64s.get_low64]
   exact h _ rfl rfl rfl
+
+@[spec high] theorem Operation.add_ri_acc (r : Reg64) (i : Int64) :
+    ⦃ ∀ s' : MachineData,
+        s'.regs = s.regs.set64 r (BitVec.setWidth 64 i.toBitVec + s.regs.get64 r) →
+        s'.zmms = s.zmms → s'.dmem = s.dmem →
+        s'.status.cf = ((BitVec.setWidth 64 i.toBitVec + s.regs.get64 r).unsigned
+          != (BitVec.setWidth 64 i.toBitVec).unsigned + (s.regs.get64 r).unsigned) →
+        wp (next s') post epost ⦄
+      Operation.interp labels address_size (.add (.reg (.low r .W64)) (.imm (.int64 i))) p s next jmp
+      ⦃ post; epost ⦄ := by
+  constructor
+  intro h
+  show wp (Operation.interp _ _ _ _ _ _ _) _ _
+  simp only [Operation.interp, Operand.interp, RegOrMem.interp, Reg.interp, ConstExpr.interp,
+    MachineData.set, MachineData.setReg, Reg64s.set_low64, Reg64s.get_low64]
+  exact h _ rfl rfl rfl rfl
 
 @[spec high] theorem Operation.adc_rr_acc (rd rs : Reg64) :
     ⦃ ∀ s' : MachineData,

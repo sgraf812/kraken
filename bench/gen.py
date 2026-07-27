@@ -35,7 +35,7 @@ DISCHARGE = {
 """,
   "finish": """  sym =>
     vcgen simplifying_assumptions
-    all_goals finish
+    all_goals finish (splits := 40)
 """,
 }
 
