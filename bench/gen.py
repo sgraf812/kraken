@@ -22,6 +22,7 @@ open Std.Internal.Do
 set_option mvcgen.warning false
 set_option grind.warning false
 set_option maxHeartbeats 4000000
+set_option maxRecDepth 8000
 """
 
 DISCHARGE = {
@@ -37,6 +38,9 @@ DISCHARGE = {
     vcgen simplifying_assumptions
     all_goals finish (splits := 40)
 """,
+  "kstep": """  sym => kstep; tactic =>
+  first | decide | bv_decide
+""",
 }
 
 PREAMBLE = """  cases s with | mk regs zmms flags mem =>
@@ -49,12 +53,15 @@ PREAMBLE = """  cases s with | mk regs zmms flags mem =>
 """
 
 def emit(name, prog, post, n, variant):
+    pre = PREAMBLE.format(name=name)
+    if variant == "kstep":
+        pre = pre.replace("  apply Effects.all_of_triple\n", "")
     return f'''
 def {name} := parse("{prog}")
 
 example [layout : Layout] s :
     straightlineStep (layout {name}) (s, layout.start) (fun s => {post}) := by
-{PREAMBLE.format(name=name)}{DISCHARGE[variant]}'''
+{pre}{DISCHARGE[variant]}'''
 
 def dec_family(n, variant):
     prog = f"start: mov ${n}, %rax\\n" + "dec %rax\\n" * n
@@ -76,6 +83,7 @@ def main():
     outdir = pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else pathlib.Path("bench/generated")
     outdir.mkdir(parents=True, exist_ok=True)
     for variant, imp in [("baseline", "Kraken.VCGenSpike"), ("accessor", "Kraken.AccessorSpecs"),
+                         ("kstep", "Kraken.Tactics\nimport Kraken.VCGenSpike"),
                          ("finish", "Kraken.AccessorSpecs")]:
         for fam, gen in [("dec", dec_family), ("adc", adc_family), ("multireg", multireg_family)]:
             for n in SIZES:
