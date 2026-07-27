@@ -10,10 +10,9 @@ set_option grind.warning false
 
 open Std.Internal.Do
 
-/- Carry-chain theory: unfold `.unsigned` and `Bool.toNat` so grind can
-case-split the carry and fold ground chains in the BitVec ring. -/
-attribute [grind =] BitVec.unsigned
-attribute [grind] BitVec.toNat_add BitVec.toNat_ofNat Bool.toNat
+/- Carry-chain theory: `.unsigned` is a homomorphism into the integers; the
+carry chains fold in the lia solver through the BitVec/UInt64 hom rule sets. -/
+@[grind hom] theorem BitVec.unsigned_hom {w} (x : BitVec w) : x.unsigned = (x.toNat : Int) := rfl
 
 @[sym_simp, simp, grind =] theorem StatusFlags.cf_from_result {w} (v : BitVec w)
     (f : StatusFlags.from_result.Remaining) :
