@@ -4,19 +4,29 @@ reading the value off the internalized local context.
 
 `vcgen` applies the memory primitive specs with an undetermined witness `?i`,
 emitting a side goal `lhs = some ?i` (an equality with an assignable metavariable
-on one side). The internalized local context holds the `h_load` facts and the
-address/state bridges, so `lhs` reduces to a constructor-headed `some V`. `easm`
-performs that reduction (read-over-write projections plus the local equations),
-assigns `?i := V` by definitional unification, and closes the goal by the
-reduction proof. The assignment is visible to the sibling continuation VC, which
-shares the metavariable.
+on one side). Two discharge paths run in order:
+
+* E-graph path: the load term is shared and canonicalized into the session's
+  E-graph state (`Grind.preprocessLight`) and internalized; congruence closure
+  over the internalized `h_load` facts and state equations puts a
+  constructor-headed member `some V` into its equivalence class. `?i := V` by
+  definitional unification; the goal closes by the E-graph proof (`mkEqProof`).
+* simp path: read-over-write projections plus the local equations reduce the
+  load term to `some V`; fires when the needed fact is not internalized or the
+  address needs canonicalization beyond congruence.
+
+The assignment is visible to the sibling continuation VC, which shares the
+metavariable. The `Kraken.easm` trace class reports which path closed each goal.
 -/
 import Kraken.OmniSemantics
 import Kraken.AccessorSpecs
 import Std.Tactic.Do
 
 open Lean Meta
+open Lean.Meta.Grind
 open Lean.Elab.Tactic.Grind
+
+initialize Lean.registerTraceClass `Kraken.easm
 
 namespace Kraken
 
@@ -30,7 +40,7 @@ private def projLemmas : List Name :=
    ``MachineData.regs_mk, ``MachineData.status_mk, ``MachineData.zmms_mk,
    ``Addr.eval_setDmem]
 
-/-- Effective-address canonicalization used in `easm`'s second normalization pass:
+/-- Effective-address canonicalization used in the simp path's second pass:
 unfold `Addr.eval`, resolve register reads over writes, and push the
 `UInt64`/`BitVec`/`Int64` coercions, so an indexed load address (whose base
 register a preceding `lea` overwrote) matches the separation-derived address. -/
@@ -51,17 +61,51 @@ private def isCtorHeaded (e : Expr) : MetaM Bool := do
     | .ctorInfo _ => true
     | _ => false
 
-/-- Discharge an `_ = some ?i` side goal by reading its value off the local
-context. Returns `true` on success, having assigned `?i` and closed `mvarId`. -/
-private def easmCore (mvarId : MVarId) : MetaM Bool := mvarId.withContext do
+/-- Splits an `lhs = rhs` target into the metavariable-free side (`known`), the
+side carrying the assignable metavariable (`query`), and the orientation. -/
+private def splitEqTarget? (mvarId : MVarId) : MetaM (Option (Expr × Expr × Bool)) := do
   let target ← instantiateMVars (← mvarId.getType)
-  let some (_, lhs, rhs) := target.eq? | return false
-  -- Exactly one side carries an assignable metavariable: that side is the query,
-  -- the other is the `known` term whose value we read from the context.
-  let (known, query, knownIsLhs) ←
-    if rhs.hasExprMVar && !lhs.hasExprMVar then pure (lhs, rhs, true)
-    else if lhs.hasExprMVar && !rhs.hasExprMVar then pure (rhs, lhs, false)
-    else return false
+  let some (_, lhs, rhs) := target.eq? | return none
+  if rhs.hasExprMVar && !lhs.hasExprMVar then return some (lhs, rhs, true)
+  else if lhs.hasExprMVar && !rhs.hasExprMVar then return some (rhs, lhs, false)
+  else return none
+
+/-- E-graph discharge: share and canonicalize the load term into the session
+state, internalize it, and read `some V` off its equivalence class. Returns
+`true` on success, having assigned `?i` and closed `mvarId` with the E-graph
+congruence proof. -/
+private def easmEgraphCore (mvarId : MVarId) : GrindTacticM Bool := mvarId.withContext do
+  let some (known, query, knownIsLhs) ← splitEqTarget? mvarId | return false
+  unless query.isMVar || (← isCtorHeaded query) do return false
+  liftGoalM do
+    -- `preprocessLight` runs the entry-point sharing chain (`canon` followed by
+    -- `shareCommon`) against the session state, so the term internalized below
+    -- is pointer-canonical with every node already in the E-graph.
+    let known' ← preprocessLight known
+    if (← isTracingEnabledFor `Kraken.easm) then
+      let twin? := (← get).getEqcs.flatMap id |>.find? (· == known)
+      trace[Kraken.easm] "mechanism: raw internalized={← alreadyInternalized known}, structural twin in egraph={twin?.isSome}, twin pointer-eq raw={(twin?.map (isSameExpr · known)).getD false}, shared pointer-eq raw={isSameExpr known' known}"
+    unless (← alreadyInternalized known') do
+      internalize known' 0
+      processNewFacts
+    if (← isInconsistent) then return false
+    let cls ← getEqc known'
+    let some v ← cls.findM? (fun e =>
+      if e.hasExprMVar then pure false else isCtorHeaded e) | return false
+    unless ← withAssignableSyntheticOpaque (isDefEq query v) do return false
+    let h ← mkEqProof known' v
+    let h ← if knownIsLhs then pure h else mkEqSymm h
+    -- `known'` is definitionally equal to `known`; the hint retypes the proof at
+    -- the goal as stated.
+    mvarId.assign (← mkExpectedTypeHint h (← instantiateMVars (← mvarId.getType)))
+    trace[Kraken.easm] "egraph: {known'} = {v}"
+    return true
+
+/-- simp discharge: reduce the `known` side to a constructor-headed value using
+the read-over-write projections and every closed propositional hypothesis.
+Returns `true` on success, having assigned `?i` and closed `mvarId`. -/
+private def easmCore (mvarId : MVarId) : MetaM Bool := mvarId.withContext do
+  let some (known, query, knownIsLhs) ← splitEqTarget? mvarId | return false
   -- Fire only when the metavariable side is constructor-headed (e.g. `some ?i`)
   -- or a bare metavariable. A goal like `<projection with ?i> = 99` is left to the
   -- continuation discharge.
@@ -83,11 +127,11 @@ private def easmCore (mvarId : MVarId) : MetaM Bool := mvarId.withContext do
           thms ← try thms.add (.fvar decl.fvarId) #[] (mkFVar decl.fvarId) catch _ => pure thms
     return thms
   let ctx1 ← Simp.mkContext (simpTheorems := #[← mkThms [] []]) (congrTheorems := ← getSimpCongrTheorems)
-  let mut res := (← simp known ctx1).1
+  let mut res := (← Meta.simp known ctx1).1
   unless ← isCtorHeaded res.expr do
     let ctx2 ← Simp.mkContext (simpTheorems := #[← mkThms addrLemmas addrUnfolds])
       (congrTheorems := ← getSimpCongrTheorems)
-    res := (← simp known ctx2).1
+    res := (← Meta.simp known ctx2).1
   let knownV := res.expr  -- expected `some V`
   unless ← isCtorHeaded knownV do return false
   -- `hKnown : known = knownV`; `knownV` is constructor-headed, so unifying it with
@@ -102,8 +146,28 @@ syntax (name := easmStx) "easm" : grind
 @[grind_tactic easmStx]
 def evalEasm : GrindTactic := fun _stx => do
   let goal ← getMainGoal
-  unless ← liftMetaM (easmCore goal.mvarId) do
-    throwError "easm: goal is not an assignable `_ = some ?i` reducible from the context"
-  replaceMainGoal []
+  let target ← instantiateMVars (← goal.mvarId.getType)
+  let discharge (mv : MVarId) : GrindTacticM Bool := do
+    if (← easmEgraphCore mv) then
+      trace[Kraken.easm] "path=egraph"
+      return true
+    if (← liftMetaM (easmCore mv)) then
+      trace[Kraken.easm] "path=simp"
+      return true
+    return false
+  -- The store VC may arrive as `(Mem.loadInt … = some ?i) ∧ <continuation>`: split
+  -- off the equation, discharge it, and hand the continuation to `finish`.
+  if target.isAppOfArity ``And 2 then
+    let [gEq, gCont] ← goal.mvarId.apply (mkConst ``And.intro)
+      | throwError "easm: unexpected arity splitting the memory conjunction"
+    unless ← discharge gEq do
+      throwError "easm: could not read the memory value from the local context"
+    -- Re-read the main goal: the E-graph path updates the session state.
+    let goal ← getMainGoal
+    replaceMainGoal [{ goal with mvarId := gCont }]
+  else
+    unless ← discharge goal.mvarId do
+      throwError "easm: goal is not an assignable `_ = some ?i` reducible from the context"
+    replaceMainGoal []
 
 end Kraken
