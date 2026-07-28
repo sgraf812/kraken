@@ -62,6 +62,9 @@ record literals. -/
     (OfNat.ofNat n : Int64).toBitVec = BitVec.ofNat 64 n := rfl
 @[grind =] theorem BitVec.setWidth_64_64 (x : BitVec 64) :
     BitVec.setWidth 64 x = x := BitVec.setWidth_eq x
+@[simp, grind =] theorem BitVec.ofInt_toInt_int64 (c : Int64) :
+    BitVec.ofInt 64 c.toInt = c.toBitVec := by
+  rw [show c.toInt = c.toBitVec.toInt from rfl, BitVec.ofInt_toInt]
 
 /-! ## Per-register field reads over `set64`, one lemma per field -/
 

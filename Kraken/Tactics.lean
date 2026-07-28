@@ -34,9 +34,11 @@ private def projLemmas : List Name :=
 unfold `Addr.eval`, resolve register reads over writes, and push the
 `UInt64`/`BitVec`/`Int64` coercions, so an indexed load address (whose base
 register a preceding `lea` overwrote) matches the separation-derived address. -/
+private def addrUnfolds : List Name := [``Addr.eval, ``Reg64s.get64]
 private def addrLemmas : List Name :=
-  [``Addr.eval, ``Reg64s.get64_set64, ``Reg64s.get_low64, ``Reg64s.set_low64,
+  [``Reg64s.get64_set64, ``Reg64s.get_low64, ``Reg64s.set_low64,
    ``Int64.toBitVec_lit, ``BitVec.ofInt_add, ``BitVec.ofInt_mul, ``BitVec.ofInt_toInt,
+   ``BitVec.ofInt_toInt_int64, ``BitVec.add_zero,
    ``BitVec.ofInt_neg, ``BitVec.ofInt_ofNat, ``UInt64.toBitVec_sub, ``UInt64.toBitVec_ofNat,
    ``UInt64.ofBitVec_toBitVec, ``UInt64.ofBitVec_add, ``UInt64.ofBitVec_sub,
    ``UInt64.ofBitVec_ofNat]
@@ -70,18 +72,21 @@ private def easmCore (mvarId : MVarId) : MetaM Bool := mvarId.withContext do
   -- The first pass keeps `Addr.eval` folded (matching a folded `h_load`); if the
   -- queried side does not reduce to a value, a second pass canonicalizes the
   -- address so an indexed load matches its separation-derived form.
-  let mkThms (extra : List Name) : MetaM SimpTheorems := do
+  let mkThms (thmExtra unfoldExtra : List Name) : MetaM SimpTheorems := do
     let mut thms : SimpTheorems := {}
-    for n in projLemmas ++ extra do thms ← thms.addConst n
+    for n in projLemmas ++ thmExtra do thms ← thms.addConst n
+    for n in unfoldExtra do thms ← thms.addDeclToUnfold n
     for decl in (← getLCtx) do
       unless decl.isImplementationDetail do
         if (← isProp decl.type) && !decl.type.hasExprMVar then
-          thms ← thms.add (.fvar decl.fvarId) #[] (mkFVar decl.fvarId)
+          -- Some hypotheses (e.g. inequalities) are not orientable as simp lemmas.
+          thms ← try thms.add (.fvar decl.fvarId) #[] (mkFVar decl.fvarId) catch _ => pure thms
     return thms
-  let ctx1 ← Simp.mkContext (simpTheorems := #[← mkThms []]) (congrTheorems := ← getSimpCongrTheorems)
+  let ctx1 ← Simp.mkContext (simpTheorems := #[← mkThms [] []]) (congrTheorems := ← getSimpCongrTheorems)
   let mut res := (← simp known ctx1).1
   unless ← isCtorHeaded res.expr do
-    let ctx2 ← Simp.mkContext (simpTheorems := #[← mkThms addrLemmas]) (congrTheorems := ← getSimpCongrTheorems)
+    let ctx2 ← Simp.mkContext (simpTheorems := #[← mkThms addrLemmas addrUnfolds])
+      (congrTheorems := ← getSimpCongrTheorems)
     res := (← simp known ctx2).1
   let knownV := res.expr  -- expected `some V`
   unless ← isCtorHeaded knownV do return false
