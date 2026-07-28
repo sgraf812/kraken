@@ -287,24 +287,31 @@ end
 
 /-! ### Memory primitive specs
 
-`loadIntM`/`checkMapped` take the data memory and address explicitly, so the
-mapped-ness witness `i : Int` is a spec premise and its equation
-`Mem.loadInt m addr 8 = some i` is emitted as a side goal with `?i` undetermined
-(the value flows into the pure continuation). `easm` discharges that side goal
+`loadIntM`/`checkMapped` take the data memory and address explicitly. The
+mapped-ness witness `i : Int` is a theorem binder (undetermined `?i` at
+application time), and its equation `Mem.loadInt m addr 8 = some i` sits in the
+precondition as a `Prop`-lattice meet conjunct: `vcgen`'s lattice decomposition
+splits the meet, emitting the equation as its own VC while stepping into the
+continuation `Q i`, and the meet operands keep the spec on the direct
+(conjunctive-precondition) application path. `easm` discharges the equation VC
 from the internalized `h_load` facts, concretizing the sibling continuation VC. -/
 
+open Lean.Order in
 @[spec] theorem loadIntM_spec (m : DataMem) (addr : BitVec 64) (i : Int)
-    (Q : Int → MachineData → Prop) (E : X64Exit → MachineData → Prop)
-    (h : Mem.loadInt m addr 8 = some i) :
-    ⦃ fun st => Q i st ⦄ Op.loadIntM m addr ⦃ Q; E ⦄ := by
+    (Q : Int → MachineData → Prop) (E : X64Exit → MachineData → Prop) :
+    ⦃ fun st => (Mem.loadInt m addr 8 = some i) ⊓ Q i st ⦄ Op.loadIntM m addr ⦃ Q; E ⦄ := by
   apply Triple.intro; intro st hst
+  rw [meet_prop_eq_and] at hst
+  obtain ⟨h, hq⟩ := hst
   simp only [Op.loadIntM, wp, WP.wpTrans, bind, EStateM.bind, pure, EStateM.pure, h]
-  exact hst
+  exact hq
 
+open Lean.Order in
 @[spec] theorem checkMapped_spec (m : DataMem) (addr : BitVec 64) (i : Int)
-    (Q : Unit → MachineData → Prop) (E : X64Exit → MachineData → Prop)
-    (h : Mem.loadInt m addr 8 = some i) :
-    ⦃ fun st => Q () st ⦄ Op.checkMapped m addr ⦃ Q; E ⦄ := by
+    (Q : Unit → MachineData → Prop) (E : X64Exit → MachineData → Prop) :
+    ⦃ fun st => (Mem.loadInt m addr 8 = some i) ⊓ Q () st ⦄ Op.checkMapped m addr ⦃ Q; E ⦄ := by
   apply Triple.intro; intro st hst
+  rw [meet_prop_eq_and] at hst
+  obtain ⟨h, hq⟩ := hst
   simp only [Op.checkMapped, wp, WP.wpTrans, bind, EStateM.bind, pure, EStateM.pure, h]
-  exact hst
+  exact hq

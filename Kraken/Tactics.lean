@@ -102,18 +102,8 @@ syntax (name := easmStx) "easm" : grind
 @[grind_tactic easmStx]
 def evalEasm : GrindTactic := fun _stx => do
   let goal ← getMainGoal
-  let target ← instantiateMVars (← goal.mvarId.getType)
-  -- The store VC may arrive as `(Mem.loadInt … = some ?i) ∧ <continuation>`: split
-  -- off the equation, discharge it, and hand the continuation to `finish`.
-  if target.isAppOfArity ``And 2 then
-    let [gEq, gCont] ← goal.mvarId.apply (mkConst ``And.intro)
-      | throwError "easm: unexpected arity splitting the memory conjunction"
-    unless ← liftMetaM (easmCore gEq) do
-      throwError "easm: could not read the memory value from the local context"
-    replaceMainGoal [{ goal with mvarId := gCont }]
-  else
-    unless ← liftMetaM (easmCore goal.mvarId) do
-      throwError "easm: goal is not an assignable `_ = some ?i` reducible from the context"
-    replaceMainGoal []
+  unless ← liftMetaM (easmCore goal.mvarId) do
+    throwError "easm: goal is not an assignable `_ = some ?i` reducible from the context"
+  replaceMainGoal []
 
 end Kraken
