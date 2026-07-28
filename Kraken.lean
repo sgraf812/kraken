@@ -11,3 +11,4 @@ import Kraken.Semantics
 import Kraken.Parser
 import Kraken.OmniSemantics
 import Kraken.AccessorSpecs
+import Kraken.Tactics

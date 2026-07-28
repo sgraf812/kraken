@@ -96,11 +96,54 @@ record literals. -/
 @[simp, grind =] theorem Reg64s.r15_set64 (s : Reg64s) (r : Reg64) (v : Width.W64.type) :
     (s.set64 r v).r15 = if r = .r15 then .ofBitVec v else s.r15 := by cases r <;> simp [Reg64s.set64]
 
+/-! ## Data-memory writer
+
+The dual of `MachineData.setReg` for the data memory, with its own read-over-write
+projections so the state chain after a store stays an atom characterized by
+equations. -/
+
+def MachineData.setDmem (s : MachineData) (d : DataMem) : MachineData := { s with dmem := d }
+
+@[simp, grind =] theorem MachineData.dmem_setDmem (s : MachineData) (d : DataMem) :
+    (s.setDmem d).dmem = d := rfl
+@[simp, grind =] theorem MachineData.regs_setDmem (s : MachineData) (d : DataMem) :
+    (s.setDmem d).regs = s.regs := rfl
+@[simp, grind =] theorem MachineData.status_setDmem (s : MachineData) (d : DataMem) :
+    (s.setDmem d).status = s.status := rfl
+@[simp, grind =] theorem MachineData.zmms_setDmem (s : MachineData) (d : DataMem) :
+    (s.setDmem d).zmms = s.zmms := rfl
+
+/-! ## Explicit addressing
+
+A memory operand as a base register, an optional scaled index register, and a
+displacement. `Addr.eval` is the 64-bit effective address, matching
+`AddrExpr.interp` at address size 64 (register components are signed, the scale
+multiplies the index, the sum is reduced modulo `2^64`). -/
+
+structure Addr where
+  base : Reg64
+  index : Option (Reg64 × Int64) := none
+  disp : Int64 := 0
+
+def Addr.eval (a : Addr) (s : MachineData) : BitVec 64 :=
+  let base := (s.regs.get64 a.base).toInt
+  let idx := match a.index with
+    | some (r, scale) => (s.regs.get64 r).toInt * scale.toInt
+    | none => 0
+  BitVec.ofInt 64 (base + idx + a.disp.toInt)
+
+/-- The effective address depends only on the register file, so a data-memory
+write leaves it unchanged: a store address stays comparable to a later load
+address across the intervening `setDmem`. -/
+@[simp, grind =] theorem Addr.eval_setDmem (a : Addr) (s : MachineData) (d : DataMem) :
+    a.eval (s.setDmem d) = a.eval s := rfl
+
 /-! ## Per-instruction monadic actions
 
-Each is a single `modify` whose body is the transliteration of the matching
-`Operation.interp` case (flag effects included). The benchmark programs are do
-blocks of these actions. -/
+Each register action is a single `modify`; the memory actions read the current
+state, compute the effective address, and delegate to `MachineData.load`/`store`.
+Each body is the transliteration of the matching `Operation.interp` case (flag
+effects included). The benchmark programs are do blocks of these actions. -/
 namespace Op
 
 def movRI (r : Reg64) (i : Int64) : X64M Unit :=
@@ -141,6 +184,39 @@ def adcRR (rd rs : Reg64) : X64M Unit :=
         af := (v.take 4).unsigned != (a.take 4).unsigned + (b.take 4).unsigned + c.toNat,
         of := v.signed != a.signed + b.signed + c.toNat }
     { s with status }.setReg (.low rd .W64) v
+
+def lea (dst : Reg64) (a : Addr) : X64M Unit :=
+  modify fun s => s.setReg (.low dst .W64) (a.eval s)
+
+/-- Read an 8-byte integer from `m` at `addr`, throwing on an unmapped address.
+The data memory and address are explicit so the mapped-ness witness is a spec
+premise rather than a state-dependent precondition, keeping `vcgen` stepping. -/
+def loadIntM (m : DataMem) (addr : BitVec 64) : X64M Int := do
+  match Mem.loadInt m addr 8 with
+  | some i => pure i
+  | none => throw (.nonmemLoad m addr .W64)
+
+/-- Assert that `addr` is mapped in `m` (8 bytes), throwing otherwise, to gate a
+store on the target being writable. -/
+def checkMapped (m : DataMem) (addr : BitVec 64) : X64M Unit := do
+  match Mem.loadInt m addr 8 with
+  | some _ => pure ()
+  | none => throw (.nonmemStore m addr .W64)
+
+def movMI (a : Addr) (i : Int64) : X64M Unit := do
+  let s ← get
+  checkMapped s.dmem (a.eval s)
+  modify fun s => s.setDmem (Mem.storeInt s.dmem (a.eval s) 8 (BitVec.setWidth 64 i.toBitVec).toInt)
+
+def movMR (a : Addr) (src : Reg64) : X64M Unit := do
+  let s ← get
+  checkMapped s.dmem (a.eval s)
+  modify fun s => s.setDmem (Mem.storeInt s.dmem (a.eval s) 8 (s.regs.get64 src).toInt)
+
+def movRM (dst : Reg64) (a : Addr) : X64M Unit := do
+  let s ← get
+  let i ← loadIntM s.dmem (a.eval s)
+  modify fun s => s.setReg (.low dst .W64) (BitVec.ofInt 64 i)
 
 end Op
 
@@ -197,4 +273,35 @@ variable (Q : Unit → MachineData → Prop) (E : X64Exit → MachineData → Pr
       Op.adcRR rd rs ⦃ Q; E ⦄ := by
   apply Triple.intro; intro sd hsd; simp only [Op.adcRR]; exact hsd _ rfl rfl rfl rfl
 
+@[spec] theorem Op.lea_spec (dst : Reg64) (a : Addr) :
+    ⦃ fun sd => ∀ sd' : MachineData,
+        sd'.regs = sd.regs.set64 dst (a.eval sd) →
+        sd'.zmms = sd.zmms → sd'.status = sd.status → sd'.dmem = sd.dmem → Q () sd' ⦄
+      Op.lea dst a ⦃ Q; E ⦄ := by
+  apply Triple.intro; intro sd hsd; simp only [Op.lea]; exact hsd _ rfl rfl rfl rfl
+
 end
+
+/-! ### Memory primitive specs
+
+`loadIntM`/`checkMapped` take the data memory and address explicitly, so the
+mapped-ness witness `i : Int` is a spec premise and its equation
+`Mem.loadInt m addr 8 = some i` is emitted as a side goal with `?i` undetermined
+(the value flows into the pure continuation). `easm` discharges that side goal
+from the internalized `h_load` facts, concretizing the sibling continuation VC. -/
+
+@[spec] theorem loadIntM_spec (m : DataMem) (addr : BitVec 64) (i : Int)
+    (Q : Int → MachineData → Prop) (E : X64Exit → MachineData → Prop)
+    (h : Mem.loadInt m addr 8 = some i) :
+    ⦃ fun st => Q i st ⦄ Op.loadIntM m addr ⦃ Q; E ⦄ := by
+  apply Triple.intro; intro st hst
+  simp only [Op.loadIntM, wp, WP.wpTrans, bind, EStateM.bind, pure, EStateM.pure, h]
+  exact hst
+
+@[spec] theorem checkMapped_spec (m : DataMem) (addr : BitVec 64) (i : Int)
+    (Q : Unit → MachineData → Prop) (E : X64Exit → MachineData → Prop)
+    (h : Mem.loadInt m addr 8 = some i) :
+    ⦃ fun st => Q () st ⦄ Op.checkMapped m addr ⦃ Q; E ⦄ := by
+  apply Triple.intro; intro st hst
+  simp only [Op.checkMapped, wp, WP.wpTrans, bind, EStateM.bind, pure, EStateM.pure, h]
+  exact hst
