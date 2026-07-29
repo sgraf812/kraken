@@ -9,6 +9,7 @@ the status-flag effects. Formal adequacy of these actions with respect to the
 straightline interpreter is out of scope here.
 -/
 import Kraken.OmniSemantics
+import Kraken.GrindFold
 import Std.Tactic.Do
 
 open Std.Internal.Do
