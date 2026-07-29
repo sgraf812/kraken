@@ -42,6 +42,10 @@ private def binOp (e : Expr) (eval : Expr → Expr → GoalM (Option Expr)) : Go
 def propagateBVAdd (e : Expr) : GoalM Unit := do
   unless e.isAppOfArity ``HAdd.hAdd 6 do return ()
   unless (← inferType e).isAppOf ``BitVec do return ()
+  -- Idempotence: if `e` is already equated to a literal, there is nothing to fold.
+  -- Upward propagators re-fire on every merge touching an argument class, so without
+  -- this guard the same sum is re-internalized and re-pushed on each firing.
+  if (← getBitVecValue? (← getRoot e)).isSome then return ()
   binOp e fun r₁ r₂ => do
     let some ⟨n₁, v₁⟩ ← getBitVecValue? r₁ | return none
     let some ⟨n₂, v₂⟩ ← getBitVecValue? r₂ | return none

@@ -30,7 +30,7 @@ set_option maxRecDepth 100000
 """
 
 DISCHARGE = {
-  "tactic": """  vcgen [{name}prog]
+  "tactic": """  vcgen -internalize [{name}prog]
   all_goals (simp_all <;> bv_decide)
 """,
   "finish": """  sym =>
