@@ -60,8 +60,15 @@
   too, so a defeq-justified step is the framework's own idiom for iota; the
   question is only whether evaluating a `Decidable` instance is as cheap as
   matcher iota, and the kernel numbers above say it is not.
-  Unfolding the register file so that `simpMatch` reduces a concrete read
-  instead is worse: AddChain(160) discharge goes 31ms to 97ms and AdcChain
-  exceeds simp's step budget (12.7s), because unfolding expands the record.
+  Unfolding the register file so that a concrete read reduces is worse:
+  AddChain(160) discharge goes 31ms to 97ms and AdcChain exceeds simp's step
+  budget (12.7s). `getEqnsFor?` gives the smart unfolding (one equation per
+  constructor, so no matcher is ever exposed), and the two halves differ:
+  `get64`'s equations are cheap, each rewriting a read to a field projection,
+  but `set64`'s rewrite a write to a full sixteen-field record literal, and a
+  chain of writes then carries one such literal per step. The shape worth
+  trying is `get64`'s equations together with the per-field read-over-write
+  lemmas kraken already has (`Reg64s.rax_set64` and friends), which keep the
+  write folded; they still leave a conditional, but on a ground register.
 - `clear_dead` cannot move into `SymM`: rewriting the local context is outside
   what `Sym` supports, so it stays a `MetaM` tactic.
