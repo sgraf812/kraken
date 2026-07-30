@@ -55,7 +55,11 @@
   calls `simp` on the condition, so a constructor-equality simproc in `post` is
   all that is missing. An attempt at that (`eq_self` / `eq_false` with
   `mkDecideProof`) did not fire and the failure was swallowed by a `try`; it
-  needs one debugging pass with the catch removed. Note `Sym.Simp.simpMatch`
+  needs one debugging pass with the catch removed. Cost of not doing it, on
+  AdcChain(640): discharge 258ms against 844ms for the `simp only` route, but
+  kernel 5226ms against 4337ms, so the extra kernel work exceeds the discharge
+  saving and the fold is a net loss on carry chains. AddChain and DecChain do
+  not pay this. Note `Sym.Simp.simpMatch`
   (Simp/ControlFlow.lean:124) justifies matcher iota-reduction with `mkEqRefl`
   too, so a defeq-justified step is the framework's own idiom for iota; the
   question is only whether evaluating a `Decidable` instance is as cheap as

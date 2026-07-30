@@ -35,6 +35,7 @@ left to `evalGround`, conditions to `simpControl` and `reduceGroundIte`. -/
 def lemmaNames : Array Name := #[
   ``Int64.toBitVec_ofNat, ``BitVec.ofNat_eq_ofNat, ``BitVec.setWidth_eq,
   ``get64_set64_self, ``Reg64s.get64_set64,
+  ``Reg64s.rax_set64, ``Reg64s.rbx_set64, ``Reg64s.rcx_set64, ``Reg64s.rdx_set64, ``Reg64s.rsi_set64, ``Reg64s.rdi_set64, ``Reg64s.rbp_set64, ``Reg64s.r8_set64, ``Reg64s.r9_set64, ``Reg64s.r10_set64, ``Reg64s.r11_set64, ``Reg64s.r12_set64, ``Reg64s.r13_set64, ``Reg64s.r14_set64, ``Reg64s.r15_set64,
   ``BitVec.add_zero, ``BitVec.unsigned_eq, ``BitVec.toNat_ofNat,
   ``Nat.zero_mod, ``Int.add_zero, ``Int.cast_ofNat_Int, ``BitVec.unsigned_eq, ``bne_self_eq_false, ``Bool.toNat_false ]
 

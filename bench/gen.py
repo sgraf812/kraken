@@ -18,10 +18,11 @@ Variants:
 """
 import sys, pathlib
 
-SIZES = [10, 20, 40, 80]
+SIZES = [40, 160]
 REGS = ["rax","rbx","rcx","rdx","rsi","rdi","rbp","r8","r9","r10","r11","r12","r13","r14","r15"]
 
 HDR = """import Kraken.AccessorSpecs
+import KrakenTactics.Fold
 open Std.Internal.Do
 set_option mvcgen.warning false
 set_option grind.warning false
@@ -30,6 +31,9 @@ set_option maxRecDepth 100000
 """
 
 DISCHARGE = {
+  "kfold": """  vcgen -internalize [{name}prog]
+  all_goals kfold_discharge
+""",
   "tactic": """  vcgen -internalize [{name}prog]
   all_goals (simp_all <;> bv_decide)
 """,
@@ -68,7 +72,7 @@ def multireg_family(n, variant):
 def main():
     outdir = pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else pathlib.Path("bench/generated")
     outdir.mkdir(parents=True, exist_ok=True)
-    for variant in ["tactic", "finish"]:
+    for variant in ["kfold", "tactic"]:
         for fam, gen in [("dec", dec_family), ("adc", adc_family), ("multireg", multireg_family)]:
             for n in SIZES:
                 path = outdir / f"{fam}{n}_{variant}.lean"
