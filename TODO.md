@@ -79,3 +79,19 @@
   rewrites the goal, so `Sym.Simp` descends into the state term and builds the
   growing-type shape; that is why both discharges scale identically and why no
   discharge-level tuning changes the exponent.
+
+- The component-level fold is implemented in `kfold` (a loop over the chain
+  that computes each equation's right-hand side against the values already
+  known) but it does NOT yet fix the kernel scaling: certificate and kernel
+  time are unchanged (AddChain n=320: DAG 52776, kernel ~350ms either way).
+  The reason is that the loop keys its environment on the equation left-hand
+  sides, which are whole record components (`s_k.regs`), whose value is a write
+  chain as long as the program. Adding write-over-write collapse
+  (`set64_set64_self`) does not help either, and slightly grows the
+  certificate.
+  What is needed is to key on the *reads*: maintain `(state, register) ↦
+  (literal, proof)` and derive step k's read value from step k-1's, so each
+  proved equation is `s_k.regs.get64 r = <literal>` with both sides
+  constant-size, and the goal is then rewritten in one step at depth one. As
+  implemented the final rewrite still descends into `s_n.regs.get64 r`, and
+  that descent is what builds the congruence nodes whose types deepen.

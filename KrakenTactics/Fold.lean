@@ -25,6 +25,13 @@ theorem get64_set64_self (s : Reg64s) (r : Reg64) (v : Width.W64.type) :
     (s.set64 r v).get64 r = v := by
   cases r <;> simp [Reg64s.set64, Reg64s.get64]
 
+/-- Writing a register that is written again later leaves no trace. Without
+this the value of a state's register file is a write chain as long as the
+program, and every read has to look through all of it. -/
+theorem set64_set64_self (s : Reg64s) (r : Reg64) (v w : Width.W64.type) :
+    (s.set64 r v).set64 r w = s.set64 r w := by
+  cases r <;> simp [Reg64s.set64]
+
 /-- Reassociation, so a chain over a symbolic start presents adjacent literals
 to `evalGround`. -/
 theorem add_assoc_rev {w : Nat} (a b c : BitVec w) : a + (b + c) = a + b + c :=
@@ -34,7 +41,7 @@ theorem add_assoc_rev {w : Nat} (a b c : BitVec w) : a + (b + c) = a + b + c :=
 left to `evalGround`, conditions to `simpControl` and `reduceGroundIte`. -/
 def lemmaNames : Array Name := #[
   ``Int64.toBitVec_ofNat, ``BitVec.ofNat_eq_ofNat, ``BitVec.setWidth_eq,
-  ``get64_set64_self, ``Reg64s.get64_set64,
+  ``get64_set64_self, ``Reg64s.get64_set64, ``set64_set64_self,
   ``Reg64s.rax_set64, ``Reg64s.rbx_set64, ``Reg64s.rcx_set64, ``Reg64s.rdx_set64, ``Reg64s.rsi_set64, ``Reg64s.rdi_set64, ``Reg64s.rbp_set64, ``Reg64s.r8_set64, ``Reg64s.r9_set64, ``Reg64s.r10_set64, ``Reg64s.r11_set64, ``Reg64s.r12_set64, ``Reg64s.r13_set64, ``Reg64s.r14_set64, ``Reg64s.r15_set64,
   ``BitVec.add_zero, ``BitVec.unsigned_eq, ``BitVec.toNat_ofNat,
   ``Nat.zero_mod, ``Int.add_zero, ``Int.cast_ofNat_Int, ``BitVec.unsigned_eq, ``bne_self_eq_false, ``Bool.toNat_false ]
@@ -81,27 +88,52 @@ def substSimproc (env : SubstEnv) : Simproc := fun e => do
   | some (rhs, h) => return .step rhs h
   | none => return .rfl
 
-/-- Collect `lhs = rhs` hypotheses into a pointer-keyed substitution. -/
-def mkSubstEnv (mvarId : MVarId) : SymM SubstEnv := mvarId.withContext do
-  let mut env : SubstEnv := {}
+/-- Collect the equation hypotheses in declaration order. -/
+def collectEqs (mvarId : MVarId) : SymM (Array (Expr × Expr × Expr)) := mvarId.withContext do
+  let mut eqs := #[]
   for d in ← getLCtx do
     if d.isImplementationDetail || d.value?.isSome then continue
     if let some (_, lhs, rhs) := d.type.eq? then
-      env := env.insert { expr := lhs } (rhs, d.toExpr)
-  return env
+      eqs := eqs.push (lhs, rhs, d.toExpr)
+  return eqs
 
-/-- Fold the goal along the state chain. -/
+/--
+Fold the chain component by component.
+
+Each step's right-hand side mentions only the previous state, so simplifying it
+against the values already computed for that state yields a value for this
+step's component, and the equation proved is `component = value` with both
+sides small. Rewriting the goal directly instead would make the simplifier
+descend into the state term, and the congruence node at depth `k` then carries
+a type mentioning the state at that depth: the certificate stays linear but the
+kernel checks it in super-linear time (kernel-congr-quadratic-mwe.lean).
+-/
 def foldGoal (mvarId : MVarId) : MetaM (Option MVarId) := SymM.run do
   let mvarId ← preprocessMVar mvarId
-  let env ← mkSubstEnv mvarId
+  let eqs ← collectEqs mvarId
   let mut thms : Theorems := {}
   for n in lemmaNames do
     thms := thms.insert (← mkTheoremFromDecl n)
-  let methods : Methods :=
+  -- `values` maps a component to its computed value and the proof of that
+  -- equation. It only ever holds small terms.
+  let mut values : SubstEnv := {}
+  let mut state : Sym.Simp.State := {}
+  let mkMethods (env : SubstEnv) : Methods :=
     { pre := simpControl
       post := substSimproc env >> collapseAdd >> reduceCtorEq >> evalGround >> thms.rewrite }
+  for (lhs, rhs, h) in eqs do
+    -- Simplify this step's right-hand side against the values known so far.
+    let (r, state') ← SimpM.run (Sym.Simp.simp rhs) (mkMethods values) { maxSteps := 1000000 } state
+    state := state'
+    let (value, proof) ← match r with
+      | .rfl .. => pure (rhs, h)
+      | .step rhs' hr .. => do
+        -- `h : lhs = rhs` and `hr : rhs = rhs'`, so `lhs = rhs'`.
+        pure (rhs', ← Sym.Simp.mkEqTrans lhs rhs h rhs' hr)
+    values := values.insert { expr := lhs } (value, proof)
+  -- One rewrite of the goal with the finished component values.
   let target ← mvarId.withContext do instantiateMVars (← mvarId.getType)
-  let (result, _) ← SimpM.run (Sym.Simp.simp target) methods { maxSteps := 1000000 } {}
+  let (result, _) ← SimpM.run (Sym.Simp.simp target) (mkMethods values) { maxSteps := 1000000 } state
   match ← result.toSimpGoalResult mvarId with
   | .closed => return none
   | .goal mvarId => return some mvarId
