@@ -53,20 +53,19 @@ def collapseAdd : Simproc := fun e => do
   let e' ← Sym.share (← mkAdd (← mkAdd a b) c)
   return .step e' proof
 
-/-- Reduce a conditional whose condition is a ground equality of constructors,
-which is what the general read-over-write lemma leaves behind.
-
-The idiomatic route is to reduce the *condition* to `True`/`False` and let
-`Sym`'s `simpIte` rewrite the conditional with its own `ite_cond_eq_true` /
-`ite_cond_eq_false` proof term. That is preferable, because the step below is
-justified by definitional unfolding of the `Decidable` instance, which the
-kernel then repeats; see TODO.md. -/
-def reduceGroundIte : Simproc := fun e => do
-  let_expr ite _ c _ a b := e | return .rfl
-  let_expr Eq _ l r := c | return .rfl
+/-- Decide an equality between two constructors, so that `Sym`'s own
+`simpIte` sees a condition that became `True`/`False` and rewrites the
+conditional with its `ite_cond_eq_true`/`ite_cond_eq_false` proof term. -/
+def reduceCtorEq : Simproc := fun e => do
+  let_expr Eq _ l r := e | return .rfl
   unless l.isConst && r.isConst do return .rfl
-  let branch := if l == r then a else b
-  return .step branch (← Meta.mkEqRefl branch)
+  unless (← isConstructorApp l) && (← isConstructorApp r) do return .rfl
+  -- Return the shared `True`/`False`: `simpIte` tests them with pointer
+  -- equality, so a freshly built constant leaves the conditional standing.
+  if l == r then
+    return .step (← getTrueExpr) (← mkAppM ``eq_self #[l])
+  else
+    return .step (← getFalseExpr) (← mkAppM ``eq_false #[← mkDecideProof (mkNot e)])
 
 /-- Substitution built from the goal's equation hypotheses, keyed by pointer. -/
 abbrev SubstEnv := Lean.PHashMap ExprPtr (Expr × Expr)
@@ -94,8 +93,8 @@ def foldGoal (mvarId : MVarId) : MetaM (Option MVarId) := SymM.run do
   for n in lemmaNames do
     thms := thms.insert (← mkTheoremFromDecl n)
   let methods : Methods :=
-    { pre := reduceGroundIte >> simpControl
-      post := substSimproc env >> collapseAdd >> evalGround >> thms.rewrite }
+    { pre := simpControl
+      post := substSimproc env >> collapseAdd >> reduceCtorEq >> evalGround >> thms.rewrite }
   let target ← mvarId.withContext do instantiateMVars (← mvarId.getType)
   let (result, _) ← SimpM.run (Sym.Simp.simp target) methods { maxSteps := 1000000 } {}
   match ← result.toSimpGoalResult mvarId with

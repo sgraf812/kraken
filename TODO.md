@@ -45,34 +45,20 @@
   55/303/3119 with `clear_dead`. Stepping and kernel scale; the discharge does
   not, and is where the remaining work is.
 
-- `kfold` reduces a ground read-over-write conditional with a step justified by
-  definitional unfolding of the `Decidable` instance (`Meta.mkEqRefl`), which
-  the kernel then repeats: AdcChain(640) kernel time is 8.3s against 6.4s for
-  the `simp only` discharge, so the defeq route is measurably paid for twice.
-  The idiomatic fix is to reduce the *condition* to `True`/`False` and let
-  `Sym.Simp.simpIte` (Simp/ControlFlow.lean:22) rewrite the conditional with
-  its own `ite_cond_eq_true`/`ite_cond_eq_false` proof term; `simpIte` already
-  calls `simp` on the condition, so a constructor-equality simproc in `post` is
-  all that is missing. An attempt at that (`eq_self` / `eq_false` with
-  `mkDecideProof`) did not fire and the failure was swallowed by a `try`; it
-  needs one debugging pass with the catch removed. Cost of not doing it, on
-  AdcChain(640): discharge 258ms against 844ms for the `simp only` route, but
-  kernel 5226ms against 4337ms, so the extra kernel work exceeds the discharge
-  saving and the fold is a net loss on carry chains. AddChain and DecChain do
-  not pay this. Note `Sym.Simp.simpMatch`
-  (Simp/ControlFlow.lean:124) justifies matcher iota-reduction with `mkEqRefl`
-  too, so a defeq-justified step is the framework's own idiom for iota; the
-  question is only whether evaluating a `Decidable` instance is as cheap as
-  matcher iota, and the kernel numbers above say it is not.
-  Unfolding the register file so that a concrete read reduces is worse:
-  AddChain(160) discharge goes 31ms to 97ms and AdcChain exceeds simp's step
-  budget (12.7s). `getEqnsFor?` gives the smart unfolding (one equation per
-  constructor, so no matcher is ever exposed), and the two halves differ:
-  `get64`'s equations are cheap, each rewriting a read to a field projection,
-  but `set64`'s rewrite a write to a full sixteen-field record literal, and a
-  chain of writes then carries one such literal per step. The shape worth
-  trying is `get64`'s equations together with the per-field read-over-write
-  lemmas kraken already has (`Reg64s.rax_set64` and friends), which keep the
-  write folded; they still leave a conditional, but on a ground register.
+- `kfold` now leaves the read-over-write conditional to `Sym.Simp.simpIte`,
+  which supplies its own `ite_cond_eq_false` proof term; a simproc only decides
+  the condition. Getting that to fire required returning the *shared* `True` /
+  `False` from `Sym.getTrueExpr`/`getFalseExpr`, since `simpIte` tests them
+  with pointer equality and a freshly built `mkConst ``False` leaves the
+  conditional standing.
+  This did not close the kernel gap on carry chains: AdcChain(640) kernel is
+  5196ms against 4299ms for the `simp only` discharge, essentially what the
+  earlier defeq-justified step cost (5226ms). The instance evaluation moved
+  rather than disappeared, because the disequality proof is
+  `mkDecideProof`, i.e. `of_decide_eq_false (Eq.refl false)`, and the kernel
+  evaluates the same `Decidable` instance to check it. A `noConfusion`-based
+  proof of the constructor disequality would avoid that; whether the kernel
+  gap is really this and not the substitution proof spine or `collapseAdd`'s
+  applications has not been measured, and should be before more work goes in.
 - `clear_dead` cannot move into `SymM`: rewriting the local context is outside
   what `Sym` supports, so it stays a `MetaM` tactic.
