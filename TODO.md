@@ -55,6 +55,13 @@
   calls `simp` on the condition, so a constructor-equality simproc in `post` is
   all that is missing. An attempt at that (`eq_self` / `eq_false` with
   `mkDecideProof`) did not fire and the failure was swallowed by a `try`; it
-  needs one debugging pass with the catch removed.
+  needs one debugging pass with the catch removed. Note `Sym.Simp.simpMatch`
+  (Simp/ControlFlow.lean:124) justifies matcher iota-reduction with `mkEqRefl`
+  too, so a defeq-justified step is the framework's own idiom for iota; the
+  question is only whether evaluating a `Decidable` instance is as cheap as
+  matcher iota, and the kernel numbers above say it is not.
+  Unfolding the register file so that `simpMatch` reduces a concrete read
+  instead is worse: AddChain(160) discharge goes 31ms to 97ms and AdcChain
+  exceeds simp's step budget (12.7s), because unfolding expands the record.
 - `clear_dead` cannot move into `SymM`: rewriting the local context is outside
   what `Sym` supports, so it stays a `MetaM` tactic.
