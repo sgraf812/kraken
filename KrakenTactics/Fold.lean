@@ -65,7 +65,12 @@ def reduceCtorEq : Simproc := fun e => do
   if l == r then
     return .step (← getTrueExpr) (← mkAppM ``eq_self #[l])
   else
-    return .step (← getFalseExpr) (← mkAppM ``eq_false #[← mkDecideProof (mkNot e)])
+    -- `noConfusion` derives the disequality structurally. Deciding it instead
+    -- would make the kernel evaluate the `Decidable` instance to check the
+    -- proof, which is the work this is meant to avoid.
+    let hne ← withLocalDeclD `h e fun h => do
+      mkLambdaFVars #[h] (← mkNoConfusion (mkConst ``False) h)
+    return .step (← getFalseExpr) (← mkAppM ``eq_false #[hne])
 
 /-- Substitution built from the goal's equation hypotheses, keyed by pointer. -/
 abbrev SubstEnv := Lean.PHashMap ExprPtr (Expr × Expr)

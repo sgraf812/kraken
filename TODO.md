@@ -51,14 +51,18 @@
   `False` from `Sym.getTrueExpr`/`getFalseExpr`, since `simpIte` tests them
   with pointer equality and a freshly built `mkConst ``False` leaves the
   conditional standing.
-  This did not close the kernel gap on carry chains: AdcChain(640) kernel is
-  5196ms against 4299ms for the `simp only` discharge, essentially what the
-  earlier defeq-justified step cost (5226ms). The instance evaluation moved
-  rather than disappeared, because the disequality proof is
-  `mkDecideProof`, i.e. `of_decide_eq_false (Eq.refl false)`, and the kernel
-  evaluates the same `Decidable` instance to check it. A `noConfusion`-based
-  proof of the constructor disequality would avoid that; whether the kernel
-  gap is really this and not the substitution proof spine or `collapseAdd`'s
-  applications has not been measured, and should be before more work goes in.
+  The disequality is proved with `Meta.mkNoConfusion`, structurally, so the
+  kernel never evaluates a `Decidable` instance.
+  None of this closes the kernel gap on carry chains: AdcChain(640) kernel is
+  ~5.2-5.6s against ~4.3s for the `simp only` discharge, the same as with the
+  earlier defeq-justified conditional (5226ms) and with a decide-based
+  disequality (5196ms). Three proof shapes, one number, so the conditional is
+  not where the kernel time goes. Note `Sym.Simp.evalGround` justifies every
+  ground evaluation with `Eq.refl` by design ("the kernel verifies
+  correctness"), so a defeq-heavy certificate is inherent to folding this way.
+  What has not been measured is which part of the certificate the kernel
+  actually spends its time on: the substitution spine, `collapseAdd`'s
+  `add_assoc_rev` applications, or `evalGround`'s refl steps. Measure before
+  optimising further.
 - `clear_dead` cannot move into `SymM`: rewriting the local context is outside
   what `Sym` supports, so it stays a `MetaM` tactic.
