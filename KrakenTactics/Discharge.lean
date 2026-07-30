@@ -15,14 +15,19 @@ The set covers four jobs:
 * flag reduction, collapsing a carry whose operands agree;
 * the arithmetic reduce simprocs, which `simp only` does not run unless they
   are named, and without which constants never collapse and the chain stays
-  as deep as the program is long.
+  as deep as the program is long;
+* reassociation, so that a chain over a symbolic start (`3 + (3 + (... + k))`)
+  presents adjacent literals to those simprocs and collapses to `48 + k`.
+
+One set covers every workload measured: immediate adds over a symbolic start,
+decrements over a concrete one, carry chains, and multi-register writes.
 -/
 import Kraken.AccessorSpecs
 import Std.Tactic.BVDecide
 
 /-- Fold a verification condition along the state chain. -/
 macro "kraken_simp" : tactic =>
-  `(tactic| simp only [Int64.toBitVec_ofNat, BitVec.ofNat_eq_ofNat, BitVec.setWidth_eq,
+  `(tactic| simp only [← BitVec.add_assoc, Int64.toBitVec_ofNat, BitVec.ofNat_eq_ofNat, BitVec.setWidth_eq,
       Reg64s.get64_set64, ↓reduceIte,
       BitVec.add_zero, reduceCtorEq, BitVec.unsigned_eq, BitVec.toNat_ofNat,
       Nat.reducePow, Nat.zero_mod, Int.cast_ofNat_Int, Int.add_zero,
