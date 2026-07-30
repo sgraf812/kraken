@@ -44,3 +44,17 @@
   n=40/160/640 (linear), kernel 14/101/1210, discharge 131/549/4572 plain and
   55/303/3119 with `clear_dead`. Stepping and kernel scale; the discharge does
   not, and is where the remaining work is.
+
+- `kfold` reduces a ground read-over-write conditional with a step justified by
+  definitional unfolding of the `Decidable` instance (`Meta.mkEqRefl`), which
+  the kernel then repeats: AdcChain(640) kernel time is 8.3s against 6.4s for
+  the `simp only` discharge, so the defeq route is measurably paid for twice.
+  The idiomatic fix is to reduce the *condition* to `True`/`False` and let
+  `Sym.Simp.simpIte` (Simp/ControlFlow.lean:22) rewrite the conditional with
+  its own `ite_cond_eq_true`/`ite_cond_eq_false` proof term; `simpIte` already
+  calls `simp` on the condition, so a constructor-equality simproc in `post` is
+  all that is missing. An attempt at that (`eq_self` / `eq_false` with
+  `mkDecideProof`) did not fire and the failure was swallowed by a `try`; it
+  needs one debugging pass with the catch removed.
+- `clear_dead` cannot move into `SymM`: rewriting the local context is outside
+  what `Sym` supports, so it stays a `MetaM` tactic.
