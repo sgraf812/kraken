@@ -33,3 +33,14 @@
   dead flag equation and the needed register equation both have zero fvar-uses.
   The tactic lives in the `KrakenTactics` lean_lib with `precompileModules`,
   without which it runs interpreted (4.02s of a 8.9s run vs 3.87ms compiled).
+
+- Benchmarks follow the lean4 `tests/bench/vcgen` setup (bench/lib/Driver.lean
+  is a copy): the program is a recursive function of `n`, so a run elaborates
+  a fixed amount of source at any size, and the driver reports stepping,
+  discharge and kernel time separately. The generator in bench/gen.py emits
+  `n` lines of source instead, which at n=640 spends 1.8s compiling the
+  program; prefer the Cases/ form for anything scaling-related.
+  Phase split on the register add chain (ms): stepping 57/229/1166 at
+  n=40/160/640 (linear), kernel 14/101/1210, discharge 131/549/4572 plain and
+  55/303/3119 with `clear_dead`. Stepping and kernel scale; the discharge does
+  not, and is where the remaining work is.

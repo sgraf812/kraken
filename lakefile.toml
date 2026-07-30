@@ -12,6 +12,17 @@ precompileModules = true
 globs = ["KrakenTactics.*"]
 
 [[lean_lib]]
+name = "BenchLib"
+precompileModules = true
+srcDir = "bench/lib"
+globs = ["Driver"]
+
+[[lean_lib]]
+name = "Cases"
+srcDir = "bench"
+globs = ["Cases", "Cases.*"]
+
+[[lean_lib]]
 name = "Kraken"
 globs = ["Kraken.*"]  # TODO: move the tests out of `Kraken`
 
