@@ -7,6 +7,11 @@ autoImplicit = false
 relaxedAutoImplicit = false
 
 [[lean_lib]]
+name = "KrakenTactics"
+precompileModules = true
+globs = ["KrakenTactics.*"]
+
+[[lean_lib]]
 name = "Kraken"
 globs = ["Kraken.*"]  # TODO: move the tests out of `Kraken`
 

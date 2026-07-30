@@ -15,19 +15,21 @@
 - Engine (vcgen): normalize `And` at Prop-valued preconditions to the lattice
   meet so the spec-authoring trap (raw `∧` stops the driver) disappears.
 
-- Dead-hypothesis elimination (Kraken/ClearDead.lean, EXPERIMENTAL): accessor
-  stepping emits one equation per state component per instruction; a
-  postcondition reads few of them. Pruning the unreachable ones cuts
-  `bv_decide` from 3.84s to 0.70s at n=640 (5.5x) on the register chain,
-  because dead flag equations are no longer bitblasted.
-  Status: the reachability criterion (goal -> equation LHS/RHS edges) prunes
-  correctly on `addRI` chains (43 -> 19 hypotheses at n=8) but over-prunes on
-  `adc` chains, where a proof that passes without it fails with it. Cause not
-  identified; suspect term-representation mismatch between an equation LHS and
-  its occurrences in other RHSs (projection vs. projection-function form), so
-  the criterion needs representation-insensitive matching rather than
-  structural `Expr` equality.
-  Note `Lean.Elab.Tactic.Do.elimLets` already carries the use-counting
-  (zero/one/many) analysis and scans the local context, but only eliminates
-  let-bound decls (`decl.value?`), so it is a no-op on these equation
-  hypotheses (measured: identical times with and without).
+- Dead-hypothesis elimination (KrakenTactics/ClearDead.lean): pruning the
+  equation hypotheses unreachable from the goal cuts `bv_decide` from 3.84s to
+  0.69s at n=640 (5.5x), since dead component equations are no longer
+  bitblasted. Whole-file wall time 8.83s -> 8.10s; the remainder is vcgen
+  stepping, kernel typechecking and compiling the benchmark program.
+  The analysis needs closure under rewriting of projection paths: steps read
+  components at different granularities (`movRI` relates a whole `status`,
+  `addRI` defines its `cf` field, `adc` reads that field), so without the
+  closure the carry clear a chain depends on is classified dead. Closing over
+  every reachable subterm is correct but takes 180s at n=160; restricting the
+  rewrite to path-shaped terms is correct and cheap.
+  `Lean.Elab.Tactic.Do.elimLets` carries a use-counting (zero/one/many)
+  analysis and scans the local context, but only eliminates let-bound decls
+  (`decl.value?`), so it is a no-op on equation hypotheses (measured: identical
+  times with and without). Use-counting also cannot express this criterion: the
+  dead flag equation and the needed register equation both have zero fvar-uses.
+  The tactic lives in the `KrakenTactics` lean_lib with `precompileModules`,
+  without which it runs interpreted (4.02s of a 8.9s run vs 3.87ms compiled).

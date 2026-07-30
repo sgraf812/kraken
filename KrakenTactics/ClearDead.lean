@@ -1,13 +1,18 @@
 /-
-Dead-hypothesis elimination for VC discharge. EXPERIMENTAL: correct on
-register-only chains, but over-prunes on carry chains (see TODO.md).
+Dead-hypothesis elimination.
 
-Accessor-style stepping emits one equation per state component per
-instruction; a postcondition typically reads only a few. `clear_dead`
-keeps the equations reachable from the goal through equation LHS→RHS
-edges and clears the rest, so `bv_decide` does not bitblast components
-no one queries. Reachability is directed, so an equation whose value is
-read by a later instruction (a carry consumed by `adc`) stays live.
+`clear_dead` keeps the equation hypotheses reachable from the goal through
+equation LHS→RHS edges and clears the rest. Symbolic execution emits one
+equation per state component per step while a postcondition reads few of
+them, and a solver such as `bv_decide` otherwise processes every one.
+
+The analysis is directed, so an equation whose value a later step reads
+stays live, and it is closed under rewriting of projection paths, so
+components read at different granularities (a whole record field by one
+step, a subfield by the next) stay connected.
+
+Nothing here is domain-specific: the input is equation hypotheses and a
+goal, the output is the goal with unreachable equations cleared.
 -/
 import Lean
 open Lean Elab Tactic Meta
