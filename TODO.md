@@ -66,3 +66,16 @@
   optimising further.
 - `clear_dead` cannot move into `SymM`: rewriting the local context is outside
   what `Sym` supports, so it stays a `MetaM` tactic.
+
+- Kernel checking is super-linear in these proofs because each congruence node
+  carries a type that deepens with the chain: cost is the sum over nodes of the
+  type size, not the shared term size. Isolated in
+  kernel-congr-quadratic-mwe.lean, where holding node count fixed and shrinking
+  only the node types takes n=1600 from 3593ms to 4ms.
+  The fix is to fold at the component level rather than inside the term:
+  forward-substitute to each queried component's final value, emit one small
+  equation per component (`s_n.regs.get64 rax = 1920#64`), and rewrite the goal
+  once with those, so every node's type stays constant-size. `kfold` currently
+  rewrites the goal, so `Sym.Simp` descends into the state term and builds the
+  growing-type shape; that is why both discharges scale identically and why no
+  discharge-level tuning changes the exponent.

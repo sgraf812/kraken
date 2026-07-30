@@ -45,6 +45,41 @@ def driver (goal : Name) (unfold : List Name) (n : Nat) (discharge : MetaM (TSyn
   -- kernel. If we don't do this, kernel checking time balloons.
   let expr := Lean.ShareCommon.shareCommon expr
   let (_, kernelMs) ← timeItMs (checkWithKernel expr)
+  -- Size of the shared certificate the kernel is handed.
+  let dagSize : Nat := Id.run do
+    let mut seen : Std.HashSet Expr := {}
+    let mut stack := #[expr]
+    while stack.size > 0 do
+      let t := stack.back!; stack := stack.pop
+      if seen.contains t then continue
+      seen := seen.insert t
+      match t with
+      | .app f a => stack := (stack.push f).push a
+      | .lam _ ty b _ | .forallE _ ty b _ => stack := (stack.push ty).push b
+      | .letE _ ty v b _ => stack := ((stack.push ty).push v).push b
+      | .proj _ _ b | .mdata _ b => stack := stack.push b
+      | _ => pure ()
+    return seen.size
+  -- Shape of the certificate: spine depth and the head constants it is built from.
+  let (depth, heads) : Nat × Array (Name × Nat) := Id.run do
+    let mut seen : Std.HashSet Expr := {}
+    let mut counts : Std.HashMap Name Nat := {}
+    let mut maxD := 0
+    let mut stack : Array (Expr × Nat) := #[(expr, 0)]
+    while stack.size > 0 do
+      let (t, d) := stack.back!; stack := stack.pop
+      if d > maxD then maxD := d
+      if seen.contains t then continue
+      seen := seen.insert t
+      match t with
+      | .app f a => stack := (stack.push (f, d+1)).push (a, d+1)
+      | .lam _ ty b _ | .forallE _ ty b _ => stack := (stack.push (ty, d+1)).push (b, d+1)
+      | .letE _ ty v b _ => stack := ((stack.push (ty, d+1)).push (v, d+1)).push (b, d+1)
+      | .proj _ _ b | .mdata _ b => stack := stack.push (b, d+1)
+      | .const n _ => counts := counts.insert n (counts.getD n 0 + 1)
+      | _ => pure ()
+    let arr := counts.toArray.qsort (fun a b => a.2 > b.2)
+    return (maxD, arr.take 8)
   let label := s!"{goal.getPrefix}({n}):"
   let pad := "".pushn ' ' (24 - min label.length 24)
   let mut msg := s!"{label}{pad}{ms} ms"
@@ -54,7 +89,8 @@ def driver (goal : Name) (unfold : List Name) (n : Nat) (discharge : MetaM (TSyn
     msg := msg ++ s!", {mvarIds.length} VCs"
   if instMs > 1000 then
     msg := msg ++ s!", instantiate > 1000ms: {instMs} ms"
-  msg := msg ++ s!", kernel: {kernelMs} ms"
+  msg := msg ++ s!", kernel: {kernelMs} ms, DAG: {dagSize}, depth: {depth}"
+  msg := msg ++ s!"\n    heads: {heads}"
   IO.println msg
 
 def solveUsingTactic (goal : Name) (unfold : List Name) (n : Nat) (solve : MetaM (TSyntax `tactic)) (discharge : MetaM (TSyntax `tactic)) : MetaM Unit := do
