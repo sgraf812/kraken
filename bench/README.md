@@ -73,7 +73,21 @@ already at four `adc` instructions. `main` was not run at n=640.
 | dynamic stack | 0.85 s, `sorry` after the first of nine instructions | 1.72 s, all nine stepped, seven goals under `sorry` |
 | memory store then reload | part of `Kraken/Examples/Examples.lean`, 1.28 s for the file | `Kraken/MemBench.lean`, 0.68 s, complete |
 
-Only on `main`: register swap through `xor`, the `jnz` example, `push`/`pop`,
-an ALU instruction with a memory operand, and the MMIO and DMA examples. The
-instruction actions here cover moves, `dec`, `add`, `adc`, `lea` and 8-byte
-loads and stores, so those programs have nothing to run against.
+The ported examples, each a standalone file, timed against the same example
+extracted from `main`'s `Kraken/Examples/Examples.lean` into its own file (with
+the shared helpers `Executable.directivesFromStart` and `BitVec.take_all`).
+Import-only wall time is 0.60 s here and 0.58 s on `main`.
+
+| proof | file | `main` | here |
+| --- | --- | --- | --- |
+| register swap through three `xor`s | `Kraken/Examples/Swap.lean` | 0.84 s | 0.74 s |
+| ALU with a memory source operand | `Kraken/Examples/AluMem.lean` | 0.94 s | 0.74 s |
+| store/reload through a SIB address | `Kraken/Examples/SibRoundtrip.lean` | 0.84 s | 0.75 s |
+| two stores, two loads (adjacent heap slots) | `Kraken/Examples/Move2RegsToHeap.lean` | 1.04 s | 0.74 s |
+
+Ported at the spec level but without a composing example: `push`/`pop` (the
+`pop` load address is `get64 rsp` over two `set64`s, which easm does not
+canonicalize) and `jnz` (the conditional-jump spec puts the continuation's `wp`
+under an `if` on `ZF` that stepping does not reduce). Out of scope for the
+`EStateM` model: the MMIO and DMA examples, which need a resumable device-state
+model rather than a throwing non-memory access. See `TODO.md` for each.

@@ -63,4 +63,45 @@
   program folded in every wp type and makes stepping ~4x faster and linear.
   The bench driver's upfront-unfold path is the slow variant.
 
+- `easm` address canonicalization does not bridge a write to a non-address
+  register. When an instruction writes a register that the accessed address does
+  not mention, the memory VC carries `Addr.eval a (regs.set64 r v)` while the
+  provided `h_load` fact is stated over `Addr.eval a regs`. The first simp pass
+  keeps `Addr.eval` folded, so the two addresses differ syntactically and the
+  fact does not fire; the second pass unfolds `Addr.eval` and `Reg64s.get64` in
+  the VC but leaves the folded fact unmatched. Repro: `Kraken/Examples/AluMem.lean`
+  with a `movq $42, %rax` before the store (the `rax` write shifts the store
+  address off `s₀.regs`). The examples work around it by keeping addresses
+  register-write-free at each access, or by supplying the address equality as a
+  hypothesis (`ha8'` in `Kraken/Examples/Move2RegsToHeap.lean`). A direct
+  `get64 rsp` address over `set64` writes hits the same wall through a different
+  route: the second pass unfolds `Reg64s.get64` before `get64_set64` can fire and
+  then stalls on `UInt64.toBitVec (UInt64.ofBitVec _)`. Repro: `pushR`/`popR`
+  roundtrip (specs present in `Kraken/Specs.lean`; `push`, clobber, `pop` back
+  leaves the `pop` load address as `get64 rsp` over two `set64`s). Fix: canonicalize
+  register reads over writes at the folded level (add `Reg64s.get64_set64` to the
+  first pass), or pre-normalize the added hypotheses with the address-unfold set so
+  both sides of the match are unfolded together.
+
+- Conditional jumps do not compose with straightline `vcgen` stepping. `jnz_spec`
+  (`Kraken/Specs.lean`) is proven: its precondition is
+  `if s.status.zf then Q () s else E (.jump l) s`. But applying it puts the
+  continuation's `wp` under that `if`, and `vcgen` does not reduce the `if` to
+  resume stepping the taken/not-taken tail, even when the flag is ground after
+  `get64_set64` (e.g. `xor %rax, %rax; jnz; mov`). Stepping halts at the branch.
+  Only the spec ports; the multi-instruction example through a conditional does
+  not. A branch-aware stepping pass that decides a ground flag condition and
+  recurses into the selected continuation would lift this.
+
+- MMIO and DMA are out of scope for the `EStateM X64Exit MachineData` model.
+  Master models them (`Kraken/Examples/Increment{MMIO,DMA}.lean`) over the CPS
+  `Effects` type: `nonmem_load` carries a continuation `w.type → DataMem → Effects`
+  that a `handleEffects` interpreter resumes with a device-supplied value while
+  threading a `SystemState = MachineState × DeviceState`. Here a non-memory access
+  is `throw (.nonmemLoad …)`, which aborts with no resumption and no device state,
+  so a load cannot return a device reply. Porting these needs a device-model
+  design: thread device state (a product monad or a state component) and give the
+  load access to it, replacing the throwing `MachineData.load`/`store` on the
+  non-memory branch. Not a small change.
+
 - Benchmark harness and the current numbers: bench/README.md.
