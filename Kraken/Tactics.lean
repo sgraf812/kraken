@@ -6,16 +6,20 @@ reading the value off the internalized local context.
 emitting a side goal `lhs = some ?i` (an equality with an assignable metavariable
 on one side). Two discharge paths run in order:
 
+* simp path: read-over-write projections plus the local equations reduce the load
+  term to `some V` in `MetaM`, off the session, and assign `?i := V`. A
+  bitvector-computed address (a stack slot `rsp - 8`) reduces here.
 * E-graph path: the load term is shared and canonicalized into the session's
   E-graph state (`Grind.preprocessLight`) and internalized; congruence closure
   over the internalized `h_load` facts and state equations puts a
   constructor-headed member `some V` into its equivalence class. `?i := V` by
   definitional unification; the goal closes by the E-graph proof (`mkEqProof`).
-* simp path: read-over-write projections plus the local equations reduce the
-  load term to `some V`; fires when the needed fact is not internalized or the
-  address needs canonicalization beyond congruence.
+  An indexed address whose base a preceding `lea` overwrote canonicalizes here.
 
-The assignment is visible to the sibling continuation VC, which shares the
+The simp path runs first because it leaves the session untouched, so its result
+survives the metacontext `sym` restores; internalizing a bitvector address into
+the E-graph instead drives the session inconsistent and leaves it so. The
+assignment is visible to the sibling continuation VC, which shares the
 metavariable. The `Kraken.easm` trace class reports which path closed each goal.
 -/
 import Kraken.OmniSemantics
@@ -145,12 +149,17 @@ syntax (name := easmStx) "easm" : grind
 def evalEasm : GrindTactic := fun _stx => do
   let goal ← getMainGoal
   let target ← instantiateMVars (← goal.mvarId.getType)
+  -- The simp path is a pure `MetaM` reduction: it never touches the session, so
+  -- trying it first is free. The E-graph path internalizes the queried access into
+  -- the session to read its class; for a bitvector-computed address (a stack slot
+  -- `rsp - 8`) that internalization drives the session inconsistent and leaves it
+  -- so, which is why it runs only once simp has not already produced the value.
   let discharge (mv : MVarId) : GrindTacticM Bool := do
-    if (← easmEgraphCore mv) then
-      trace[Kraken.easm] "path=egraph"
-      return true
     if (← liftMetaM (easmCore mv)) then
       trace[Kraken.easm] "path=simp"
+      return true
+    if (← easmEgraphCore mv) then
+      trace[Kraken.easm] "path=egraph"
       return true
     return false
   -- The store VC may arrive as `(Mem.loadInt … = some ?i) ∧ <continuation>`: split

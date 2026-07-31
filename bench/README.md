@@ -84,10 +84,16 @@ Import-only wall time is 0.60 s here and 0.58 s on `main`.
 | ALU with a memory source operand | `Kraken/Examples/AluMem.lean` | 0.94 s | 0.74 s |
 | store/reload through a SIB address | `Kraken/Examples/SibRoundtrip.lean` | 0.84 s | 0.75 s |
 | two stores, two loads (adjacent heap slots) | `Kraken/Examples/Move2RegsToHeap.lean` | 1.04 s | 0.74 s |
+| push, clobber, pop back (stack roundtrip) | `Kraken/Examples/PushPop.lean` | — | 0.62 s |
 
-Ported at the spec level but without a composing example: `push`/`pop` (the
-`pop` load address is `get64 rsp` over two `set64`s, which easm does not
-canonicalize) and `jnz` (the conditional-jump spec puts the continuation's `wp`
-under an `if` on `ZF` that stepping does not reduce). Out of scope for the
-`EStateM` model: the MMIO and DMA examples, which need a resumable device-state
-model rather than a throwing non-memory access. See `TODO.md` for each.
+The push/pop example steps with `vcgen simplifying_assumptions`: the pass folds
+the pop's load into a read-over-write over the push's store at the same stack
+slot, `easm` reads the mapped-ness and the stored value off the memory
+hypotheses, and `BitVec.ofInt_toInt` (the value stored as an integer and
+reloaded) closes the register identity. It has no `main` counterpart.
+
+Ported at the spec level but without a composing example: `jnz` (the
+conditional-jump spec puts the continuation's `wp` under an `if` on `ZF` that
+stepping does not reduce). Out of scope for the `EStateM` model: the MMIO and DMA
+examples, which need a resumable device-state model rather than a throwing
+non-memory access. See `TODO.md` for each.

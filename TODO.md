@@ -73,15 +73,13 @@
   with a `movq $42, %rax` before the store (the `rax` write shifts the store
   address off `s₀.regs`). The examples work around it by keeping addresses
   register-write-free at each access, or by supplying the address equality as a
-  hypothesis (`ha8'` in `Kraken/Examples/Move2RegsToHeap.lean`). A direct
-  `get64 rsp` address over `set64` writes hits the same wall through a different
-  route: the second pass unfolds `Reg64s.get64` before `get64_set64` can fire and
-  then stalls on `UInt64.toBitVec (UInt64.ofBitVec _)`. Repro: `pushR`/`popR`
-  roundtrip (specs present in `Kraken/Specs.lean`; `push`, clobber, `pop` back
-  leaves the `pop` load address as `get64 rsp` over two `set64`s). Fix: canonicalize
+  hypothesis (`ha8'` in `Kraken/Examples/Move2RegsToHeap.lean`). Fix: canonicalize
   register reads over writes at the folded level (add `Reg64s.get64_set64` to the
   first pass), or pre-normalize the added hypotheses with the address-unfold set so
-  both sides of the match are unfolded together.
+  both sides of the match are unfolded together. A stack address `get64 rsp` over
+  `set64` writes does not hit this: `simplifying_assumptions` folds it to a literal
+  offset that matches the store, so `Kraken/Examples/PushPop.lean` composes `push`,
+  a clobber and `pop` back with `easm` reading the mapped-ness and stored value.
 
 - Conditional jumps do not compose with straightline `vcgen` stepping. `jnz_spec`
   (`Kraken/Specs.lean`) is proven: its precondition is
