@@ -52,7 +52,8 @@ def lemmaNames : Array Name := #[
   ``MachineData.regs_mk, ``MachineData.zmms_mk, ``MachineData.status_mk, ``MachineData.dmem_mk,
   ``StatusFlags.cf_from_result, ``StatusFlags.from_result.Remaining.cf_mk,
   ``BitVec.add_zero, ``BitVec.unsigned_eq, ``BitVec.toNat_ofNat,
-  ``Nat.zero_mod, ``Int.add_zero, ``Int.cast_ofNat_Int, ``bne_self_eq_false, ``Bool.toNat_false ]
+  ``Nat.zero_mod, ``Int.add_zero, ``Int.cast_ofNat_Int, ``bne_self_eq_false, ``Bool.toNat_false,
+  ``_root_.ite_true, ``_root_.ite_false ]
 
 /-- `lemmaNames` plus reassociation and the register-index comparison, the
 rewrite set the state-simplification pass runs as each spec application produces
