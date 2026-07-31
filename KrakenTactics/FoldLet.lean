@@ -83,3 +83,11 @@ elab "kfold_let" : tactic => liftMetaTactic1 Kraken.FoldLet.foldGoal
 /-- Fold a let-form verification condition, drop what it consumed, and decide
 what is left. -/
 macro "kfold_let_discharge" : tactic => `(tactic| (kfold_let <;> clear_dead <;> bv_decide))
+
+-- Register the fold rewrite set as `Sym.simp` theorems, so `vcgen simplifying_assumptions`
+-- normalizes the state literal a spec application leaves in the goal with the same rules
+-- `kfold_let` uses on the finished verification condition.
+open Lean Elab Command in
+run_cmd liftTermElabM do
+  for n in Kraken.FoldLet.lemmaNames do
+    Sym.Simp.addSymSimpTheorem Sym.Simp.symSimpExtension n .global

@@ -4,6 +4,9 @@ kernel time per size.
 
 `sorry` discharge isolates the kernel cost of the stepping certificate alone;
 the fold discharge adds the cost of a checked proof.
+
+`simplifying_assumptions` normalizes each state literal as it is produced, so
+the verification condition reaches the discharge tactic already folded.
 -/
 import Cases
 import Driver
@@ -33,3 +36,15 @@ open Lean Order Parser Meta Elab Tactic Sym Std Internal.Do
 #eval do IO.println "== let-form + kfold_let_discharge"; (← IO.getStdout).flush
 #eval runBenchUsingTactic ``AddChainLet.Goal [``AddChainLet.chain]
   `(tactic| (intro k; vcgen -internalize)) `(tactic| kfold_let_discharge) [40, 80, 160, 320, 640]
+
+#eval do IO.println "== let-form + simplifying_assumptions + sorry"; (← IO.getStdout).flush
+#eval runBenchUsingTactic ``AddChainLet.Goal [``AddChainLet.chain]
+  `(tactic| (intro k; vcgen -internalize simplifying_assumptions)) `(tactic| sorry) [40, 80, 160, 320, 640]
+
+#eval do IO.println "== let-form + simplifying_assumptions + kfold_let_discharge"; (← IO.getStdout).flush
+#eval runBenchUsingTactic ``AddChainLet.Goal [``AddChainLet.chain]
+  `(tactic| (intro k; vcgen -internalize simplifying_assumptions)) `(tactic| kfold_let_discharge) [40, 80, 160, 320, 640]
+
+#eval do IO.println "== let-form + simplifying_assumptions + bv_decide"; (← IO.getStdout).flush
+#eval runBenchUsingTactic ``AddChainLet.Goal [``AddChainLet.chain]
+  `(tactic| (intro k; vcgen -internalize simplifying_assumptions)) `(tactic| bv_decide) [40, 80, 160, 320, 640]
