@@ -10,6 +10,7 @@ import Kraken.Mem
 attribute [-instance] BitVec.instNatCast
 attribute [-instance] BitVec.instIntCast
 instance : Coe Bool Nat where coe := Bool.toNat
+instance {n : Nat} : Coe Bool (BitVec n) where coe := fun b => BitVec.ofNat n b.toNat
 
 def BitVec.unsigned {w} (x : BitVec w) : Int := x.toNat
 def BitVec.signed {w} (x : BitVec w) : Int := x.toInt
@@ -54,14 +55,16 @@ structure Reg64s where
   r15 : UInt64 := 0
   deriving Repr, BEq, DecidableEq, Hashable, Hashable, Lean.ToExpr
 
-def Reg64s.get64 (s : Reg64s) (r : Reg64) : Width.W64.type := UInt64.toBitVec (match r with
+/-- The 64-bit register file is stated at the literal width, so a read's bits
+carry `64` rather than an unreduced `Width.bits`. -/
+def Reg64s.get64 (s : Reg64s) (r : Reg64) : Bv 64 := .ofBitVec (UInt64.toBitVec (match r with
   | .rax => s.rax | .rbx => s.rbx | .rcx => s.rcx | .rdx => s.rdx
   | .rsi => s.rsi | .rdi => s.rdi | .rsp => s.rsp | .rbp => s.rbp
   | .r8  => s.r8  | .r9  => s.r9  | .r10 => s.r10 | .r11 => s.r11
-  | .r12 => s.r12 | .r13 => s.r13 | .r14 => s.r14 | .r15 => s.r15)
+  | .r12 => s.r12 | .r13 => s.r13 | .r14 => s.r14 | .r15 => s.r15))
 
-def Reg64s.set64 (regs : Reg64s) (r : Reg64) (v : Width.W64.type) : Reg64s :=
-  let  v := UInt64.ofBitVec v
+def Reg64s.set64 (regs : Reg64s) (r : Reg64) (v : Bv 64) : Reg64s :=
+  let  v := UInt64.ofBitVec v.toBitVec
   match r with
   | .rax => { regs with rax := v } | .rbx => { regs with rbx := v }
   | .rcx => { regs with rcx := v } | .rdx => { regs with rdx := v }
@@ -73,15 +76,16 @@ def Reg64s.set64 (regs : Reg64s) (r : Reg64) (v : Width.W64.type) : Reg64s :=
   | .r14 => { regs with r14 := v } | .r15 => { regs with r15 := v }
 
 def Reg64s.get (s : Reg64s) {w} (r : Reg w) : w.type :=
-  ((s.get64 r.base).drop r.offset).take w.bits
+  .ofBitVec (((s.get64 r.base).toBitVec.drop r.offset).take w.bits)
   -- BitVec because it may be signed or unsigned depending on context
 
 def Reg64s.set (s : Reg64s) {w} (r : Reg w) (v : w.type) : Reg64s := match r with
   | .low r .W64 => s.set64 r v
-  | .low r .W32 => s.set64 r (v.zeroExtend _)
-  | .low r w => s.set64 r ((s.get64 r).replaceLow v)
-  | .ah | .bh | .ch | .dh => let old := s.get64 r.base;
-    s.set64 r.base (old.replaceLow (BitVec.append v (s.get (.low r.base .W8))))
+  | .low r .W32 => s.set64 r (.ofBitVec (v.toBitVec.zeroExtend _))
+  | .low r w => s.set64 r (.ofBitVec ((s.get64 r).toBitVec.replaceLow v.toBitVec))
+  | .ah | .bh | .ch | .dh => let old := (s.get64 r.base).toBitVec;
+    s.set64 r.base (.ofBitVec
+      (old.replaceLow (BitVec.append v.toBitVec (s.get (.low r.base .W8)).toBitVec)))
 
 def ZmmValue : Type := BitVec 512
   deriving Repr, BEq, DecidableEq, Hashable, Hashable, Lean.ToExpr
@@ -209,7 +213,7 @@ def BitVec.toAddressSize (w: BitVec 64): BitVec address_size.address_size.bits :
 
 -- A load inside the mapped data memory returns the stored value. Outside it,
 -- straightline execution throws: MMIO and other nonmemory effects are not modeled.
-def MachineData.load (addr : BitVec 64) (w : Width) : X64M w.type := do
+def MachineData.load (addr : BitVec 64) (w : Width) : X64M (BitVec w.bits) := do
   let s ← get
   match Mem.loadInt s.dmem addr w.bytes with
   | .some i => pure (.ofInt _ i)
@@ -221,7 +225,7 @@ def MachineData.loadAvx (addr : BitVec 64) (w : AvxWidth) : X64M w.type := do
   | .some i => pure (.ofInt _ i)
   | .none => throw (.unimplemented "AVX nonmem load not supported")
 
-def MachineData.store (addr : BitVec 64) {w : Width} (v : w.type) : X64M Unit := do
+def MachineData.store (addr : BitVec 64) {w : Width} (v : BitVec w.bits) : X64M Unit := do
   let s ← get
   match Mem.loadInt s.dmem addr w.bytes with
   | .some _ => set { s with dmem := Mem.storeInt s.dmem addr w.bytes v.toInt }
@@ -243,20 +247,20 @@ def ConstExpr.interp : ConstExpr → Std.Rco _root_.Int64 → _root_.Int64
 
 def AddrExpr.interp (a : AddrExpr) (s : Reg64s) (p : Std.Rco Int64) :=
   let base := match a.base with
-              | .some (.reg r) => ((s.get64 r).toAddressSize address_size).signed
+              | .some (.reg r) => ((s.get64 r).toBitVec.toAddressSize address_size).signed
               | .some .rip => p.upper.toInt
               | .none => 0
   let idx := match a.idx with
-             | .some ⟨r, c⟩ => ((s.get64 r).toAddressSize address_size).signed * c.bytes
+             | .some ⟨r, c⟩ => ((s.get64 r).toBitVec.toAddressSize address_size).signed * c.bytes
              | .none => 0
   BitVec.ofInt address_size.address_size.bits (base + idx + (a.disp.interp labels p).toInt)
 
-def Reg.interp {w} (r : Reg w) : X64M w.type := do
-  return (← get).regs.get r
+def Reg.interp {w} (r : Reg w) : X64M (BitVec w.bits) := do
+  return ((← get).regs.get r).toBitVec
 
-def RegOrMem.interp {w} (o : RegOrMem w) (p : Std.Rco Int64) : X64M w.type := do
+def RegOrMem.interp {w} (o : RegOrMem w) (p : Std.Rco Int64) : X64M (BitVec w.bits) := do
   match o with
-  | .reg r => return (← get).regs.get r
+  | .reg r => return ((← get).regs.get r).toBitVec
   | .mem a => MachineData.load ((a.interp labels address_size (← get).regs p).zeroExtend _) w
 
 def AvxRegOrMem.interp {w} (o : AvxRegOrMem w) (p : Std.Rco Int64) : X64M w.type := do
@@ -273,9 +277,9 @@ def MachineData.setAvxReg (s : MachineData) {w : AvxWidth} (r : AvxReg w) (v : w
 def MachineData.setAvxLegacyReg (s : MachineData) {w : AvxWidth} (r : AvxReg w) (v : w.type) : MachineData :=
   { s with zmms := s.zmms.setLegacy r v }
 
-def MachineData.set {w} (d : Dst w) (v : w.type) (p : Std.Rco Int64) : X64M Unit := do
+def MachineData.set {w} (d : Dst w) (v : BitVec w.bits) (p : Std.Rco Int64) : X64M Unit := do
   match d with
-  | .reg r => modify (·.setReg r v)
+  | .reg r => modify (·.setReg r (.ofBitVec v))
   | .mem a => MachineData.store ((a.interp labels address_size (← get).regs p).zeroExtend _) v
 
 def MachineData.setAvx {aw} (d : AvxDst aw) (v : aw.type) (p : Std.Rco Int64) : X64M Unit := do
@@ -288,7 +292,7 @@ def MachineData.setAvxLegacy {w} (d : AvxDst w) (v : w.type) (p : Std.Rco Int64)
   | .avx r => modify (·.setAvxLegacyReg r v)
   | .mem a => MachineData.storeAvx ((a.interp labels address_size (← get).regs p).zeroExtend _) v
 
-def Operand.interp {w} (o : Operand w) (p : Std.Rco Int64) : X64M w.type := do
+def Operand.interp {w} (o : Operand w) (p : Std.Rco Int64) : X64M (BitVec w.bits) := do
   match o with
   | .regOrMem rm => rm.interp labels address_size p
   | .imm v => pure ((v.interp labels p).toBitVec.truncate _)
@@ -310,7 +314,7 @@ def ShiftCountExpr.interpMasked (c : ShiftCountExpr) (s : MachineData) (p : Std.
 def RelRegOrMem.interp (o : RelRegOrMem) (p : Std.Rco Int64) : X64M (BitVec 64) := do
   match o with
   | .rel c => pure (p.upper + c.interp labels p).toBitVec
-  | .reg r => return (← get).regs.get r
+  | .reg r => return ((← get).regs.get r).toBitVec
   | .mem a => MachineData.load ((a.interp labels address_size (← get).regs p).zeroExtend _) .W64
 
 structure StatusFlags.from_result.Remaining where
@@ -350,25 +354,25 @@ def Operation.interp {w} (i : Operation w) (p : Std.Rco Int64) : X64M Unit := do
   | .push src =>
     let v ← src.interp labels address_size p
     let s ← get
-    let rsp := s.regs.get64 .rsp - w.bytesv
-    set { s with regs := s.regs.set64 .rsp rsp }
+    let rsp := (s.regs.get64 .rsp).toBitVec - w.bytesv
+    set { s with regs := s.regs.set64 .rsp (.ofBitVec rsp) }
     MachineData.store rsp v
   | .pop dst =>
-    let rsp := (← get).regs.get64 .rsp
+    let rsp := ((← get).regs.get64 .rsp).toBitVec
     let val ← MachineData.load rsp w
-    modify (fun s => { s with regs := s.regs.set64 .rsp (rsp + w.bytesv) })
+    modify (fun s => { s with regs := s.regs.set64 .rsp (.ofBitVec (rsp + w.bytesv)) })
     MachineData.set labels address_size dst val p
   | .setcc cc dst =>
     MachineData.set labels address_size dst (cc.interp (← get).status) p
   | .cmovcc cc dst src =>
     let src ← src.interp labels address_size p
     let s ← get
-    let v := if cc.interp s.status then src else s.regs.get dst
-    set (s.setReg dst v)
+    let v := if cc.interp s.status then src else (s.regs.get dst).toBitVec
+    set (s.setReg dst (.ofBitVec v))
 -- Arithmetic
   | .lea dst src =>
     let s ← get
-    set (s.setReg dst ((src.interp labels address_size s.regs p).zeroExtend _))
+    set (s.setReg dst (.ofBitVec ((src.interp labels address_size s.regs p).zeroExtend _)))
   | .add dst src =>
     let a ← src.interp labels address_size p
     let b ← dst.interp labels address_size p
@@ -393,17 +397,17 @@ def Operation.interp {w} (i : Operation w) (p : Std.Rco Int64) : X64M Unit := do
   | .adcx dst src =>
     let a ← src.interp labels address_size p
     let s ← get
-    let b := s.regs.get dst
+    let b := (s.regs.get dst).toBitVec
     let v := a + b + s.status.cf
     let cf := v.unsigned != a.unsigned + b.unsigned + s.status.cf
-    set { s with regs := s.regs.set dst v, status := { s.status with cf := cf } }
+    set { s with regs := s.regs.set dst (.ofBitVec v), status := { s.status with cf := cf } }
   | .adox dst src =>
     let a ← src.interp labels address_size p
     let s ← get
-    let b := s.regs.get dst
+    let b := (s.regs.get dst).toBitVec
     let v := a + b + s.status.of
     let of := v.unsigned != a.unsigned + b.unsigned + s.status.of
-    set { s with regs := s.regs.set dst v, status := { s.status with of := of } }
+    set { s with regs := s.regs.set dst (.ofBitVec v), status := { s.status with of := of } }
   | .inc dst =>
     let a ← dst.interp labels address_size p
     let cf := (← get).status.cf
@@ -466,22 +470,23 @@ def Operation.interp {w} (i : Operation w) (p : Std.Rco Int64) : X64M Unit := do
   | .mulx r_hi r_lo src1 =>
     let a ← src1.interp labels address_size p
     let s ← get
-    let b := s.regs.get (.low .rdx w)
+    let b := (s.regs.get (.low .rdx w)).toBitVec
     let v := a.unsigned * b.unsigned
-    modify (fun s => (s.setReg r_lo (.ofInt _ v)).setReg r_hi (.ofInt _ (v >>> w.bits)))
+    modify (fun s =>
+      (s.setReg r_lo (.ofBitVec (.ofInt _ v))).setReg r_hi (.ofBitVec (.ofInt _ (v >>> w.bits))))
   | .not dst =>
     let a ← dst.interp labels address_size p
     MachineData.set labels address_size dst (~~~a) p
   | .bswap dst =>
-    let a := (← get).regs.get dst
+    let a := ((← get).regs.get dst).toBitVec
     match w with
     | .W32 =>
       let v := a.take 8 ++ a.extractLsb' 8 8 ++ a.extractLsb' 16 8 ++ a.drop 24
-      modify (fun s => s.setReg dst (v.setWidth _))
+      modify (fun s => s.setReg dst (.ofBitVec (v.setWidth _)))
     | .W64 =>
       let v := a.take 8 ++ a.extractLsb' 8 8 ++ a.extractLsb' 16 8 ++ a.extractLsb' 24 8
             ++ a.extractLsb' 32 8 ++ a.extractLsb' 40 8 ++ a.extractLsb' 48 8 ++ a.drop 56
-      modify (fun s => s.setReg dst (v.setWidth _))
+      modify (fun s => s.setReg dst (.ofBitVec (v.setWidth _)))
     | _ => throw .undefinedFlags -- TODO: model undefined flags for bswap on W8/W16
   | .jcc cc l =>
     if cc.interp (← get).status
@@ -493,14 +498,14 @@ def Operation.interp {w} (i : Operation w) (p : Std.Rco Int64) : X64M Unit := do
   | .call tgt =>
     let a ← tgt.interp labels address_size p
     let s ← get
-    let rsp := s.regs.get64 .rsp - Width.W64.bytesv
-    set { s with regs := s.regs.set64 .rsp rsp }
+    let rsp := (s.regs.get64 .rsp).toBitVec - Width.W64.bytesv
+    set { s with regs := s.regs.set64 .rsp (.ofBitVec rsp) }
     MachineData.store rsp (w := .W64) p.upper.toBitVec
     throw (.jump (.ofBitVec a))
   | .ret =>
-    let rsp := (← get).regs.get64 .rsp
+    let rsp := ((← get).regs.get64 .rsp).toBitVec
     let ra ← MachineData.load rsp .W64
-    modify (fun s => { s with regs := s.regs.set64 .rsp (rsp + 8) })
+    modify (fun s => { s with regs := s.regs.set64 .rsp (.ofBitVec (rsp + 8)) })
     throw (.jump (.ofBitVec ra))
   | nop _ | nopalign _ _ => pure ()
   -- TODO: the following instructions leave some status flags undefined; the
