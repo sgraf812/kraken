@@ -35,6 +35,10 @@ set_option grind.warning false
 @[simp] theorem StatusFlags.from_result.Remaining.cf_mk (c a o : Bool) :
     (StatusFlags.from_result.Remaining.mk c a o).cf = c := rfl
 
+@[simp, grind =] theorem StatusFlags.zf_from_result {w} (v : BitVec w)
+    (f : StatusFlags.from_result.Remaining) :
+    (StatusFlags.from_result v f).zf = (v == BitVec.zero w) := rfl
+
 /-! ## Register identity as a number
 
 The state-simplification pass reduces ground terms of the builtin types, so a
@@ -229,6 +233,53 @@ def movRM (dst : Reg64) (a : Addr) : X64M Unit := do
   let i ← loadIntM s.dmem (a.eval s.regs)
   modify fun s => s.setReg (.low dst .W64) (.ofBitVec (BitVec.ofInt 64 i))
 
+def xorRR (rd rs : Reg64) : X64M Unit :=
+  modify fun s =>
+    let v := (s.regs.get64 rd).toBitVec ^^^ (s.regs.get64 rs).toBitVec
+    let status := StatusFlags.from_result v { cf := false, af := false, of := false }
+    { s with status }.setReg (.low rd .W64) (.ofBitVec v)
+
+/-- Fall through when `ZF` is set, jump to `l` otherwise. The taken branch leaves
+the state monad through the `jump` exit; the fall-through is a `pure ()`. -/
+def jnz (l : Int64) : X64M Unit := do
+  let s ← get
+  if s.status.zf then pure () else throw (.jump l)
+
+/-- Push the 64-bit register `r`: decrement `rsp` by 8 and store the source at the
+new top of stack, in one record update of the pre-state. -/
+def pushR (r : Reg64) : X64M Unit := do
+  let s ← get
+  checkMapped s.dmem ((s.regs.get64 .rsp).toBitVec - 8#64)
+  modify fun s =>
+    let rsp := (s.regs.get64 .rsp).toBitVec - 8#64
+    { s with
+      regs := s.regs.set64 .rsp (.ofBitVec rsp)
+      dmem := Mem.storeInt s.dmem rsp 8 (s.regs.get64 r).toBitVec.toInt }
+
+/-- Pop into the 64-bit register `dst`: load from the top of stack, then increment
+`rsp` by 8 and write the loaded value. -/
+def popR (dst : Reg64) : X64M Unit := do
+  let s ← get
+  let i ← loadIntM s.dmem (s.regs.get64 .rsp).toBitVec
+  modify fun s =>
+    let regs := (s.regs.set64 .rsp (.ofBitVec ((s.regs.get64 .rsp).toBitVec + 8#64))).set64 dst (.ofBitVec (BitVec.ofInt 64 i))
+    { s with regs }
+
+/-- Add a memory operand into the 64-bit register `dst`: load the source from `a`
+and add it to `dst`, with the status-flag effects of `add`. -/
+def addRM (dst : Reg64) (a : Addr) : X64M Unit := do
+  let s ← get
+  let x ← loadIntM s.dmem (a.eval s.regs)
+  modify fun s =>
+    let av := BitVec.ofInt 64 x
+    let bv := (s.regs.get64 dst).toBitVec
+    let v := av + bv
+    let status := StatusFlags.from_result v
+      { cf := v.unsigned != av.unsigned + bv.unsigned,
+        af := (v.take 4).unsigned != (av.take 4).unsigned + (bv.take 4).unsigned,
+        of := v.signed != av.signed + bv.signed }
+    { s with status }.setReg (.low dst .W64) (.ofBitVec v)
+
 end Op
 
 /-! ## Register instruction triples
@@ -309,6 +360,28 @@ variable (Q : Unit → MachineData → Prop) (E : X64Exit → MachineData → Pr
       Op.lea dst a ⦃ Q; E ⦄ := by
   apply Triple.intro; intro s h; simp only [Op.lea]; exact h
 
+@[spec] theorem Op.xorRR_spec (rd rs : Reg64) :
+    ⦃ fun s =>
+        Q () { s with
+            regs := s.regs.set64 rd
+              (.ofBitVec ((s.regs.get64 rd).toBitVec ^^^ (s.regs.get64 rs).toBitVec))
+            status := StatusFlags.from_result
+              ((s.regs.get64 rd).toBitVec ^^^ (s.regs.get64 rs).toBitVec)
+              { cf := false, af := false, of := false } } ⦄
+      Op.xorRR rd rs ⦃ Q; E ⦄ := by
+  apply Triple.intro; intro s h; simp only [Op.xorRR]; exact h
+
+set_option linter.unusedSimpArgs false in
+@[spec] theorem Op.jnz_spec (l : Int64) :
+    ⦃ fun s => if s.status.zf then Q () s else E (X64Exit.jump l) s ⦄
+      Op.jnz l ⦃ Q; E ⦄ := by
+  apply Triple.intro; intro s h
+  cases hz : s.status.zf <;>
+    simp only [Op.jnz, wp, WP.wpTrans, bind, EStateM.bind, get, getThe,
+      MonadStateOf.get, EStateM.get, hz, EStateM.pure, EStateM.throw,
+      Bool.false_eq_true, if_false, if_true, reduceIte] at h ⊢ <;>
+    exact h
+
 end
 
 /-! ## Memory instruction triples
@@ -368,6 +441,56 @@ variable (Q : Unit → MachineData → Prop) (E : X64Exit → MachineData → Pr
   rw [meet_prop_eq_and] at hs
   obtain ⟨h, hq⟩ := hs
   simp only [Op.movRM, Op.loadIntM, wp, WP.wpTrans, bind, EStateM.bind, pure, EStateM.pure,
+    get, getThe, MonadStateOf.get, EStateM.get, modify, modifyGet, MonadStateOf.modifyGet,
+    EStateM.modifyGet, h]
+  exact hq
+
+@[spec] theorem Op.pushR_spec (r : Reg64) (v : Int) :
+    ⦃ fun s => (Mem.loadInt s.dmem ((s.regs.get64 .rsp).toBitVec - 8#64) 8 = some v) ⊓
+        Q () { s with
+          regs := s.regs.set64 .rsp (.ofBitVec ((s.regs.get64 .rsp).toBitVec - 8#64))
+          dmem := Mem.storeInt s.dmem ((s.regs.get64 .rsp).toBitVec - 8#64) 8
+            (s.regs.get64 r).toBitVec.toInt } ⦄
+      Op.pushR r ⦃ Q; E ⦄ := by
+  apply Triple.intro; intro s hs
+  rw [meet_prop_eq_and] at hs
+  obtain ⟨h, hq⟩ := hs
+  simp only [Op.pushR, Op.checkMapped, wp, WP.wpTrans, bind, EStateM.bind, pure, EStateM.pure,
+    get, getThe, MonadStateOf.get, EStateM.get, modify, modifyGet, MonadStateOf.modifyGet,
+    EStateM.modifyGet, h]
+  exact hq
+
+@[spec] theorem Op.popR_spec (dst : Reg64) (v : Int) :
+    ⦃ fun s => (Mem.loadInt s.dmem (s.regs.get64 .rsp).toBitVec 8 = some v) ⊓
+        Q () { s with regs := (s.regs.set64 .rsp (.ofBitVec ((s.regs.get64 .rsp).toBitVec + 8#64))).set64 dst (.ofBitVec (BitVec.ofInt 64 v)) } ⦄
+      Op.popR dst ⦃ Q; E ⦄ := by
+  apply Triple.intro; intro s hs
+  rw [meet_prop_eq_and] at hs
+  obtain ⟨h, hq⟩ := hs
+  simp only [Op.popR, Op.loadIntM, wp, WP.wpTrans, bind, EStateM.bind, pure, EStateM.pure,
+    get, getThe, MonadStateOf.get, EStateM.get, modify, modifyGet, MonadStateOf.modifyGet,
+    EStateM.modifyGet, h]
+  exact hq
+
+@[spec] theorem Op.addRM_spec (dst : Reg64) (a : Addr) (v : Int) :
+    ⦃ fun s => (Mem.loadInt s.dmem (a.eval s.regs) 8 = some v) ⊓
+        Q () { s with
+            regs := s.regs.set64 dst
+              (.ofBitVec (BitVec.ofInt 64 v + (s.regs.get64 dst).toBitVec))
+            status := StatusFlags.from_result
+              (BitVec.ofInt 64 v + (s.regs.get64 dst).toBitVec)
+              { cf := (BitVec.ofInt 64 v + (s.regs.get64 dst).toBitVec).unsigned
+                  != (BitVec.ofInt 64 v).unsigned + (s.regs.get64 dst).toBitVec.unsigned,
+                af := ((BitVec.ofInt 64 v + (s.regs.get64 dst).toBitVec).take 4).unsigned
+                  != ((BitVec.ofInt 64 v).take 4).unsigned
+                    + ((s.regs.get64 dst).toBitVec.take 4).unsigned,
+                of := (BitVec.ofInt 64 v + (s.regs.get64 dst).toBitVec).signed
+                  != (BitVec.ofInt 64 v).signed + (s.regs.get64 dst).toBitVec.signed } } ⦄
+      Op.addRM dst a ⦃ Q; E ⦄ := by
+  apply Triple.intro; intro s hs
+  rw [meet_prop_eq_and] at hs
+  obtain ⟨h, hq⟩ := hs
+  simp only [Op.addRM, Op.loadIntM, wp, WP.wpTrans, bind, EStateM.bind, pure, EStateM.pure,
     get, getThe, MonadStateOf.get, EStateM.get, modify, modifyGet, MonadStateOf.modifyGet,
     EStateM.modifyGet, h]
   exact hq
