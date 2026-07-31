@@ -1,2 +1,2 @@
 import KrakenTactics.ClearDead
-import KrakenTactics.Discharge
+import KrakenTactics.Fold

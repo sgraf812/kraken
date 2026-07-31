@@ -5,7 +5,7 @@ The program is a recursive function of `n`, so a benchmark run elaborates and
 compiles a fixed amount of source no matter the size, and the driver reports
 stepping, discharge and kernel time separately.
 -/
-import Kraken.AccessorSpecs
+import Kraken.Specs
 import Std.Tactic.BVDecide
 
 open Std.Internal.Do

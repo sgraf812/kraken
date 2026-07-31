@@ -1,12 +1,17 @@
 /-
-Per-instruction monadic actions over `X64M` and their accessor-style `@[spec]`
-triples, plus the register read-over-write API used to discharge the benchmark
-postconditions.
+Per-instruction monadic actions over `X64M` and their `@[spec]` triples, plus
+the register read-over-write API the benchmark postconditions are discharged
+with.
 
 The instruction bodies are the direct monadic transliterations of the
 corresponding cases of `Operation.interp` in `Kraken/Semantics.lean`, including
 the status-flag effects. Formal adequacy of these actions with respect to the
 straightline interpreter is out of scope here.
+
+Every triple applies the postcondition directly to the post-state, written as a
+record update of the pre-state. A program's verification condition therefore
+carries its state chain as nested record literals, with no state variables and
+no component equations.
 -/
 import Kraken.OmniSemantics
 import Kraken.GrindFold
@@ -27,11 +32,30 @@ set_option grind.warning false
     (f : StatusFlags.from_result.Remaining) :
     (StatusFlags.from_result v f).cf = f.cf := rfl
 
+@[simp] theorem StatusFlags.from_result.Remaining.cf_mk (c a o : Bool) :
+    (StatusFlags.from_result.Remaining.mk c a o).cf = c := rfl
+
+/-! ## Register identity as a number
+
+The state-simplification pass reduces ground terms of the builtin types, so a
+read-over-write condition is stated between register indices: the index of a
+named register is a numeral, and the pass decides the comparison and takes the
+branch. -/
+
+def Reg64.idx : Reg64 → Nat
+  | .rax => 0  | .rbx => 1  | .rcx => 2  | .rdx => 3
+  | .rsi => 4  | .rdi => 5  | .rsp => 6  | .rbp => 7
+  | .r8  => 8  | .r9  => 9  | .r10 => 10 | .r11 => 11
+  | .r12 => 12 | .r13 => 13 | .r14 => 14 | .r15 => 15
+
+theorem Reg64.eq_eq_idx_eq (r r' : Reg64) : (r = r') = (r.idx = r'.idx) := by
+  cases r <;> cases r' <;> simp [Reg64.idx]
+
 /-! ## Register read-over-write API
 
 Register reads are characterized by rewriting, so discharging queries only the
-registers the postcondition mentions and the state chain is never unfolded into
-record literals. -/
+registers the postcondition mentions and a state literal's register file is
+never unfolded. -/
 
 @[simp, grind =] theorem Reg64s.get64_set64 (s : Reg64s) (r r' : Reg64) (v : Bv 64) :
     (s.set64 r v).get64 r' = if r' = r then v else s.get64 r' := by
@@ -81,6 +105,8 @@ record literals. -/
     (s.set64 r v).rsi = if r = .rsi then .ofBitVec v.toBitVec else s.rsi := by cases r <;> simp [Reg64s.set64]
 @[simp, grind =] theorem Reg64s.rdi_set64 (s : Reg64s) (r : Reg64) (v : Bv 64) :
     (s.set64 r v).rdi = if r = .rdi then .ofBitVec v.toBitVec else s.rdi := by cases r <;> simp [Reg64s.set64]
+@[simp, grind =] theorem Reg64s.rsp_set64 (s : Reg64s) (r : Reg64) (v : Bv 64) :
+    (s.set64 r v).rsp = if r = .rsp then .ofBitVec v.toBitVec else s.rsp := by cases r <;> simp [Reg64s.set64]
 @[simp, grind =] theorem Reg64s.rbp_set64 (s : Reg64s) (r : Reg64) (v : Bv 64) :
     (s.set64 r v).rbp = if r = .rbp then .ofBitVec v.toBitVec else s.rbp := by cases r <;> simp [Reg64s.set64]
 @[simp, grind =] theorem Reg64s.r8_set64 (s : Reg64s) (r : Reg64) (v : Bv 64) :
@@ -100,52 +126,31 @@ record literals. -/
 @[simp, grind =] theorem Reg64s.r15_set64 (s : Reg64s) (r : Reg64) (v : Bv 64) :
     (s.set64 r v).r15 = if r = .r15 then .ofBitVec v.toBitVec else s.r15 := by cases r <;> simp [Reg64s.set64]
 
-/-! ## Data-memory writer
-
-The dual of `MachineData.setReg` for the data memory, with its own read-over-write
-projections so the state chain after a store stays an atom characterized by
-equations. -/
-
-def MachineData.setDmem (s : MachineData) (d : DataMem) : MachineData := { s with dmem := d }
-
-@[simp, grind =] theorem MachineData.dmem_setDmem (s : MachineData) (d : DataMem) :
-    (s.setDmem d).dmem = d := rfl
-@[simp, grind =] theorem MachineData.regs_setDmem (s : MachineData) (d : DataMem) :
-    (s.setDmem d).regs = s.regs := rfl
-@[simp, grind =] theorem MachineData.status_setDmem (s : MachineData) (d : DataMem) :
-    (s.setDmem d).status = s.status := rfl
-@[simp, grind =] theorem MachineData.zmms_setDmem (s : MachineData) (d : DataMem) :
-    (s.setDmem d).zmms = s.zmms := rfl
-
 /-! ## Explicit addressing
 
 A memory operand as a base register, an optional scaled index register, and a
 displacement. `Addr.eval` is the 64-bit effective address, matching
 `AddrExpr.interp` at address size 64 (register components are signed, the scale
-multiplies the index, the sum is reduced modulo `2^64`). -/
+multiplies the index, the sum is reduced modulo `2^64`). It takes the register
+file, so a store address stays syntactically comparable to a later load address
+across the intervening data-memory write. -/
 
 structure Addr where
   base : Reg64
   index : Option (Reg64 × Int64) := none
   disp : Int64 := 0
 
-def Addr.eval (a : Addr) (s : MachineData) : BitVec 64 :=
-  let base := (s.regs.get64 a.base).toBitVec.toInt
+def Addr.eval (a : Addr) (regs : Reg64s) : BitVec 64 :=
+  let base := (regs.get64 a.base).toBitVec.toInt
   let idx := match a.index with
-    | some (r, scale) => (s.regs.get64 r).toBitVec.toInt * scale.toInt
+    | some (r, scale) => (regs.get64 r).toBitVec.toInt * scale.toInt
     | none => 0
   BitVec.ofInt 64 (base + idx + a.disp.toInt)
-
-/-- The effective address depends only on the register file, so a data-memory
-write leaves it unchanged: a store address stays comparable to a later load
-address across the intervening `setDmem`. -/
-@[simp, grind =] theorem Addr.eval_setDmem (a : Addr) (s : MachineData) (d : DataMem) :
-    a.eval (s.setDmem d) = a.eval s := rfl
 
 /-! ## Per-instruction monadic actions
 
 Each register action is a single `modify`; the memory actions read the current
-state, compute the effective address, and delegate to `MachineData.load`/`store`.
+state, compute the effective address, and go through `Mem.loadInt`/`Mem.storeInt`.
 Each body is the transliteration of the matching `Operation.interp` case (flag
 effects included). The benchmark programs are do blocks of these actions. -/
 namespace Op
@@ -190,7 +195,7 @@ def adcRR (rd rs : Reg64) : X64M Unit :=
     { s with status }.setReg (.low rd .W64) (.ofBitVec v)
 
 def lea (dst : Reg64) (a : Addr) : X64M Unit :=
-  modify fun s => s.setReg (.low dst .W64) (.ofBitVec (a.eval s))
+  modify fun s => s.setReg (.low dst .W64) (.ofBitVec (a.eval s.regs))
 
 /-- Read an 8-byte integer from `m` at `addr`, throwing on an unmapped address.
 The data memory and address are explicit so the mapped-ness witness is a spec
@@ -209,113 +214,174 @@ def checkMapped (m : DataMem) (addr : BitVec 64) : X64M Unit := do
 
 def movMI (a : Addr) (i : Int64) : X64M Unit := do
   let s ← get
-  checkMapped s.dmem (a.eval s)
-  modify fun s => s.setDmem (Mem.storeInt s.dmem (a.eval s) 8 (BitVec.setWidth 64 i.toBitVec).toInt)
+  checkMapped s.dmem (a.eval s.regs)
+  modify fun s =>
+    { s with dmem := Mem.storeInt s.dmem (a.eval s.regs) 8 (BitVec.setWidth 64 i.toBitVec).toInt }
 
 def movMR (a : Addr) (src : Reg64) : X64M Unit := do
   let s ← get
-  checkMapped s.dmem (a.eval s)
-  modify fun s => s.setDmem (Mem.storeInt s.dmem (a.eval s) 8 (s.regs.get64 src).toBitVec.toInt)
+  checkMapped s.dmem (a.eval s.regs)
+  modify fun s =>
+    { s with dmem := Mem.storeInt s.dmem (a.eval s.regs) 8 (s.regs.get64 src).toBitVec.toInt }
 
 def movRM (dst : Reg64) (a : Addr) : X64M Unit := do
   let s ← get
-  let i ← loadIntM s.dmem (a.eval s)
+  let i ← loadIntM s.dmem (a.eval s.regs)
   modify fun s => s.setReg (.low dst .W64) (.ofBitVec (BitVec.ofInt 64 i))
 
 end Op
 
-/-! ## Accessor-style `@[spec]` triples
+/-! ## Register instruction triples
 
-The postcondition quantifies over a fresh post-state `sd'` characterized by
-component equations (only the register file and the carry flag, the parts the
-benchmark postconditions and later instructions read). Each transient wp goal
-then carries `sd'` as an atom with a handful of equations, rather than a nested
-state term. -/
+The post-state is a record literal, so a spec application leaves the state one
+record deep and every component the next instruction reads is a projection of a
+literal. -/
 
 section
 variable (Q : Unit → MachineData → Prop) (E : X64Exit → MachineData → Prop)
 
 @[spec] theorem Op.movRI_spec (r : Reg64) (i : Int64) :
-    ⦃ fun sd => ∀ sd' : MachineData,
-        sd'.regs = sd.regs.set64 r (.ofBitVec (BitVec.setWidth 64 i.toBitVec)) →
-        sd'.zmms = sd.zmms → sd'.status = sd.status → sd'.dmem = sd.dmem → Q () sd' ⦄
+    ⦃ fun s => Q () { s with regs := s.regs.set64 r (.ofBitVec (BitVec.setWidth 64 i.toBitVec)) } ⦄
       Op.movRI r i ⦃ Q; E ⦄ := by
-  apply Triple.intro; intro sd hsd; simp only [Op.movRI]; exact hsd _ rfl rfl rfl rfl
+  apply Triple.intro; intro s h; simp only [Op.movRI]; exact h
 
 @[spec] theorem Op.movRR_spec (rd rs : Reg64) :
-    ⦃ fun sd => ∀ sd' : MachineData,
-        sd'.regs = sd.regs.set64 rd (sd.regs.get64 rs) →
-        sd'.zmms = sd.zmms → sd'.status = sd.status → sd'.dmem = sd.dmem → Q () sd' ⦄
+    ⦃ fun s => Q () { s with regs := s.regs.set64 rd (s.regs.get64 rs) } ⦄
       Op.movRR rd rs ⦃ Q; E ⦄ := by
-  apply Triple.intro; intro sd hsd; simp only [Op.movRR]; exact hsd _ rfl rfl rfl rfl
+  apply Triple.intro; intro s h; simp only [Op.movRR]; exact h
 
 @[spec] theorem Op.decR_spec (r : Reg64) :
-    ⦃ fun sd => ∀ sd' : MachineData,
-        sd'.regs = sd.regs.set64 r (.ofBitVec ((sd.regs.get64 r).toBitVec - 1)) →
-        sd'.zmms = sd.zmms → sd'.dmem = sd.dmem → sd'.status.cf = sd.status.cf → Q () sd' ⦄
+    ⦃ fun s =>
+        Q () { s with
+            regs := s.regs.set64 r (.ofBitVec ((s.regs.get64 r).toBitVec - 1))
+            status := StatusFlags.from_result ((s.regs.get64 r).toBitVec - 1)
+              { cf := s.status.cf,
+                af := (((s.regs.get64 r).toBitVec - 1).take 4).unsigned
+                  != ((s.regs.get64 r).toBitVec.take 4).unsigned - 1,
+                of := ((s.regs.get64 r).toBitVec - 1).signed
+                  != (s.regs.get64 r).toBitVec.signed - 1 } } ⦄
       Op.decR r ⦃ Q; E ⦄ := by
-  apply Triple.intro; intro sd hsd; simp only [Op.decR]; exact hsd _ rfl rfl rfl rfl
+  apply Triple.intro; intro s h; simp only [Op.decR]; exact h
 
 @[spec] theorem Op.addRI_spec (r : Reg64) (i : Int64) :
-    ⦃ fun sd => ∀ sd' : MachineData,
-        sd'.regs = sd.regs.set64 r
-          (.ofBitVec (BitVec.setWidth 64 i.toBitVec + (sd.regs.get64 r).toBitVec)) →
-        sd'.zmms = sd.zmms → sd'.dmem = sd.dmem →
-        sd'.status.cf = ((BitVec.setWidth 64 i.toBitVec + (sd.regs.get64 r).toBitVec).unsigned
-          != (BitVec.setWidth 64 i.toBitVec).unsigned + (sd.regs.get64 r).toBitVec.unsigned) →
-        Q () sd' ⦄
+    ⦃ fun s =>
+        Q () { s with
+            regs := s.regs.set64 r
+              (.ofBitVec (BitVec.setWidth 64 i.toBitVec + (s.regs.get64 r).toBitVec))
+            status := StatusFlags.from_result
+              (BitVec.setWidth 64 i.toBitVec + (s.regs.get64 r).toBitVec)
+              { cf := (BitVec.setWidth 64 i.toBitVec + (s.regs.get64 r).toBitVec).unsigned
+                  != (BitVec.setWidth 64 i.toBitVec).unsigned
+                    + (s.regs.get64 r).toBitVec.unsigned,
+                af := ((BitVec.setWidth 64 i.toBitVec + (s.regs.get64 r).toBitVec).take 4).unsigned
+                  != ((BitVec.setWidth 64 i.toBitVec).take 4).unsigned
+                    + ((s.regs.get64 r).toBitVec.take 4).unsigned,
+                of := (BitVec.setWidth 64 i.toBitVec + (s.regs.get64 r).toBitVec).signed
+                  != (BitVec.setWidth 64 i.toBitVec).signed
+                    + (s.regs.get64 r).toBitVec.signed } } ⦄
       Op.addRI r i ⦃ Q; E ⦄ := by
-  apply Triple.intro; intro sd hsd; simp only [Op.addRI]; exact hsd _ rfl rfl rfl rfl
+  apply Triple.intro; intro s h; simp only [Op.addRI]; exact h
 
 @[spec] theorem Op.adcRR_spec (rd rs : Reg64) :
-    ⦃ fun sd => ∀ sd' : MachineData,
-        sd'.regs = sd.regs.set64 rd (.ofBitVec ((sd.regs.get64 rs).toBitVec
-          + (sd.regs.get64 rd).toBitVec + BitVec.ofNat 64 sd.status.cf.toNat)) →
-        sd'.zmms = sd.zmms → sd'.dmem = sd.dmem →
-        sd'.status.cf = (((sd.regs.get64 rs).toBitVec + (sd.regs.get64 rd).toBitVec
-            + BitVec.ofNat 64 sd.status.cf.toNat).unsigned
-          != (sd.regs.get64 rs).toBitVec.unsigned + (sd.regs.get64 rd).toBitVec.unsigned
-            + sd.status.cf.toNat) →
-        Q () sd' ⦄
+    ⦃ fun s =>
+        Q () { s with
+            regs := s.regs.set64 rd (.ofBitVec ((s.regs.get64 rs).toBitVec
+              + (s.regs.get64 rd).toBitVec + BitVec.ofNat 64 s.status.cf.toNat))
+            status := StatusFlags.from_result ((s.regs.get64 rs).toBitVec
+                + (s.regs.get64 rd).toBitVec + BitVec.ofNat 64 s.status.cf.toNat)
+              { cf := ((s.regs.get64 rs).toBitVec + (s.regs.get64 rd).toBitVec
+                    + BitVec.ofNat 64 s.status.cf.toNat).unsigned
+                  != (s.regs.get64 rs).toBitVec.unsigned + (s.regs.get64 rd).toBitVec.unsigned
+                    + s.status.cf.toNat,
+                af := (((s.regs.get64 rs).toBitVec + (s.regs.get64 rd).toBitVec
+                    + BitVec.ofNat 64 s.status.cf.toNat).take 4).unsigned
+                  != ((s.regs.get64 rs).toBitVec.take 4).unsigned
+                    + ((s.regs.get64 rd).toBitVec.take 4).unsigned + s.status.cf.toNat,
+                of := ((s.regs.get64 rs).toBitVec + (s.regs.get64 rd).toBitVec
+                    + BitVec.ofNat 64 s.status.cf.toNat).signed
+                  != (s.regs.get64 rs).toBitVec.signed + (s.regs.get64 rd).toBitVec.signed
+                    + s.status.cf.toNat } } ⦄
       Op.adcRR rd rs ⦃ Q; E ⦄ := by
-  apply Triple.intro; intro sd hsd; simp only [Op.adcRR]; exact hsd _ rfl rfl rfl rfl
+  apply Triple.intro; intro s h; simp only [Op.adcRR]; exact h
 
 @[spec] theorem Op.lea_spec (dst : Reg64) (a : Addr) :
-    ⦃ fun sd => ∀ sd' : MachineData,
-        sd'.regs = sd.regs.set64 dst (.ofBitVec (a.eval sd)) →
-        sd'.zmms = sd.zmms → sd'.status = sd.status → sd'.dmem = sd.dmem → Q () sd' ⦄
+    ⦃ fun s => Q () { s with regs := s.regs.set64 dst (.ofBitVec (a.eval s.regs)) } ⦄
       Op.lea dst a ⦃ Q; E ⦄ := by
-  apply Triple.intro; intro sd hsd; simp only [Op.lea]; exact hsd _ rfl rfl rfl rfl
+  apply Triple.intro; intro s h; simp only [Op.lea]; exact h
 
 end
 
-/-! ### Memory primitive specs
+/-! ## Memory instruction triples
 
-`loadIntM`/`checkMapped` take the data memory and address explicitly. The
-mapped-ness witness `i : Int` is a theorem binder (undetermined `?i` at
-application time), and its equation `Mem.loadInt m addr 8 = some i` sits in the
-precondition as a `Prop`-lattice meet conjunct: `vcgen`'s lattice decomposition
-splits the meet, emitting the equation as its own VC while stepping into the
-continuation `Q i`, and the meet operands keep the spec on the direct
-(conjunctive-precondition) application path. `easm` discharges the equation VC
-from the internalized `h_load` facts, concretizing the sibling continuation VC. -/
+A memory access is mapped-ness plus a state update. The mapped-ness witness
+`i : Int` is a theorem binder, an undetermined `?i` at application time, so its
+equation sits in the precondition as a `Prop`-lattice meet conjunct alongside
+the applied postcondition. `vcgen`'s lattice decomposition splits the meet,
+emitting the equation as its own verification condition while stepping into the
+continuation with the post-state literal. `easm` discharges the equation from
+the internalized `h_load` facts, which concretizes the witness in the sibling
+continuation. -/
 
-open Lean.Order in
-@[spec] theorem loadIntM_spec (m : DataMem) (addr : BitVec 64) (i : Int)
-    (Q : Int → MachineData → Prop) (E : X64Exit → MachineData → Prop) :
-    ⦃ fun st => (Mem.loadInt m addr 8 = some i) ⊓ Q i st ⦄ Op.loadIntM m addr ⦃ Q; E ⦄ := by
-  apply Triple.intro; intro st hst
-  rw [meet_prop_eq_and] at hst
-  obtain ⟨h, hq⟩ := hst
-  simp only [Op.loadIntM, wp, WP.wpTrans, bind, EStateM.bind, pure, EStateM.pure, h]
+section
+open Lean.Order
+variable (Q : Unit → MachineData → Prop) (E : X64Exit → MachineData → Prop)
+
+@[spec] theorem Op.checkMapped_spec (m : DataMem) (addr : BitVec 64) (i : Int) :
+    ⦃ fun s => (Mem.loadInt m addr 8 = some i) ⊓ Q () s ⦄ Op.checkMapped m addr ⦃ Q; E ⦄ := by
+  apply Triple.intro; intro s hs
+  rw [meet_prop_eq_and] at hs
+  obtain ⟨h, hq⟩ := hs
+  simp only [Op.checkMapped, wp, WP.wpTrans, pure, EStateM.pure, h]
   exact hq
 
+@[spec] theorem Op.movMI_spec (a : Addr) (i : Int64) (v : Int) :
+    ⦃ fun s => (Mem.loadInt s.dmem (a.eval s.regs) 8 = some v) ⊓
+        Q () { s with
+          dmem := Mem.storeInt s.dmem (a.eval s.regs) 8 (BitVec.setWidth 64 i.toBitVec).toInt } ⦄
+      Op.movMI a i ⦃ Q; E ⦄ := by
+  apply Triple.intro; intro s hs
+  rw [meet_prop_eq_and] at hs
+  obtain ⟨h, hq⟩ := hs
+  simp only [Op.movMI, Op.checkMapped, wp, WP.wpTrans, bind, EStateM.bind, pure, EStateM.pure,
+    get, getThe, MonadStateOf.get, EStateM.get, modify, modifyGet, MonadStateOf.modifyGet,
+    EStateM.modifyGet, h]
+  exact hq
+
+@[spec] theorem Op.movMR_spec (a : Addr) (src : Reg64) (v : Int) :
+    ⦃ fun s => (Mem.loadInt s.dmem (a.eval s.regs) 8 = some v) ⊓
+        Q () { s with
+          dmem := Mem.storeInt s.dmem (a.eval s.regs) 8 (s.regs.get64 src).toBitVec.toInt } ⦄
+      Op.movMR a src ⦃ Q; E ⦄ := by
+  apply Triple.intro; intro s hs
+  rw [meet_prop_eq_and] at hs
+  obtain ⟨h, hq⟩ := hs
+  simp only [Op.movMR, Op.checkMapped, wp, WP.wpTrans, bind, EStateM.bind, pure, EStateM.pure,
+    get, getThe, MonadStateOf.get, EStateM.get, modify, modifyGet, MonadStateOf.modifyGet,
+    EStateM.modifyGet, h]
+  exact hq
+
+@[spec] theorem Op.movRM_spec (dst : Reg64) (a : Addr) (v : Int) :
+    ⦃ fun s => (Mem.loadInt s.dmem (a.eval s.regs) 8 = some v) ⊓
+        Q () { s with regs := s.regs.set64 dst (.ofBitVec (BitVec.ofInt 64 v)) } ⦄
+      Op.movRM dst a ⦃ Q; E ⦄ := by
+  apply Triple.intro; intro s hs
+  rw [meet_prop_eq_and] at hs
+  obtain ⟨h, hq⟩ := hs
+  simp only [Op.movRM, Op.loadIntM, wp, WP.wpTrans, bind, EStateM.bind, pure, EStateM.pure,
+    get, getThe, MonadStateOf.get, EStateM.get, modify, modifyGet, MonadStateOf.modifyGet,
+    EStateM.modifyGet, h]
+  exact hq
+
+end
+
+-- The load primitive keeps its own triple: it leaves the state alone, so the
+-- mapped-ness meet conjunct carries the whole precondition.
 open Lean.Order in
-@[spec] theorem checkMapped_spec (m : DataMem) (addr : BitVec 64) (i : Int)
-    (Q : Unit → MachineData → Prop) (E : X64Exit → MachineData → Prop) :
-    ⦃ fun st => (Mem.loadInt m addr 8 = some i) ⊓ Q () st ⦄ Op.checkMapped m addr ⦃ Q; E ⦄ := by
-  apply Triple.intro; intro st hst
-  rw [meet_prop_eq_and] at hst
-  obtain ⟨h, hq⟩ := hst
-  simp only [Op.checkMapped, wp, WP.wpTrans, bind, EStateM.bind, pure, EStateM.pure, h]
+@[spec] theorem Op.loadIntM_spec (m : DataMem) (addr : BitVec 64) (i : Int)
+    (Q : Int → MachineData → Prop) (E : X64Exit → MachineData → Prop) :
+    ⦃ fun s => (Mem.loadInt m addr 8 = some i) ⊓ Q i s ⦄ Op.loadIntM m addr ⦃ Q; E ⦄ := by
+  apply Triple.intro; intro s hs
+  rw [meet_prop_eq_and] at hs
+  obtain ⟨h, hq⟩ := hs
+  simp only [Op.loadIntM, wp, WP.wpTrans, pure, EStateM.pure, h]
   exact hq

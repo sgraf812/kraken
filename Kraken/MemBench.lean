@@ -17,11 +17,11 @@ def loadProg : X64M Unit :=
 
 set_option trace.Kraken.easm true in
 theorem load_single (s₀ : MachineData) (v : Int)
-    (h_load : Mem.loadInt s₀.dmem ((Addr.mk .rsp none (-8)).eval s₀) 8 = some v) :
+    (h_load : Mem.loadInt s₀.dmem ((Addr.mk .rsp none (-8)).eval s₀.regs) 8 = some v) :
     ⦃fun sd => sd = s₀⦄ loadProg
       ⦃fun _ s => s.regs.rax = BitVec.ofInt 64 v⦄ := by
   sym =>
-    vcgen [loadProg, Op.movRM]
+    vcgen [loadProg]
     all_goals (first (easm) (skip))
     all_goals finish (splits := 40)
 
@@ -31,14 +31,14 @@ def storeLoadProg : X64M Unit := do
 
 set_option trace.Kraken.easm true in
 theorem store_load_back (s₀ : MachineData) (v : Int)
-    (h_mapped : Mem.loadInt s₀.dmem ((Addr.mk .rsp none (-8)).eval s₀) 8 = some v)
+    (h_mapped : Mem.loadInt s₀.dmem ((Addr.mk .rsp none (-8)).eval s₀.regs) 8 = some v)
     (h_back : Mem.loadInt
-        (Mem.storeInt s₀.dmem ((Addr.mk .rsp none (-8)).eval s₀) 8 99)
-        ((Addr.mk .rsp none (-8)).eval s₀) 8 = some 99) :
+        (Mem.storeInt s₀.dmem ((Addr.mk .rsp none (-8)).eval s₀.regs) 8 99)
+        ((Addr.mk .rsp none (-8)).eval s₀.regs) 8 = some 99) :
     ⦃fun sd => sd = s₀⦄ storeLoadProg
       ⦃fun _ s => s.regs.rax = BitVec.ofInt 64 99⦄ := by
   have h99 : (BitVec.setWidth 64 ((99 : Int64)).toBitVec).toInt = 99 := by decide
   sym =>
-    vcgen [storeLoadProg, Op.movMI, Op.movRM]
+    vcgen [storeLoadProg]
     all_goals (first (easm) (skip))
     all_goals finish (splits := 40)

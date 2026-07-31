@@ -114,15 +114,16 @@ theorem sdyn_correct (s₀ : MachineData)
     grind
   clear h_mem h_mem1 h_mem2 h_split h_addr3 h_len_take h_len_drop h_lt1 h_lt2 h_o
   sym =>
-    vcgen [sdynProg, Op.movMI, Op.movMR, Op.movRM]
+    vcgen [sdynProg]
     -- `easm` reads each memory VC's `?i` off the internalized `h_load` facts and
     -- address bridges, concretizing the loaded values the register postcondition
     -- consumes; `finish` closes the register chain.
     all_goals (first (easm) (skip))
-    -- Residual: `easm` discharges the memory VCs whose load runs against the
-    -- initial state directly, but reloads addressed through a `vcgen`-abstracted
-    -- post-state atom (`x✝`) are left open, since chasing that atom's data-memory
-    -- component-equation chain back to the `storeInt` skeleton is not yet part of
-    -- `easm`'s normalization. `finish` closes the rest; the open loads and the
-    -- register postcondition they feed are the reported residual.
+    -- Residual: `easm` discharges the access whose address and memory are those
+    -- of the initial state. The later ones address through the `lea`-computed
+    -- frame, so their effective address is an `Addr.eval` over a `set64` chain
+    -- and their memory a `storeInt` over the initial one; normalizing that pair
+    -- to the form the separation-derived `h_load` facts are stated in is not yet
+    -- part of `easm`. `finish` closes the rest; the open loads and the register
+    -- postcondition they feed are the reported residual.
     all_goals (first (finish (splits := 40)) (sorry))

@@ -5,7 +5,7 @@ Each step reads the carry the previous one wrote, so the flag equations are
 live and the discharge has to fold a chain of them. The prefix clears the
 carry so the result is determined.
 -/
-import Kraken.AccessorSpecs
+import Kraken.Specs
 
 open Std.Internal.Do
 

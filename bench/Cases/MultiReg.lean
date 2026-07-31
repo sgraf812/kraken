@@ -6,7 +6,7 @@ Each round rewrites the same constants, so the final state is reached after
 one round; what grows with `n` is the number of write equations the discharge
 must look through per queried register.
 -/
-import Kraken.AccessorSpecs
+import Kraken.Specs
 
 open Std.Internal.Do
 
@@ -24,10 +24,10 @@ def chain : Nat → X64M Unit
 
 def Goal (n : Nat) : Prop :=
   ⦃fun _ => True⦄ chain (n+1) ⦃fun _ s =>
-    s.regs.get64 .rax = 1 ∧ s.regs.get64 .rbx = 2 ∧ s.regs.get64 .rcx = 3 ∧
-    s.regs.get64 .rdx = 4 ∧ s.regs.get64 .rsi = 5 ∧ s.regs.get64 .rdi = 6 ∧
-    s.regs.get64 .rbp = 7 ∧ s.regs.get64 .r8 = 8 ∧ s.regs.get64 .r9 = 9 ∧
-    s.regs.get64 .r10 = 10 ∧ s.regs.get64 .r11 = 11 ∧ s.regs.get64 .r12 = 12 ∧
-    s.regs.get64 .r13 = 13 ∧ s.regs.get64 .r14 = 14 ∧ s.regs.get64 .r15 = 15⦄
+    s.regs.get64 .rax = 1#64 ∧ s.regs.get64 .rbx = 2#64 ∧ s.regs.get64 .rcx = 3#64 ∧
+    s.regs.get64 .rdx = 4#64 ∧ s.regs.get64 .rsi = 5#64 ∧ s.regs.get64 .rdi = 6#64 ∧
+    s.regs.get64 .rbp = 7#64 ∧ s.regs.get64 .r8 = 8#64 ∧ s.regs.get64 .r9 = 9#64 ∧
+    s.regs.get64 .r10 = 10#64 ∧ s.regs.get64 .r11 = 11#64 ∧ s.regs.get64 .r12 = 12#64 ∧
+    s.regs.get64 .r13 = 13#64 ∧ s.regs.get64 .r14 = 14#64 ∧ s.regs.get64 .r15 = 15#64⦄
 
 end MultiReg

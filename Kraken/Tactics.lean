@@ -19,7 +19,7 @@ The assignment is visible to the sibling continuation VC, which shares the
 metavariable. The `Kraken.easm` trace class reports which path closed each goal.
 -/
 import Kraken.OmniSemantics
-import Kraken.AccessorSpecs
+import Kraken.Specs
 import Std.Tactic.Do
 
 open Lean Meta
@@ -34,11 +34,9 @@ namespace Kraken
 `easm` uses to expose the `Mem.loadInt`/`Mem.storeInt` skeleton of the queried
 side before the `h_load` facts fire. -/
 private def projLemmas : List Name :=
-  [``MachineData.dmem_setDmem, ``MachineData.regs_setDmem, ``MachineData.status_setDmem,
-   ``MachineData.zmms_setDmem, ``MachineData.dmem_setReg, ``MachineData.regs_setReg,
+  [``MachineData.dmem_setReg, ``MachineData.regs_setReg,
    ``MachineData.status_setReg, ``MachineData.zmms_setReg, ``MachineData.dmem_mk,
-   ``MachineData.regs_mk, ``MachineData.status_mk, ``MachineData.zmms_mk,
-   ``Addr.eval_setDmem]
+   ``MachineData.regs_mk, ``MachineData.status_mk, ``MachineData.zmms_mk]
 
 /-- Effective-address canonicalization used in the simp path's second pass:
 unfold `Addr.eval`, resolve register reads over writes, and push the
