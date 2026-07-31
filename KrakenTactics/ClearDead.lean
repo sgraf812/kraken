@@ -62,10 +62,37 @@ elab "clear_dead" : tactic => do
           -- the same term with this prefix rewritten
           unless p == t do
             work := work.push (t.replace fun e => if e == p then some rhs else none)
-    -- Build a goal in a context without the dead equations rather than erasing
-    -- them from the existing one: erasing revisits the local context per
-    -- hypothesis, which dominates everything else at chain length.
-    let dead := eqs.filterMap fun (fv, _, _) => if live.contains fv then none else some fv
+    -- Reverse sweep: keep a declaration only if the goal, a live equation, or a
+    -- kept later declaration references it. This also drops `let`-bound fold
+    -- proofs and stale state variables once nothing reaches them, which is
+    -- what keeps the context handed to the solver constant-size.
+    let addFVars (used : Std.HashSet FVarId) (e : Expr) : Std.HashSet FVarId := Id.run do
+      let mut used := used
+      let mut stack := #[e]
+      while stack.size > 0 do
+        let t := stack.back!; stack := stack.pop
+        match t with
+        | .fvar id => used := used.insert id
+        | .app f a => stack := (stack.push f).push a
+        | .proj _ _ b | .mdata _ b => stack := stack.push b
+        | .lam _ ty b _ | .forallE _ ty b _ => stack := (stack.push ty).push b
+        | .letE _ ty v b _ => stack := ((stack.push ty).push v).push b
+        | _ => pure ()
+      return used
+    let mut used : Std.HashSet FVarId := addFVars {} (← instantiateMVars (← g.getType))
+    for (fv, _, _) in eqs do
+      if live.contains fv then
+        used := addFVars (used.insert fv) (← instantiateMVars (← fv.getType))
+    let decls := (← getLCtx).decls.toArray.filterMap id
+    let mut dead : Array FVarId := #[]
+    for i in [0:decls.size] do
+      let d := decls[decls.size - 1 - i]!
+      if d.isImplementationDetail then continue
+      if used.contains d.fvarId then
+        used := addFVars used (← instantiateMVars d.type)
+        if let some v := d.value? then used := addFVars used (← instantiateMVars v)
+      else
+        dead := dead.push d.fvarId
     if dead.isEmpty then return g
     let lctx := dead.foldl (fun (l : LocalContext) fv => l.erase fv) (← getLCtx)
     let ty ← instantiateMVars (← g.getType)

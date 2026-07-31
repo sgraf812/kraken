@@ -98,45 +98,53 @@ def collectEqs (mvarId : MVarId) : SymM (Array (Expr × Expr × Expr)) := mvarId
   return eqs
 
 /--
-Fold the chain component by component.
+Fold the chain component by component, asserting each folded equation as a
+hypothesis.
 
-Each step's right-hand side mentions only the previous state, so simplifying it
-against the values already computed for that state yields a value for this
-step's component, and the equation proved is `component = value` with both
-sides small. Rewriting the goal directly instead would make the simplifier
-descend into the state term, and the congruence node at depth `k` then carries
-a type mentioning the state at that depth: the certificate stays linear but the
-kernel checks it in super-linear time (kernel-congr-quadratic-mwe.lean).
+Each step's right-hand side mentions the previous state's component twice (the
+register file as write base and under the read), so inlining the derived proof
+at its use sites doubles the proof tree per instruction: the certificate's DAG
+stays linear while its tree is 2^n, and the kernel pays in between because its
+instantiations produce fresh, unshared copies. Asserting `s_k.regs = v_k` into
+the context makes every later use an atomic fvar reference: each proof appears
+once, and sharing goes through the local context, which the kernel respects.
 -/
 def foldGoal (mvarId : MVarId) : MetaM (Option MVarId) := SymM.run do
-  let mvarId ← preprocessMVar mvarId
+  let mut mvarId ← preprocessMVar mvarId
   let eqs ← collectEqs mvarId
   let mut thms : Theorems := {}
   for n in lemmaNames do
     thms := thms.insert (← mkTheoremFromDecl n)
-  -- `values` maps a component to its computed value and the proof of that
-  -- equation. It only ever holds small terms.
-  let mut values : SubstEnv := {}
-  let mut state : Sym.Simp.State := {}
   let mkMethods (env : SubstEnv) : Methods :=
     { pre := simpControl
       post := substSimproc env >> collapseAdd >> reduceCtorEq >> evalGround >> thms.rewrite }
+  let mut values : SubstEnv := {}
+  let mut state : Sym.Simp.State := {}
+  let mut nStep := 0
   for (lhs, rhs, h) in eqs do
-    -- Simplify this step's right-hand side against the values known so far.
-    let (r, state') ← SimpM.run (Sym.Simp.simp rhs) (mkMethods values) { maxSteps := 1000000 } state
+    let (r, state') ← SimpM.run (Sym.Simp.simp rhs) (mkMethods values) { maxSteps := 100000 } state
     state := state'
-    let (value, proof) ← match r with
-      | .rfl .. => pure (rhs, h)
-      | .step rhs' hr .. => do
-        -- `h : lhs = rhs` and `hr : rhs = rhs'`, so `lhs = rhs'`.
-        pure (rhs', ← Sym.Simp.mkEqTrans lhs rhs h rhs' hr)
-    values := values.insert { expr := lhs } (value, proof)
-  -- One rewrite of the goal with the finished component values.
+    match r with
+    | .rfl .. =>
+      -- The hypothesis is already in folded form; its fvar is the shared proof.
+      values := values.insert { expr := lhs } (rhs, h)
+    | .step rhs' hr .. =>
+      nStep := nStep + 1
+      let prf ← Sym.Simp.mkEqTrans lhs rhs h rhs' hr
+      let ty ← Sym.share (← mkEq lhs rhs')
+      -- `define`, not `assert`: an asserted hypothesis becomes `?goal prf`, and
+      -- instantiating that metavariable beta-reduces, splicing `prf` back into
+      -- every use site. A `let` survives instantiation, so the proof appears
+      -- once and uses stay atomic.
+      let mvarId' ← mvarId.define ((`hfold).appendIndexAfter nStep) ty prf
+      let (fvar, mvarId'') ← mvarId'.intro1P
+      mvarId := mvarId''
+      values := values.insert { expr := lhs } (rhs', .fvar fvar)
   let target ← mvarId.withContext do instantiateMVars (← mvarId.getType)
   let (result, _) ← SimpM.run (Sym.Simp.simp target) (mkMethods values) { maxSteps := 1000000 } state
   match ← result.toSimpGoalResult mvarId with
   | .closed => return none
-  | .goal mvarId => return some mvarId
+  | .goal mvarId' => return some mvarId'
   | .noProgress => return some mvarId
 
 end Kraken.Fold

@@ -25,6 +25,15 @@ kernel cost tracks the sum of the sizes of the intermediate types, not the
 size of the shared term: the kernel infers and compares each node's type, and
 sharing the representation does not make those traversals cheaper.
 
+## Further controls (measured separately, worth adding here)
+
+* Interleaved single lambdas with applications, outer variable referenced at
+  every depth, constant-size types: LINEAR (2/2/6/12ms at n=400..3200). The
+  kernel's per-binder instantiation is not itself the problem.
+* A `let`-chain certificate (each proof bound once, used by fvar) with linear
+  tree, linear DAG, linear depth still checks in ~n^1.7 in the real pipeline,
+  so at least one more super-linear kernel behaviour remains unisolated.
+
 ## Where it came from
 
 Symbolic execution of machine code (an x86 semantics verified with `vcgen`).

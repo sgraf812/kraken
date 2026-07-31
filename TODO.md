@@ -95,3 +95,29 @@
   constant-size, and the goal is then rewritten in one step at depth one. As
   implemented the final rewrite still descends into `s_n.regs.get64 r`, and
   that descent is what builds the congruence nodes whose types deepen.
+
+- Proof-sharing through the goal: asserted hypotheses do not survive
+  instantiation (`assert` produces `?goal prf`, and instantiating the
+  metavariable beta-reduces, splicing `prf` into every use site), while
+  `define`d `let`s do. `kfold` now `define`s each folded component equation, so
+  the certificate tree went from 2^n (Eq.trans count 2^(n+2)-1, from the two
+  occurrences of the previous register file per step) to linear, verified by a
+  DAG-memoized tree-size count (97k -> 191k for n=4 -> 8). Pretty-printed size
+  is a misleading proxy: indentation alone contributes depth x lines = n^2
+  bytes.
+- Lazy program unfolding: passing the recursive program to vcgen as an equation
+  spec (`vcgen [AddChain.chain]` with no upfront unfold) keeps the residual
+  program folded in every wp type and makes stepping ~4x faster and linear.
+  The bench driver's upfront-unfold path is the slow variant.
+- clear_dead reverse sweep: also drops let-bound fold proofs and unreachable
+  plain hypotheses; after kfold the solver sees a single hypothesis.
+- REMAINING: kernel time is still ~n^1.7 on a certificate whose tree, DAG and
+  depth are all linear and whose visible argument types are constant-size.
+  Refuted so far: unfolding counts, defeq-heuristic counts, eagerReduce,
+  certificate size/sharing/depth, context size, interleaved single-binder
+  lambdas (linear in isolation), flat Eq.trans chains (linear), growing-type
+  congruence chains are quadratic in isolation but the audited certificate
+  shows no growing types. Next suspects, unmeasured: is_def_eq forced
+  reductions of `chain <literal>` through `Nat.rec`/`brecOn` (unary literal
+  recursion at each step), and beta-expansion of `le_forall` motives during
+  application checking.
