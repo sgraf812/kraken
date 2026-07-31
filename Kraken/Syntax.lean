@@ -8,7 +8,13 @@ instance : ToString Width where
   toString | .W8 => "w8" | .W16 => "w16" | .W32 => "w32" | .W64 => "w64"
 
 namespace Width
-@[simp, reducible] def bits : Width → Nat | W8 => 8 | W16 => 16 | W32 => 32 | W64 => 64
+/- `implicit_reducible`: unfolds when implicit arguments are checked for definitional
+equality (where an unreduced `Width.bits w` index must reconcile with a literal), but
+stays opaque to type class search; no instance today discriminates between the reduced
+and unreduced index, since all `Bv` instances are parametric in it. Likely bumped to
+`instance_reducible` once instances at concrete widths exist that generically indexed
+goals must find (the `Nat.add`/`Array.size` precedent in `ReducibilityStatus`). -/
+@[simp, implicit_reducible] def bits : Width → Nat | W8 => 8 | W16 => 16 | W32 => 32 | W64 => 64
 @[simp, reducible] def bytes : Width → Nat | W8 => 1 | W16 => 2 | W32 => 4 | W64 => 8
 abbrev bytesv (w : Width) {n} : BitVec n := BitVec.ofNat n w.bytes
 /-- The type of a value of this operand width. A read reaches the bits through
