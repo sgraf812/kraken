@@ -114,7 +114,7 @@ theorem sdyn_correct (s₀ : MachineData)
     grind
   clear h_mem h_mem1 h_mem2 h_split h_addr3 h_len_take h_len_drop h_lt1 h_lt2 h_o
   sym =>
-    vcgen [sdynProg, Op.movMI, Op.movMR, Op.movRM] simplifying_assumptions
+    vcgen [sdynProg, Op.movMI, Op.movMR, Op.movRM]
     -- `easm` reads each memory VC's `?i` off the internalized `h_load` facts and
     -- address bridges, concretizing the loaded values the register postcondition
     -- consumes; `finish` closes the register chain.

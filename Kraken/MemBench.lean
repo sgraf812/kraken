@@ -21,7 +21,7 @@ theorem load_single (s₀ : MachineData) (v : Int)
     ⦃fun sd => sd = s₀⦄ loadProg
       ⦃fun _ s => s.regs.rax = BitVec.ofInt 64 v⦄ := by
   sym =>
-    vcgen [loadProg, Op.movRM] simplifying_assumptions
+    vcgen [loadProg, Op.movRM]
     all_goals (first (easm) (skip))
     all_goals finish (splits := 40)
 
@@ -39,6 +39,6 @@ theorem store_load_back (s₀ : MachineData) (v : Int)
       ⦃fun _ s => s.regs.rax = BitVec.ofInt 64 99⦄ := by
   have h99 : (BitVec.setWidth 64 ((99 : Int64)).toBitVec).toInt = 99 := by decide
   sym =>
-    vcgen [storeLoadProg, Op.movMI, Op.movRM] simplifying_assumptions
+    vcgen [storeLoadProg, Op.movMI, Op.movRM]
     all_goals (first (easm) (skip))
     all_goals finish (splits := 40)
