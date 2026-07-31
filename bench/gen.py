@@ -22,7 +22,7 @@ Variants:
 """
 import sys, pathlib
 
-SIZES = [40, 160]
+SIZES = [40, 160, 640]
 REGS = ["rax","rbx","rcx","rdx","rsi","rdi","rbp","r8","r9","r10","r11","r12","r13","r14","r15"]
 
 HDR = """import Kraken.Specs
