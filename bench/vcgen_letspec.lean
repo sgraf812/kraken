@@ -1,50 +1,35 @@
 /-
-Let-form vs accessor-form specs on the same add chain: stepping, discharge and
-kernel time per size.
+Where the time goes on one workload: the register add chain, stepped and
+discharged four ways.
 
-`sorry` discharge isolates the kernel cost of the stepping certificate alone;
-the fold discharge adds the cost of a checked proof.
-
-`simplifying_assumptions` normalizes each state literal as it is produced, so
-the verification condition reaches the discharge tactic already folded.
+`sorry` discharge isolates the cost of the stepping certificate alone; the other
+rows add the cost of a checked proof. Without `simplifying_assumptions` the
+state literals reach the discharge unfolded, so the fold has to run over the
+finished verification condition instead of over each state as it is produced.
 -/
 import Cases
 import Driver
 import KrakenTactics.Fold
-import KrakenTactics.FoldLet
-import KrakenTactics.Discharge
 
 set_option mvcgen.warning false
 set_option grind.warning false
-set_option maxRecDepth 400000
+set_option maxRecDepth 1000000
 set_option maxHeartbeats 10000000
 
 open Lean Order Parser Meta Elab Tactic Sym Std Internal.Do
 
-#eval do IO.println "== accessor + sorry"; (← IO.getStdout).flush
+#eval do IO.println "== stepping only, no state simplification"; (← IO.getStdout).flush
 #eval runBenchUsingTactic ``AddChain.Goal [``AddChain.chain]
-  `(tactic| (intro k; vcgen -internalize)) `(tactic| sorry) [40, 80, 160, 320, 640]
+  `(tactic| (intro k; vcgen -internalize)) `(tactic| sorry) [40, 160, 640]
 
-#eval do IO.println "== let-form + sorry"; (← IO.getStdout).flush
-#eval runBenchUsingTactic ``AddChainLet.Goal [``AddChainLet.chain]
-  `(tactic| (intro k; vcgen -internalize)) `(tactic| sorry) [40, 80, 160, 320, 640]
-
-#eval do IO.println "== accessor + kfold_discharge"; (← IO.getStdout).flush
+#eval do IO.println "== stepping only, with state simplification"; (← IO.getStdout).flush
 #eval runBenchUsingTactic ``AddChain.Goal [``AddChain.chain]
-  `(tactic| (intro k; vcgen -internalize)) `(tactic| kfold_discharge) [40, 80, 160, 320, 640]
+  `(tactic| (intro k; vcgen -internalize simplifying_assumptions)) `(tactic| sorry) [40, 160, 640]
 
-#eval do IO.println "== let-form + kfold_let_discharge"; (← IO.getStdout).flush
-#eval runBenchUsingTactic ``AddChainLet.Goal [``AddChainLet.chain]
-  `(tactic| (intro k; vcgen -internalize)) `(tactic| kfold_let_discharge) [40, 80, 160, 320, 640]
+#eval do IO.println "== kfold_discharge, no state simplification"; (← IO.getStdout).flush
+#eval runBenchUsingTactic ``AddChain.Goal [``AddChain.chain]
+  `(tactic| (intro k; vcgen -internalize)) `(tactic| kfold_discharge) [40, 160, 640]
 
-#eval do IO.println "== let-form + simplifying_assumptions + sorry"; (← IO.getStdout).flush
-#eval runBenchUsingTactic ``AddChainLet.Goal [``AddChainLet.chain]
-  `(tactic| (intro k; vcgen -internalize simplifying_assumptions)) `(tactic| sorry) [40, 80, 160, 320, 640]
-
-#eval do IO.println "== let-form + simplifying_assumptions + kfold_let_discharge"; (← IO.getStdout).flush
-#eval runBenchUsingTactic ``AddChainLet.Goal [``AddChainLet.chain]
-  `(tactic| (intro k; vcgen -internalize simplifying_assumptions)) `(tactic| kfold_let_discharge) [40, 80, 160, 320, 640]
-
-#eval do IO.println "== let-form + simplifying_assumptions + bv_decide"; (← IO.getStdout).flush
-#eval runBenchUsingTactic ``AddChainLet.Goal [``AddChainLet.chain]
-  `(tactic| (intro k; vcgen -internalize simplifying_assumptions)) `(tactic| bv_decide) [40, 80, 160, 320, 640]
+#eval do IO.println "== bv_decide, with state simplification"; (← IO.getStdout).flush
+#eval runBenchUsingTactic ``AddChain.Goal [``AddChain.chain]
+  `(tactic| (intro k; vcgen -internalize simplifying_assumptions)) `(tactic| bv_decide) [40, 160, 640]

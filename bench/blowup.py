@@ -8,7 +8,7 @@ and measure the printed goal (excluding the trailing `sorry` warning).
 """
 import pathlib
 
-TMPL = '''import Kraken.AccessorSpecs
+TMPL = '''import Kraken.Specs
 open Std.Internal.Do
 set_option mvcgen.warning false
 set_option grind.warning false
@@ -28,7 +28,7 @@ example : ⦃fun (_ : MachineData) => True⦄ blow{n}prog ⦃fun _ s => s.regs.r
   all_goals (trace_state; admit)
 '''
 
-INTERMEDIATE = '''import Kraken.AccessorSpecs
+INTERMEDIATE = '''import Kraken.Specs
 open Std.Internal.Do
 set_option mvcgen.warning false
 set_option pp.deepTerms true
