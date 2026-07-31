@@ -31,7 +31,7 @@ variable (Q : Unit → MachineData → Prop) (E : X64Exit → MachineData → Pr
 @[spec] theorem OpL.movRI_spec_let (r : Reg64) (i : Int64) :
     ⦃ fun s =>
         let s' : MachineData :=
-          { s with regs := s.regs.set64 r (BitVec.setWidth 64 i.toBitVec) }
+          { s with regs := s.regs.set64 r (.ofBitVec (BitVec.setWidth 64 i.toBitVec)) }
         Q () s' ⦄
       OpL.movRI r i ⦃ Q; E ⦄ := by
   apply Triple.intro; intro s h; simp only [OpL.movRI, Op.movRI]; exact h
@@ -40,16 +40,19 @@ variable (Q : Unit → MachineData → Prop) (E : X64Exit → MachineData → Pr
     ⦃ fun s =>
         let s' : MachineData :=
           { s with
-            regs := s.regs.set64 r (BitVec.setWidth 64 i.toBitVec + s.regs.get64 r)
+            regs := s.regs.set64 r
+              (.ofBitVec (BitVec.setWidth 64 i.toBitVec + (s.regs.get64 r).toBitVec))
             status := StatusFlags.from_result
-              (BitVec.setWidth 64 i.toBitVec + s.regs.get64 r)
-              { cf := (BitVec.setWidth 64 i.toBitVec + s.regs.get64 r).unsigned
-                  != (BitVec.setWidth 64 i.toBitVec).unsigned + (s.regs.get64 r).unsigned,
-                af := ((BitVec.setWidth 64 i.toBitVec + s.regs.get64 r).take 4).unsigned
+              (BitVec.setWidth 64 i.toBitVec + (s.regs.get64 r).toBitVec)
+              { cf := (BitVec.setWidth 64 i.toBitVec + (s.regs.get64 r).toBitVec).unsigned
+                  != (BitVec.setWidth 64 i.toBitVec).unsigned
+                    + (s.regs.get64 r).toBitVec.unsigned,
+                af := ((BitVec.setWidth 64 i.toBitVec + (s.regs.get64 r).toBitVec).take 4).unsigned
                   != ((BitVec.setWidth 64 i.toBitVec).take 4).unsigned
-                    + ((s.regs.get64 r).take 4).unsigned,
-                of := (BitVec.setWidth 64 i.toBitVec + s.regs.get64 r).signed
-                  != (BitVec.setWidth 64 i.toBitVec).signed + (s.regs.get64 r).signed } }
+                    + ((s.regs.get64 r).toBitVec.take 4).unsigned,
+                of := (BitVec.setWidth 64 i.toBitVec + (s.regs.get64 r).toBitVec).signed
+                  != (BitVec.setWidth 64 i.toBitVec).signed
+                    + (s.regs.get64 r).toBitVec.signed } }
         Q () s' ⦄
       OpL.addRI r i ⦃ Q; E ⦄ := by
   apply Triple.intro; intro s h; simp only [OpL.addRI, Op.addRI]; exact h

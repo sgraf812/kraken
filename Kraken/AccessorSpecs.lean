@@ -33,7 +33,7 @@ Register reads are characterized by rewriting, so discharging queries only the
 registers the postcondition mentions and the state chain is never unfolded into
 record literals. -/
 
-@[simp, grind =] theorem Reg64s.get64_set64 (s : Reg64s) (r r' : Reg64) (v : Width.W64.type) :
+@[simp, grind =] theorem Reg64s.get64_set64 (s : Reg64s) (r r' : Reg64) (v : Bv 64) :
     (s.set64 r v).get64 r' = if r' = r then v else s.get64 r' := by
   cases r <;> cases r' <;> simp [Reg64s.set64, Reg64s.get64]
 
@@ -41,7 +41,7 @@ record literals. -/
     s.get (.low r .W64) = s.get64 r := by
   simp [Reg64s.get, Reg.base, Reg.offset, BitVec.take, BitVec.drop]
 
-@[simp, grind =] theorem Reg64s.set_low64 (s : Reg64s) (r : Reg64) (v : Width.W64.type) :
+@[simp, grind =] theorem Reg64s.set_low64 (s : Reg64s) (r : Reg64) (v : Bv 64) :
     Reg64s.set s (.low r .W64) v = s.set64 r v := rfl
 
 @[simp, grind =] theorem MachineData.regs_setReg (s : MachineData) {w} (r : Reg w) (v : w.type) :
@@ -69,36 +69,36 @@ record literals. -/
 
 /-! ## Per-register field reads over `set64`, one lemma per field -/
 
-@[simp, grind =] theorem Reg64s.rax_set64 (s : Reg64s) (r : Reg64) (v : Width.W64.type) :
-    (s.set64 r v).rax = if r = .rax then .ofBitVec v else s.rax := by cases r <;> simp [Reg64s.set64]
-@[simp, grind =] theorem Reg64s.rbx_set64 (s : Reg64s) (r : Reg64) (v : Width.W64.type) :
-    (s.set64 r v).rbx = if r = .rbx then .ofBitVec v else s.rbx := by cases r <;> simp [Reg64s.set64]
-@[simp, grind =] theorem Reg64s.rcx_set64 (s : Reg64s) (r : Reg64) (v : Width.W64.type) :
-    (s.set64 r v).rcx = if r = .rcx then .ofBitVec v else s.rcx := by cases r <;> simp [Reg64s.set64]
-@[simp, grind =] theorem Reg64s.rdx_set64 (s : Reg64s) (r : Reg64) (v : Width.W64.type) :
-    (s.set64 r v).rdx = if r = .rdx then .ofBitVec v else s.rdx := by cases r <;> simp [Reg64s.set64]
-@[simp, grind =] theorem Reg64s.rsi_set64 (s : Reg64s) (r : Reg64) (v : Width.W64.type) :
-    (s.set64 r v).rsi = if r = .rsi then .ofBitVec v else s.rsi := by cases r <;> simp [Reg64s.set64]
-@[simp, grind =] theorem Reg64s.rdi_set64 (s : Reg64s) (r : Reg64) (v : Width.W64.type) :
-    (s.set64 r v).rdi = if r = .rdi then .ofBitVec v else s.rdi := by cases r <;> simp [Reg64s.set64]
-@[simp, grind =] theorem Reg64s.rbp_set64 (s : Reg64s) (r : Reg64) (v : Width.W64.type) :
-    (s.set64 r v).rbp = if r = .rbp then .ofBitVec v else s.rbp := by cases r <;> simp [Reg64s.set64]
-@[simp, grind =] theorem Reg64s.r8_set64 (s : Reg64s) (r : Reg64) (v : Width.W64.type) :
-    (s.set64 r v).r8 = if r = .r8 then .ofBitVec v else s.r8 := by cases r <;> simp [Reg64s.set64]
-@[simp, grind =] theorem Reg64s.r9_set64 (s : Reg64s) (r : Reg64) (v : Width.W64.type) :
-    (s.set64 r v).r9 = if r = .r9 then .ofBitVec v else s.r9 := by cases r <;> simp [Reg64s.set64]
-@[simp, grind =] theorem Reg64s.r10_set64 (s : Reg64s) (r : Reg64) (v : Width.W64.type) :
-    (s.set64 r v).r10 = if r = .r10 then .ofBitVec v else s.r10 := by cases r <;> simp [Reg64s.set64]
-@[simp, grind =] theorem Reg64s.r11_set64 (s : Reg64s) (r : Reg64) (v : Width.W64.type) :
-    (s.set64 r v).r11 = if r = .r11 then .ofBitVec v else s.r11 := by cases r <;> simp [Reg64s.set64]
-@[simp, grind =] theorem Reg64s.r12_set64 (s : Reg64s) (r : Reg64) (v : Width.W64.type) :
-    (s.set64 r v).r12 = if r = .r12 then .ofBitVec v else s.r12 := by cases r <;> simp [Reg64s.set64]
-@[simp, grind =] theorem Reg64s.r13_set64 (s : Reg64s) (r : Reg64) (v : Width.W64.type) :
-    (s.set64 r v).r13 = if r = .r13 then .ofBitVec v else s.r13 := by cases r <;> simp [Reg64s.set64]
-@[simp, grind =] theorem Reg64s.r14_set64 (s : Reg64s) (r : Reg64) (v : Width.W64.type) :
-    (s.set64 r v).r14 = if r = .r14 then .ofBitVec v else s.r14 := by cases r <;> simp [Reg64s.set64]
-@[simp, grind =] theorem Reg64s.r15_set64 (s : Reg64s) (r : Reg64) (v : Width.W64.type) :
-    (s.set64 r v).r15 = if r = .r15 then .ofBitVec v else s.r15 := by cases r <;> simp [Reg64s.set64]
+@[simp, grind =] theorem Reg64s.rax_set64 (s : Reg64s) (r : Reg64) (v : Bv 64) :
+    (s.set64 r v).rax = if r = .rax then .ofBitVec v.toBitVec else s.rax := by cases r <;> simp [Reg64s.set64]
+@[simp, grind =] theorem Reg64s.rbx_set64 (s : Reg64s) (r : Reg64) (v : Bv 64) :
+    (s.set64 r v).rbx = if r = .rbx then .ofBitVec v.toBitVec else s.rbx := by cases r <;> simp [Reg64s.set64]
+@[simp, grind =] theorem Reg64s.rcx_set64 (s : Reg64s) (r : Reg64) (v : Bv 64) :
+    (s.set64 r v).rcx = if r = .rcx then .ofBitVec v.toBitVec else s.rcx := by cases r <;> simp [Reg64s.set64]
+@[simp, grind =] theorem Reg64s.rdx_set64 (s : Reg64s) (r : Reg64) (v : Bv 64) :
+    (s.set64 r v).rdx = if r = .rdx then .ofBitVec v.toBitVec else s.rdx := by cases r <;> simp [Reg64s.set64]
+@[simp, grind =] theorem Reg64s.rsi_set64 (s : Reg64s) (r : Reg64) (v : Bv 64) :
+    (s.set64 r v).rsi = if r = .rsi then .ofBitVec v.toBitVec else s.rsi := by cases r <;> simp [Reg64s.set64]
+@[simp, grind =] theorem Reg64s.rdi_set64 (s : Reg64s) (r : Reg64) (v : Bv 64) :
+    (s.set64 r v).rdi = if r = .rdi then .ofBitVec v.toBitVec else s.rdi := by cases r <;> simp [Reg64s.set64]
+@[simp, grind =] theorem Reg64s.rbp_set64 (s : Reg64s) (r : Reg64) (v : Bv 64) :
+    (s.set64 r v).rbp = if r = .rbp then .ofBitVec v.toBitVec else s.rbp := by cases r <;> simp [Reg64s.set64]
+@[simp, grind =] theorem Reg64s.r8_set64 (s : Reg64s) (r : Reg64) (v : Bv 64) :
+    (s.set64 r v).r8 = if r = .r8 then .ofBitVec v.toBitVec else s.r8 := by cases r <;> simp [Reg64s.set64]
+@[simp, grind =] theorem Reg64s.r9_set64 (s : Reg64s) (r : Reg64) (v : Bv 64) :
+    (s.set64 r v).r9 = if r = .r9 then .ofBitVec v.toBitVec else s.r9 := by cases r <;> simp [Reg64s.set64]
+@[simp, grind =] theorem Reg64s.r10_set64 (s : Reg64s) (r : Reg64) (v : Bv 64) :
+    (s.set64 r v).r10 = if r = .r10 then .ofBitVec v.toBitVec else s.r10 := by cases r <;> simp [Reg64s.set64]
+@[simp, grind =] theorem Reg64s.r11_set64 (s : Reg64s) (r : Reg64) (v : Bv 64) :
+    (s.set64 r v).r11 = if r = .r11 then .ofBitVec v.toBitVec else s.r11 := by cases r <;> simp [Reg64s.set64]
+@[simp, grind =] theorem Reg64s.r12_set64 (s : Reg64s) (r : Reg64) (v : Bv 64) :
+    (s.set64 r v).r12 = if r = .r12 then .ofBitVec v.toBitVec else s.r12 := by cases r <;> simp [Reg64s.set64]
+@[simp, grind =] theorem Reg64s.r13_set64 (s : Reg64s) (r : Reg64) (v : Bv 64) :
+    (s.set64 r v).r13 = if r = .r13 then .ofBitVec v.toBitVec else s.r13 := by cases r <;> simp [Reg64s.set64]
+@[simp, grind =] theorem Reg64s.r14_set64 (s : Reg64s) (r : Reg64) (v : Bv 64) :
+    (s.set64 r v).r14 = if r = .r14 then .ofBitVec v.toBitVec else s.r14 := by cases r <;> simp [Reg64s.set64]
+@[simp, grind =] theorem Reg64s.r15_set64 (s : Reg64s) (r : Reg64) (v : Bv 64) :
+    (s.set64 r v).r15 = if r = .r15 then .ofBitVec v.toBitVec else s.r15 := by cases r <;> simp [Reg64s.set64]
 
 /-! ## Data-memory writer
 
@@ -130,9 +130,9 @@ structure Addr where
   disp : Int64 := 0
 
 def Addr.eval (a : Addr) (s : MachineData) : BitVec 64 :=
-  let base := (s.regs.get64 a.base).toInt
+  let base := (s.regs.get64 a.base).toBitVec.toInt
   let idx := match a.index with
-    | some (r, scale) => (s.regs.get64 r).toInt * scale.toInt
+    | some (r, scale) => (s.regs.get64 r).toBitVec.toInt * scale.toInt
     | none => 0
   BitVec.ofInt 64 (base + idx + a.disp.toInt)
 
@@ -151,46 +151,46 @@ effects included). The benchmark programs are do blocks of these actions. -/
 namespace Op
 
 def movRI (r : Reg64) (i : Int64) : X64M Unit :=
-  modify (·.setReg (.low r .W64) (BitVec.setWidth 64 i.toBitVec))
+  modify (·.setReg (.low r .W64) (.ofBitVec (BitVec.setWidth 64 i.toBitVec)))
 
 def movRR (rd rs : Reg64) : X64M Unit :=
   modify fun s => s.setReg (.low rd .W64) (s.regs.get64 rs)
 
 def decR (r : Reg64) : X64M Unit :=
   modify fun s =>
-    let a := s.regs.get64 r
+    let a := (s.regs.get64 r).toBitVec
     let v := a - 1
     let status := StatusFlags.from_result v
       { cf := s.status.cf,
         af := (v.take 4).unsigned != (a.take 4).unsigned - 1,
         of := v.signed != a.signed - 1 }
-    { s with status }.setReg (.low r .W64) v
+    { s with status }.setReg (.low r .W64) (.ofBitVec v)
 
 def addRI (r : Reg64) (i : Int64) : X64M Unit :=
   modify fun s =>
     let a := BitVec.setWidth 64 i.toBitVec
-    let b := s.regs.get64 r
+    let b := (s.regs.get64 r).toBitVec
     let v := a + b
     let status := StatusFlags.from_result v
       { cf := v.unsigned != a.unsigned + b.unsigned,
         af := (v.take 4).unsigned != (a.take 4).unsigned + (b.take 4).unsigned,
         of := v.signed != a.signed + b.signed }
-    { s with status }.setReg (.low r .W64) v
+    { s with status }.setReg (.low r .W64) (.ofBitVec v)
 
 def adcRR (rd rs : Reg64) : X64M Unit :=
   modify fun s =>
-    let a := s.regs.get64 rs
-    let b := s.regs.get64 rd
+    let a := (s.regs.get64 rs).toBitVec
+    let b := (s.regs.get64 rd).toBitVec
     let c := s.status.cf
     let v := a + b + BitVec.ofNat 64 c.toNat
     let status := StatusFlags.from_result v
       { cf := v.unsigned != a.unsigned + b.unsigned + c.toNat,
         af := (v.take 4).unsigned != (a.take 4).unsigned + (b.take 4).unsigned + c.toNat,
         of := v.signed != a.signed + b.signed + c.toNat }
-    { s with status }.setReg (.low rd .W64) v
+    { s with status }.setReg (.low rd .W64) (.ofBitVec v)
 
 def lea (dst : Reg64) (a : Addr) : X64M Unit :=
-  modify fun s => s.setReg (.low dst .W64) (a.eval s)
+  modify fun s => s.setReg (.low dst .W64) (.ofBitVec (a.eval s))
 
 /-- Read an 8-byte integer from `m` at `addr`, throwing on an unmapped address.
 The data memory and address are explicit so the mapped-ness witness is a spec
@@ -215,12 +215,12 @@ def movMI (a : Addr) (i : Int64) : X64M Unit := do
 def movMR (a : Addr) (src : Reg64) : X64M Unit := do
   let s ← get
   checkMapped s.dmem (a.eval s)
-  modify fun s => s.setDmem (Mem.storeInt s.dmem (a.eval s) 8 (s.regs.get64 src).toInt)
+  modify fun s => s.setDmem (Mem.storeInt s.dmem (a.eval s) 8 (s.regs.get64 src).toBitVec.toInt)
 
 def movRM (dst : Reg64) (a : Addr) : X64M Unit := do
   let s ← get
   let i ← loadIntM s.dmem (a.eval s)
-  modify fun s => s.setReg (.low dst .W64) (BitVec.ofInt 64 i)
+  modify fun s => s.setReg (.low dst .W64) (.ofBitVec (BitVec.ofInt 64 i))
 
 end Op
 
@@ -237,7 +237,7 @@ variable (Q : Unit → MachineData → Prop) (E : X64Exit → MachineData → Pr
 
 @[spec] theorem Op.movRI_spec (r : Reg64) (i : Int64) :
     ⦃ fun sd => ∀ sd' : MachineData,
-        sd'.regs = sd.regs.set64 r (BitVec.setWidth 64 i.toBitVec) →
+        sd'.regs = sd.regs.set64 r (.ofBitVec (BitVec.setWidth 64 i.toBitVec)) →
         sd'.zmms = sd.zmms → sd'.status = sd.status → sd'.dmem = sd.dmem → Q () sd' ⦄
       Op.movRI r i ⦃ Q; E ⦄ := by
   apply Triple.intro; intro sd hsd; simp only [Op.movRI]; exact hsd _ rfl rfl rfl rfl
@@ -251,35 +251,38 @@ variable (Q : Unit → MachineData → Prop) (E : X64Exit → MachineData → Pr
 
 @[spec] theorem Op.decR_spec (r : Reg64) :
     ⦃ fun sd => ∀ sd' : MachineData,
-        sd'.regs = sd.regs.set64 r (sd.regs.get64 r - 1) →
+        sd'.regs = sd.regs.set64 r (.ofBitVec ((sd.regs.get64 r).toBitVec - 1)) →
         sd'.zmms = sd.zmms → sd'.dmem = sd.dmem → sd'.status.cf = sd.status.cf → Q () sd' ⦄
       Op.decR r ⦃ Q; E ⦄ := by
   apply Triple.intro; intro sd hsd; simp only [Op.decR]; exact hsd _ rfl rfl rfl rfl
 
 @[spec] theorem Op.addRI_spec (r : Reg64) (i : Int64) :
     ⦃ fun sd => ∀ sd' : MachineData,
-        sd'.regs = sd.regs.set64 r (BitVec.setWidth 64 i.toBitVec + sd.regs.get64 r) →
+        sd'.regs = sd.regs.set64 r
+          (.ofBitVec (BitVec.setWidth 64 i.toBitVec + (sd.regs.get64 r).toBitVec)) →
         sd'.zmms = sd.zmms → sd'.dmem = sd.dmem →
-        sd'.status.cf = ((BitVec.setWidth 64 i.toBitVec + sd.regs.get64 r).unsigned
-          != (BitVec.setWidth 64 i.toBitVec).unsigned + (sd.regs.get64 r).unsigned) →
+        sd'.status.cf = ((BitVec.setWidth 64 i.toBitVec + (sd.regs.get64 r).toBitVec).unsigned
+          != (BitVec.setWidth 64 i.toBitVec).unsigned + (sd.regs.get64 r).toBitVec.unsigned) →
         Q () sd' ⦄
       Op.addRI r i ⦃ Q; E ⦄ := by
   apply Triple.intro; intro sd hsd; simp only [Op.addRI]; exact hsd _ rfl rfl rfl rfl
 
 @[spec] theorem Op.adcRR_spec (rd rs : Reg64) :
     ⦃ fun sd => ∀ sd' : MachineData,
-        sd'.regs = sd.regs.set64 rd
-          (sd.regs.get64 rs + sd.regs.get64 rd + BitVec.ofNat 64 sd.status.cf.toNat) →
+        sd'.regs = sd.regs.set64 rd (.ofBitVec ((sd.regs.get64 rs).toBitVec
+          + (sd.regs.get64 rd).toBitVec + BitVec.ofNat 64 sd.status.cf.toNat)) →
         sd'.zmms = sd.zmms → sd'.dmem = sd.dmem →
-        sd'.status.cf = ((sd.regs.get64 rs + sd.regs.get64 rd + BitVec.ofNat 64 sd.status.cf.toNat).unsigned
-          != (sd.regs.get64 rs).unsigned + (sd.regs.get64 rd).unsigned + sd.status.cf.toNat) →
+        sd'.status.cf = (((sd.regs.get64 rs).toBitVec + (sd.regs.get64 rd).toBitVec
+            + BitVec.ofNat 64 sd.status.cf.toNat).unsigned
+          != (sd.regs.get64 rs).toBitVec.unsigned + (sd.regs.get64 rd).toBitVec.unsigned
+            + sd.status.cf.toNat) →
         Q () sd' ⦄
       Op.adcRR rd rs ⦃ Q; E ⦄ := by
   apply Triple.intro; intro sd hsd; simp only [Op.adcRR]; exact hsd _ rfl rfl rfl rfl
 
 @[spec] theorem Op.lea_spec (dst : Reg64) (a : Addr) :
     ⦃ fun sd => ∀ sd' : MachineData,
-        sd'.regs = sd.regs.set64 dst (a.eval sd) →
+        sd'.regs = sd.regs.set64 dst (.ofBitVec (a.eval sd)) →
         sd'.zmms = sd.zmms → sd'.status = sd.status → sd'.dmem = sd.dmem → Q () sd' ⦄
       Op.lea dst a ⦃ Q; E ⦄ := by
   apply Triple.intro; intro sd hsd; simp only [Op.lea]; exact hsd _ rfl rfl rfl rfl

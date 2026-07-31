@@ -28,6 +28,13 @@ def lemmaNames : Array Name :=
     ``MachineData.regs_mk, ``MachineData.zmms_mk, ``MachineData.status_mk, ``MachineData.dmem_mk,
     ``StatusFlags.cf_from_result ]
 
+/-- `lemmaNames` plus reassociation, the rewrite set the state-simplification
+pass runs as each spec application produces a state literal. Reassociating there
+brings the literal a step contributes next to the one the chain so far carries,
+and `evalGround` collapses the pair, so a component's value stays a single
+literal plus the symbolic start. -/
+def stateLemmaNames : Array Name := lemmaNames.push ``Kraken.Fold.add_assoc_rev
+
 /-- Collect the substitution sources in declaration order: an equation
 hypothesis contributes its two sides, a `let`-declaration its variable and
 value. -/
@@ -89,5 +96,5 @@ macro "kfold_let_discharge" : tactic => `(tactic| (kfold_let <;> clear_dead <;> 
 -- `kfold_let` uses on the finished verification condition.
 open Lean Elab Command in
 run_cmd liftTermElabM do
-  for n in Kraken.FoldLet.lemmaNames do
+  for n in Kraken.FoldLet.stateLemmaNames do
     Sym.Simp.addSymSimpTheorem Sym.Simp.symSimpExtension n .global
