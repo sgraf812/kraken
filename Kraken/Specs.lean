@@ -372,6 +372,10 @@ variable (Q : Unit → MachineData → Prop) (E : X64Exit → MachineData → Pr
   apply Triple.intro; intro s h; simp only [Op.xorRR]; exact h
 
 set_option linter.unusedSimpArgs false in
+/-- Weakest precondition of a conditional jump: the fall-through post under a set
+flag, the jump post otherwise. `vcgen` splits the precondition on `s.status.zf`,
+stepping the fall-through continuation under the set-flag branch and discharging
+the jump target against the exception post under the clear-flag branch. -/
 @[spec] theorem Op.jnz_spec (l : Int64) :
     ⦃ fun s => if s.status.zf then Q () s else E (X64Exit.jump l) s ⦄
       Op.jnz l ⦃ Q; E ⦄ := by

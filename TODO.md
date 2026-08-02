@@ -81,15 +81,16 @@
   offset that matches the store, so `Kraken/Examples/PushPop.lean` composes `push`,
   a clobber and `pop` back with `easm` reading the mapped-ness and stored value.
 
-- Conditional jumps do not compose with straightline `vcgen` stepping. `jnz_spec`
-  (`Kraken/Specs.lean`) is proven: its precondition is
-  `if s.status.zf then Q () s else E (.jump l) s`. But applying it puts the
-  continuation's `wp` under that `if`, and `vcgen` does not reduce the `if` to
-  resume stepping the taken/not-taken tail, even when the flag is ground after
-  `get64_set64` (e.g. `xor %rax, %rax; jnz; mov`). Stepping halts at the branch.
-  Only the spec ports; the multi-instruction example through a conditional does
-  not. A branch-aware stepping pass that decides a ground flag condition and
-  recurses into the selected continuation would lift this.
+- Conditional jumps compose through the `@[spec]` triple. `Op.jnz_spec`'s
+  precondition `if s.status.zf then Q () s else E (.jump l) s` is premise-free and
+  conjunctive in the schematic posts, so `vcgen` applies it directly; a `vcgen`
+  strategy then splits the precondition on `s.status.zf`, threading the decided flag
+  into context, stepping the fall-through continuation under the set-flag branch and
+  sending the jump target to the exception post under the clear-flag branch.
+  `Kraken/Examples/Cond.lean` runs `dec %rax; jnz; mov` through `vcgen [condProg]`.
+  Two toolchain changes back this: `isConjunctiveIn` treats an `ite`/`dite` with a
+  post-free condition as conjunctive, and `solve` splits a top-level `ite`/`dite`/
+  matcher on the entailment RHS.
 
 - MMIO and DMA are out of scope for the `EStateM X64Exit MachineData` model.
   Master models them (`Kraken/Examples/Increment{MMIO,DMA}.lean`) over the CPS
