@@ -5,23 +5,25 @@ Each step reads the carry the previous one wrote, so the flag equations are
 live and the discharge has to fold a chain of them. The prefix clears the
 carry so the result is determined.
 -/
-import Kraken.Specs
+import Kraken.X64MNew
 
 open Std.Internal.Do
+open Kraken
 
 namespace AdcChain
 
-def chain : Nat → X64M Unit
+def chain : Nat → X64MNew Unit Unit
   | 0 => pure ()
-  | n+1 => do Op.adcRR .rax .rbx; chain n
+  | n+1 => do Op.adc (.reg (.low .rax .W64)) (.regOrMem (.reg (.low .rbx .W64))); chain n
 
-def prog (n : Nat) : X64M Unit := do
-  Op.movRI .rax 0
-  Op.addRI .rax 0   -- clears the carry
-  Op.movRI .rbx 3
+def prog (n : Nat) : X64MNew Unit Unit := do
+  Op.mov (.reg (.low .rax .W64)) (.imm (.int64 0))
+  Op.add (.reg (.low .rax .W64)) (.imm (.int64 0))   -- clears the carry
+  Op.mov (.reg (.low .rbx .W64)) (.imm (.int64 3))
   chain n
 
 def Goal (n : Nat) : Prop :=
-  ⦃fun _ => True⦄ prog n ⦃fun _ s => s.regs.get64 .rax = BitVec.ofNat 64 (3*n)⦄
+  ⦃fun _ _ _ => True⦄ prog n
+    ⦃fun _ _ _ s => s.machine.regs.get64 .rax = BitVec.ofNat 64 (3*n); fun _ _ => True⦄
 
 end AdcChain
