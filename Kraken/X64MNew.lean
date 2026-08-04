@@ -150,14 +150,10 @@ def lea (dst : Reg64) (ae : AddrExpr) : X64MNew D Unit := do
   let addr ← evalAddr ae
   modifyMachine (fun s => { s with regs := s.regs.set64 dst (.ofBitVec addr) })
 
-def xor (dst : Dst .W64) (src : Operand .W64) : X64MNew D Unit := do
-  match dst, src with
-  | .reg (.low rd _), .regOrMem (.reg (.low rs _)) =>
-    modifyMachine (fun s =>
-      let v := (s.regs.get64 rd).toBitVec ^^^ (s.regs.get64 rs).toBitVec
-      let status := StatusFlags.from_result v { cf := false, af := false, of := false }
-      { s with status := status, regs := s.regs.set64 rd (.ofBitVec v) })
-  | _, _ => liftM (throw (.unimplemented "xor") : SysM D Unit)
+/-- `xor` leaves `AF` architecturally undefined, so the baseline throws
+`undefinedFlags` rather than commit to a value; the encoding matches it. -/
+def xor (_dst : Dst .W64) (_src : Operand .W64) : X64MNew D Unit :=
+  liftM (throw .undefinedFlags : SysM D Unit)
 
 def push (o : Operand .W64) : X64MNew D Unit := do
   match o with
@@ -332,17 +328,10 @@ device component survives. -/
     vcgen [Op.lea, evalAddr, getRco, getMachine, modifyMachine]
     all_goals finish
 
-@[spec] theorem Op.xor_reg_reg_spec (rd rs : Reg64) :
-    ⦃ fun env rip s =>
-        Q () env rip { s with machine := { s.machine with
-            regs := s.machine.regs.set64 rd
-              (.ofBitVec ((s.machine.regs.get64 rd).toBitVec ^^^ (s.machine.regs.get64 rs).toBitVec))
-            status := StatusFlags.from_result
-              ((s.machine.regs.get64 rd).toBitVec ^^^ (s.machine.regs.get64 rs).toBitVec)
-              { cf := false, af := false, of := false } } } ⦄
-      Op.xor (.reg (.low rd .W64)) (.regOrMem (.reg (.low rs .W64))) ⦃ Q; E ⦄ := by
+@[spec] theorem Op.xor_spec (dst : Dst .W64) (src : Operand .W64) :
+    ⦃ fun _ _ s => E .undefinedFlags s ⦄ Op.xor dst src ⦃ Q; E ⦄ := by
   sym =>
-    vcgen [Op.xor, modifyMachine]
+    vcgen [Op.xor]
     all_goals finish
 
 @[spec] theorem Op.push_reg_spec (r : Reg64) (v : Int) :

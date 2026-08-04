@@ -17,9 +17,10 @@ and discard laws (`gm_*`, `read_bind_const`, …) normalize both sides to one fo
 The residual is closed by applying a state and reducing each primitive in one
 step (`gm_apply`/`mm_apply`/…), so no whnf of the transformer stack ever runs.
 
-The flag-nondeterministic family is out of scope: the encoding commits to a
-result and to `cf/af/of := false` where `Operation.interp` throws
-`undefinedFlags`.
+The flag-nondeterministic family (`xor`, and the shifts and rotates once encoded)
+throws `undefinedFlags` in both the baseline and the encoding, since x86 leaves a
+flag such as `AF` undefined; adequacy is faithfulness to the baseline, so the
+encoding declines to commit a value there too.
 -/
 import Kraken.X64MNew
 
@@ -179,7 +180,7 @@ the dictionary pushes the lift to the leaves, `match_bind` and the store fuse th
 memory access into the `match` shape the encoding uses, and the state-operation
 fusion and discard laws align the reads and writes. -/
 local macro "fw_simp" : tactic =>
-  `(tactic| simp only [Op.mov, Op.dec, Op.add, Op.adc, Op.lea, Op.push, Op.pop, liftBaseline, liftMachineP, Operation.interp, Operand.interp, RegOrMem.interp, Reg.interp, ConstExpr.interp, MachineData.set, evalAddr, getRco, lm_pure, lm_bind, lm_ebind, lm_get, lm_eget, lm_modify, lm_set, lm_throw, lm_throw_bind, lm_load_bind, lm_store, gm_gm, gm_mm, gm_mset, mm_mm, gm_gt, read_bind_const, getThe_bind_const, read_read, gt_gt, bind_assoc, pure_bind, bind_pure, match_bind, MachineData.setReg, Reg64s.get_low64, Reg64s.set_low64, Bv.ofBitVec_toBitVec, Width.bytes, Width.bytesv, BitVec.ofInt_toInt, ze64, gm_store_fuse, BitVec.setWidth_64_64])
+  `(tactic| simp only [Op.mov, Op.dec, Op.add, Op.adc, Op.lea, Op.xor, Op.push, Op.pop, liftBaseline, liftMachineP, Operation.interp, Operand.interp, RegOrMem.interp, Reg.interp, ConstExpr.interp, MachineData.set, evalAddr, getRco, lm_pure, lm_bind, lm_ebind, lm_get, lm_eget, lm_modify, lm_set, lm_throw, lm_throw_bind, lm_load_bind, lm_store, gm_gm, gm_mm, gm_mset, mm_mm, gm_gt, read_bind_const, getThe_bind_const, read_read, gt_gt, bind_assoc, pure_bind, bind_pure, match_bind, MachineData.setReg, Reg64s.get_low64, Reg64s.set_low64, Bv.ofBitVec_toBitVec, Width.bytes, Width.bytesv, BitVec.ofInt_toInt, ze64, gm_store_fuse, BitVec.setWidth_64_64])
 
 /-- For the register and load cases: normalize, then apply to a state and reduce
 each primitive in one step, so the two matchers settle by a `rfl` over the small
@@ -245,6 +246,15 @@ theorem Op.adc_reg_reg_adequate {D} (rd rs : Reg64) :
 theorem Op.lea_adequate {D} (rd : Reg64) (ae : AddrExpr) :
     (Op.lea rd ae : X64MNew D Unit)
       = liftBaseline (.lea (.low rd .W64) ae) := by adeq
+
+/-! ## Flag-undefined family
+
+`xor` (like the shifts and rotates) leaves a flag undefined, so both sides throw
+`undefinedFlags` regardless of the operands. -/
+
+theorem Op.xor_adequate {D} (dst : Dst .W64) (src : Operand .W64) :
+    (Op.xor dst src : X64MNew D Unit) = liftBaseline (.xor dst src) := by
+  fw_simp
 
 /-! ## Stack -/
 
