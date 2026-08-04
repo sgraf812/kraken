@@ -45,6 +45,7 @@ def lemmaNames : Array Name := #[
   ``Reg64s.r8_set64, ``Reg64s.r9_set64, ``Reg64s.r10_set64, ``Reg64s.r11_set64,
   ``Reg64s.r12_set64, ``Reg64s.r13_set64, ``Reg64s.r14_set64, ``Reg64s.r15_set64,
   ``MachineData.regs_mk, ``MachineData.zmms_mk, ``MachineData.status_mk, ``MachineData.dmem_mk,
+  ``Sys.machine_mk, ``Sys.device_mk,
   ``StatusFlags.cf_from_result, ``StatusFlags.from_result.Remaining.cf_mk,
   ``BitVec.add_zero, ``BitVec.unsigned_eq, ``BitVec.toNat_ofNat,
   ``Nat.zero_mod, ``Int.add_zero, ``Int.cast_ofNat_Int, ``bne_self_eq_false, ``Bool.toNat_false,
