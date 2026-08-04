@@ -118,6 +118,9 @@ fused continuation is needed. -/
 @[simp] theorem gm_mset {D} (g : MachineData → MachineData) :
     (getMachine >>= fun s => modifyMachine (fun _ => g s) : X64MNew D Unit) = modifyMachine g := by
   funext env rip s; rfl
+@[simp] theorem mm_mm {D} (g h : MachineData → MachineData) :
+    (modifyMachine g >>= fun _ => modifyMachine h : X64MNew D Unit) = modifyMachine (fun m => h (g m)) := by
+  funext env rip s; rfl
 @[simp] theorem gm_gt {D α} (k : MachineData → Int64 → X64MNew D α) :
     (getMachine >>= fun s => getThe Int64 >>= fun p => k s p : X64MNew D α)
       = getThe Int64 >>= fun p => getMachine >>= fun s => k s p := by funext env rip s; rfl
@@ -176,7 +179,7 @@ the dictionary pushes the lift to the leaves, `match_bind` and the store fuse th
 memory access into the `match` shape the encoding uses, and the state-operation
 fusion and discard laws align the reads and writes. -/
 local macro "fw_simp" : tactic =>
-  `(tactic| simp only [Op.mov, Op.dec, Op.add, Op.adc, Op.lea, liftBaseline, liftMachineP, Operation.interp, Operand.interp, RegOrMem.interp, Reg.interp, ConstExpr.interp, MachineData.set, evalAddr, getRco, lm_pure, lm_bind, lm_ebind, lm_get, lm_eget, lm_modify, lm_set, lm_throw, lm_throw_bind, lm_load_bind, lm_store, gm_gm, gm_mm, gm_mset, gm_gt, read_bind_const, getThe_bind_const, read_read, gt_gt, bind_assoc, pure_bind, bind_pure, match_bind, MachineData.setReg, Reg64s.get_low64, Reg64s.set_low64, Bv.ofBitVec_toBitVec, Width.bytes, BitVec.ofInt_toInt, ze64, gm_store_fuse, BitVec.setWidth_64_64])
+  `(tactic| simp only [Op.mov, Op.dec, Op.add, Op.adc, Op.lea, Op.push, Op.pop, liftBaseline, liftMachineP, Operation.interp, Operand.interp, RegOrMem.interp, Reg.interp, ConstExpr.interp, MachineData.set, evalAddr, getRco, lm_pure, lm_bind, lm_ebind, lm_get, lm_eget, lm_modify, lm_set, lm_throw, lm_throw_bind, lm_load_bind, lm_store, gm_gm, gm_mm, gm_mset, mm_mm, gm_gt, read_bind_const, getThe_bind_const, read_read, gt_gt, bind_assoc, pure_bind, bind_pure, match_bind, MachineData.setReg, Reg64s.get_low64, Reg64s.set_low64, Bv.ofBitVec_toBitVec, Width.bytes, Width.bytesv, BitVec.ofInt_toInt, ze64, gm_store_fuse, BitVec.setWidth_64_64])
 
 /-- For the register and load cases: normalize, then apply to a state and reduce
 each primitive in one step, so the two matchers settle by a `rfl` over the small
@@ -242,5 +245,36 @@ theorem Op.adc_reg_reg_adequate {D} (rd rs : Reg64) :
 theorem Op.lea_adequate {D} (rd : Reg64) (ae : AddrExpr) :
     (Op.lea rd ae : X64MNew D Unit)
       = liftBaseline (.lea (.low rd .W64) ae) := by adeq
+
+/-! ## Stack
+
+`push` is out of scope: `Operation.interp` commits the decremented `rsp` before
+the mapped-ness check, so an unmapped destination faults with `rsp` already
+updated, whereas the encoding checks first and faults with the original state.
+The two agree on a mapped destination; they diverge only on the faulting write,
+where the encoding's precise-fault behavior is a deliberate refinement. -/
+
+theorem Op.pop_reg_adequate {D} (d : Reg64) :
+    (Op.pop (.reg (.low d .W64)) : X64MNew D Unit)
+      = liftBaseline (.pop (.reg (.low d .W64))) := by
+  fw_simp
+  funext env rip s
+  simp only [read_apply, getThe_apply, gm_apply]
+  cases Mem.loadInt s.machine.dmem (s.machine.regs.get64 .rsp).toBitVec 8 <;>
+    simp only [mm_apply, throw_apply]
+
+/-! ## Conditional jump
+
+The encoding carries the resolved `Int64` target; the baseline resolves the
+`Label` against `env.labels` at run time. The two agree exactly when the encoding
+was given that resolution, so the statement is applied to the environment and its
+label table, the layout/label correspondence a whole-program adequacy threads. -/
+
+theorem Op.jcc_adequate {D} (cc : CondCode) (l : Label) (env : Env) (rip : Int64) (s : Sys D) :
+    (Op.jcc cc (env.labels.label l) : X64MNew D Unit) env rip s
+      = liftBaseline (.jcc cc l) env rip s := by
+  simp only [Op.jcc, liftBaseline, liftMachineP, Operation.interp, read_apply, getThe_apply,
+    gm_apply, lm_bind, lm_ebind, lm_get, lm_eget, apply_ite, lm_throw, lm_pure, bind_assoc,
+    pure_bind, throw_apply, pure_apply]
 
 end Kraken
