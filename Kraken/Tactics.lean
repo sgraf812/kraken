@@ -44,10 +44,12 @@ private def projLemmas : List Name :=
    ``Sys.machine_mk, ``Sys.device_mk]
 
 /-- Effective-address canonicalization used in the simp path's second pass:
-unfold `Addr.eval`, resolve register reads over writes, and push the
-`UInt64`/`BitVec`/`Int64` coercions, so an indexed load address (whose base
-register a preceding `lea` overwrote) matches the separation-derived address. -/
-private def addrUnfolds : List Name := [``Addr.eval]
+unfold `AddrExpr.interp` to its base/index/displacement arithmetic, resolve
+register reads over writes, and push the `UInt64`/`BitVec`/`Int64` coercions, so
+an indexed load address (whose base register a preceding `lea` overwrote) matches
+the separation-derived address. -/
+private def addrUnfolds : List Name :=
+  [``AddrExpr.interp, ``BitVec.toAddressSize, ``ConstExpr.interp, ``BitVec.take, ``Width.bytes]
 
 /-- Add a hypothesis to a simp set, splitting a conjunction into its conjuncts so
 each atomic equality becomes its own rewrite rule (a state precondition like
@@ -70,6 +72,7 @@ private def addrLemmas : List Name :=
    ``Reg64s.rsi_set64, ``Reg64s.rdi_set64, ``Reg64s.rsp_set64, ``Reg64s.rbp_set64,
    ``Reg64s.r8_set64, ``Reg64s.r9_set64, ``Reg64s.r10_set64, ``Reg64s.r11_set64,
    ``Reg64s.r12_set64, ``Reg64s.r13_set64, ``Reg64s.r14_set64, ``Reg64s.r15_set64,
+   ``BitVec.signed_eq,
    ``Int64.toBitVec_lit, ``BitVec.ofInt_add, ``BitVec.ofInt_mul, ``BitVec.ofInt_toInt,
    ``BitVec.ofInt_toInt_int64, ``BitVec.add_zero,
    ``BitVec.ofInt_neg, ``BitVec.ofInt_ofNat, ``UInt64.toBitVec_sub, ``UInt64.toBitVec_ofNat,
@@ -136,8 +139,8 @@ private def easmCore (mvarId : MVarId) : MetaM Bool := mvarId.withContext do
   -- Simp set: the read-over-write projections plus every closed propositional
   -- hypothesis. The `h_load` facts rewrite `Mem.loadInt … → some V`; the state
   -- equalities and address bridges align the load's memory and address with them.
-  -- The first pass keeps `Addr.eval` folded (matching a folded `h_load`); if the
-  -- queried side does not reduce to a value, a second pass canonicalizes the
+  -- The first pass keeps `AddrExpr.interp` folded (matching a folded `h_load`); if
+  -- the queried side does not reduce to a value, a second pass canonicalizes the
   -- address so an indexed load matches its separation-derived form.
   let mkThms (thmExtra unfoldExtra : List Name) : MetaM SimpTheorems := do
     let mut thms : SimpTheorems := {}
