@@ -14,7 +14,8 @@ site: a `liftMachine` monad-morphism dictionary (`lm_*`) pushes the lift to the
 X64MNew primitives, the memory bridges (`lm_load_bind`/`lm_store`) turn a lifted
 access into the `match` shape the encoding uses, and the state-operation fusion
 and discard laws (`gm_*`, `read_bind_const`, …) normalize both sides to one form.
-Every case closes with the same `simp` set.
+The residual is closed by applying a state and reducing each primitive in one
+step (`gm_apply`/`mm_apply`/…), so no whnf of the transformer stack ever runs.
 
 The flag-nondeterministic family is out of scope: the encoding commits to a
 result and to `cf/af/of := false` where `Operation.interp` throws
@@ -25,7 +26,6 @@ import Kraken.X64MNew
 open Std.Internal.Do
 
 set_option linter.unusedSimpArgs false
-set_option maxHeartbeats 4000000
 
 namespace Kraken
 
@@ -133,6 +133,22 @@ fused continuation is needed. -/
       = getThe Int64 >>= fun p => k p p := by funext env rip s; rfl
 @[simp] theorem ze64 (x : BitVec 64) : BitVec.zeroExtend 64 x = x := BitVec.setWidth_64_64 x
 
+/-! Single-step reductions of a primitive applied to a state. Each is a one-step
+`rfl`, so using them keeps a goal that reaches an applied form propositional
+instead of forcing a full whnf of the transformer stack. -/
+theorem read_apply {D α} (k : Env → X64MNew D α) (env : Env) (rip : Int64) (s : Sys D) :
+    ((read : X64MNew D Env) >>= k) env rip s = k env env rip s := rfl
+theorem getThe_apply {D α} (k : Int64 → X64MNew D α) (env : Env) (rip : Int64) (s : Sys D) :
+    ((getThe Int64 : X64MNew D Int64) >>= k) env rip s = k rip env rip s := rfl
+theorem gm_apply {D α} (k : MachineData → X64MNew D α) (env : Env) (rip : Int64) (s : Sys D) :
+    (getMachine >>= k) env rip s = k s.machine env rip s := rfl
+theorem mm_apply {D} (f : MachineData → MachineData) (env : Env) (rip : Int64) (s : Sys D) :
+    modifyMachine f env rip s = .ok ((), rip) { s with machine := f s.machine } := rfl
+theorem throw_apply {D α} (e : X64Exit) (env : Env) (rip : Int64) (s : Sys D) :
+    (liftM (throw e : SysM D α) : X64MNew D α) env rip s = .error e s := rfl
+theorem pure_apply {D α} (a : α) (env : Env) (rip : Int64) (s : Sys D) :
+    (pure a : X64MNew D α) env rip s = .ok (a, rip) s := rfl
+
 /-- The value a store commits is read at store time; reading it from the earlier
 `getMachine` is the same, since nothing between modifies the state. This fuses the
 baseline's early operand read into the encoding's store. -/
@@ -143,19 +159,30 @@ baseline's early operand read into the encoding's store. -/
       = getMachine >>= fun s => (match Mem.loadInt s.dmem addr 8 with
        | some _ => modifyMachine (fun m => { m with dmem := Mem.storeInt m.dmem addr 8 (val m) })
        | none => liftM (throw (.nonmemStore s.dmem addr .W64) : SysM D Unit)) := by
-  funext env rip s; cases Mem.loadInt s.machine.dmem addr 8 <;> rfl
+  funext env rip s
+  simp only [gm_apply]
+  cases Mem.loadInt s.machine.dmem addr 8 <;> simp only [mm_apply, throw_apply]
 
-/-- One reduction for every case: unfold the encoding and the baseline, push the
-lift to leaves through the dictionary, fuse the state operations, and settle the
-two matchers by definitional equality. -/
+/-- Bind distributes over a `Mem.loadInt` dispatch: the continuation moves into
+each branch, and the fault branch absorbs it. -/
+@[simp] theorem match_bind {D γ α β} (o : Option γ) (some_br : γ → X64MNew D α)
+    (e : X64Exit) (k : α → X64MNew D β) :
+    ((match o with | some i => some_br i | none => liftM (throw e : SysM D α)) >>= k)
+      = (match o with | some i => some_br i >>= k | none => liftM (throw e : SysM D β)) := by
+  cases o <;> simp [lm_throw_bind]
+
+/-- Unfold the encoding and the baseline and normalize both to one monadic form:
+the dictionary pushes the lift to the leaves, `match_bind` and the store fuse the
+memory access into the `match` shape the encoding uses, and the state-operation
+fusion and discard laws align the reads and writes. -/
+local macro "fw_simp" : tactic =>
+  `(tactic| simp only [Op.mov, Op.dec, Op.add, Op.adc, Op.lea, liftBaseline, liftMachineP, Operation.interp, Operand.interp, RegOrMem.interp, Reg.interp, ConstExpr.interp, MachineData.set, evalAddr, getRco, lm_pure, lm_bind, lm_ebind, lm_get, lm_eget, lm_modify, lm_set, lm_throw, lm_throw_bind, lm_load_bind, lm_store, gm_gm, gm_mm, gm_mset, gm_gt, read_bind_const, getThe_bind_const, read_read, gt_gt, bind_assoc, pure_bind, bind_pure, match_bind, MachineData.setReg, Reg64s.get_low64, Reg64s.set_low64, Bv.ofBitVec_toBitVec, Width.bytes, BitVec.ofInt_toInt, ze64, gm_store_fuse, BitVec.setWidth_64_64])
+
+/-- For the register and load cases: normalize, then apply to a state and reduce
+each primitive in one step, so the two matchers settle by a `rfl` over the small
+residual rather than a whnf of the transformer stack. -/
 local macro "adeq" : tactic =>
-  `(tactic| (simp only [Op.mov, Op.dec, Op.add, Op.adc, Op.lea, liftBaseline, liftMachineP,
-      Operation.interp, Operand.interp, RegOrMem.interp, Reg.interp, ConstExpr.interp,
-      MachineData.set, evalAddr, getRco, lm_pure, lm_bind, lm_ebind, lm_get, lm_eget, lm_modify,
-      lm_set, lm_throw, lm_throw_bind, lm_load_bind, lm_store, gm_gm, gm_mm, gm_mset, gm_gt,
-      read_bind_const, getThe_bind_const, read_read, gt_gt, bind_assoc, pure_bind, bind_pure,
-      MachineData.setReg, Reg64s.get_low64, Reg64s.set_low64, Bv.ofBitVec_toBitVec, Width.bytes,
-      BitVec.ofInt_toInt, ze64, gm_store_fuse, BitVec.setWidth_64_64]; try rfl))
+  `(tactic| (fw_simp; all_goals (funext env rip s; simp only [read_apply, getThe_apply, gm_apply, mm_apply, throw_apply, pure_apply]; try rfl)))
 
 variable (labels : Labels)
 
@@ -173,13 +200,26 @@ theorem Op.mov_reg_mem_adequate {D} (rd : Reg64) (ae : AddrExpr) :
     (Op.mov (.reg (.low rd .W64)) (.regOrMem (.mem ae)) : X64MNew D Unit)
       = liftBaseline (.mov (.reg (.low rd .W64)) (.regOrMem (.mem ae))) := by adeq
 
+/-- The memory-write cases commit a `Mem.storeInt`; a `rfl` over that record is
+slow, so instead reduce the reads, split the mapped-ness, and reduce each branch.
+The `cases` names the address the reads produced. -/
 theorem Op.mov_mem_imm_adequate {D} (ae : AddrExpr) (i : Int64) :
     (Op.mov (.mem ae) (.imm (.int64 i)) : X64MNew D Unit)
-      = liftBaseline (.mov (.mem ae) (.imm (.int64 i))) := by adeq
+      = liftBaseline (.mov (.mem ae) (.imm (.int64 i))) := by
+  fw_simp
+  funext env rip s
+  simp only [read_apply, getThe_apply, gm_apply]
+  cases Mem.loadInt s.machine.dmem (AddrExpr.interp env.labels (.mk .W64) ae s.machine.regs (.mk rip rip)) 8 <;>
+    simp only [mm_apply, throw_apply]
 
 theorem Op.mov_mem_reg_adequate {D} (ae : AddrExpr) (rs : Reg64) :
     (Op.mov (.mem ae) (.regOrMem (.reg (.low rs .W64))) : X64MNew D Unit)
-      = liftBaseline (.mov (.mem ae) (.regOrMem (.reg (.low rs .W64)))) := by adeq
+      = liftBaseline (.mov (.mem ae) (.regOrMem (.reg (.low rs .W64)))) := by
+  fw_simp
+  funext env rip s
+  simp only [read_apply, getThe_apply, gm_apply]
+  cases Mem.loadInt s.machine.dmem (AddrExpr.interp env.labels (.mk .W64) ae s.machine.regs (.mk rip rip)) 8 <;>
+    simp only [mm_apply, throw_apply]
 
 /-! ## Arithmetic -/
 
