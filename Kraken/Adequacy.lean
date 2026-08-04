@@ -246,13 +246,16 @@ theorem Op.lea_adequate {D} (rd : Reg64) (ae : AddrExpr) :
     (Op.lea rd ae : X64MNew D Unit)
       = liftBaseline (.lea (.low rd .W64) ae) := by adeq
 
-/-! ## Stack
+/-! ## Stack -/
 
-`push` is out of scope: `Operation.interp` commits the decremented `rsp` before
-the mapped-ness check, so an unmapped destination faults with `rsp` already
-updated, whereas the encoding checks first and faults with the original state.
-The two agree on a mapped destination; they diverge only on the faulting write,
-where the encoding's precise-fault behavior is a deliberate refinement. -/
+theorem Op.push_reg_adequate {D} (r : Reg64) :
+    (Op.push (.regOrMem (.reg (.low r .W64))) : X64MNew D Unit)
+      = liftBaseline (.push (.regOrMem (.reg (.low r .W64)))) := by
+  fw_simp
+  funext env rip s
+  simp only [read_apply, getThe_apply, gm_apply]
+  cases Mem.loadInt s.machine.dmem ((s.machine.regs.get64 .rsp).toBitVec - 8#64) 8 <;>
+    simp only [lm_throw_bind, mm_mm, mm_apply, throw_apply]
 
 theorem Op.pop_reg_adequate {D} (d : Reg64) :
     (Op.pop (.reg (.low d .W64)) : X64MNew D Unit)

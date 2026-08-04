@@ -355,8 +355,8 @@ def Operation.interp {w} (i : Operation w) (p : Std.Rco Int64) : X64M Unit := do
     let v ← src.interp labels address_size p
     let s ← get
     let rsp := (s.regs.get64 .rsp).toBitVec - w.bytesv
-    set { s with regs := s.regs.set64 .rsp (.ofBitVec rsp) }
     MachineData.store rsp v
+    modify (fun s => { s with regs := s.regs.set64 .rsp (.ofBitVec rsp) })
   | .pop dst =>
     let rsp := ((← get).regs.get64 .rsp).toBitVec
     let val ← MachineData.load rsp w
