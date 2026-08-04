@@ -355,6 +355,8 @@ def Operation.interp {w} (i : Operation w) (p : Std.Rco Int64) : X64M Unit := do
     let v ← src.interp labels address_size p
     let s ← get
     let rsp := (s.regs.get64 .rsp).toBitVec - w.bytesv
+    -- The store precedes the rsp commit, so a faulting push leaves rsp at its
+    -- original value, as a restartable fault requires.
     MachineData.store rsp v
     modify (fun s => { s with regs := s.regs.set64 .rsp (.ofBitVec rsp) })
   | .pop dst =>
