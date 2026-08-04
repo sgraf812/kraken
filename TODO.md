@@ -92,15 +92,19 @@
   post-free condition as conjunctive, and `solve` splits a top-level `ite`/`dite`/
   matcher on the entailment RHS.
 
-- MMIO and DMA are out of scope for the `EStateM X64Exit MachineData` model.
-  Master models them (`Kraken/Examples/Increment{MMIO,DMA}.lean`) over the CPS
-  `Effects` type: `nonmem_load` carries a continuation `w.type → DataMem → Effects`
-  that a `handleEffects` interpreter resumes with a device-supplied value while
-  threading a `SystemState = MachineState × DeviceState`. Here a non-memory access
-  is `throw (.nonmemLoad …)`, which aborts with no resumption and no device state,
-  so a load cannot return a device reply. Porting these needs a device-model
-  design: thread device state (a product monad or a state component) and give the
-  load access to it, replacing the throwing `MachineData.load`/`store` on the
-  non-memory branch. Not a small change.
+- MMIO and DMA compose through the device layer (`Kraken/DeviceNew.lean`). Device
+  state `D` is the `device` component of `Sys D`, alongside the CPU `machine`, so
+  it lives in the exception-carrying state of `X64MNew D` and a `jump` preserves it.
+  Register and arithmetic actions stay polymorphic in `D`: they read and write
+  `machine` and thread `device`, stepping unchanged under their existing `@[spec]`
+  triples. Only the memory primitives become device-aware: `Op.devLoad`/`Op.devStore`
+  consult a `Device D` model on an unmapped address instead of faulting. A device
+  handler reads and returns data memory alongside device state, so a load or store
+  transitions the device and either one moves ownership of a memory range between
+  `dmem` and the device: all four transfers of the MMIO/DMA matrix. Each spec's
+  precondition matches on the address being mapped and on the device accepting it,
+  premise-free and conjunctive in the schematic posts, so `vcgen` applies it
+  directly and splits per branch. `Kraken/Examples/Increment{MMIO,DMA}New.lean` run
+  device programs through `vcgen` with no unfolding.
 
 - Benchmark harness and the current numbers: bench/README.md.

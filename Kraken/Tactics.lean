@@ -40,15 +40,36 @@ side before the `h_load` facts fire. -/
 private def projLemmas : List Name :=
   [``MachineData.dmem_setReg, ``MachineData.regs_setReg,
    ``MachineData.status_setReg, ``MachineData.zmms_setReg, ``MachineData.dmem_mk,
-   ``MachineData.regs_mk, ``MachineData.status_mk, ``MachineData.zmms_mk]
+   ``MachineData.regs_mk, ``MachineData.status_mk, ``MachineData.zmms_mk,
+   ``Sys.machine_mk, ``Sys.device_mk]
 
 /-- Effective-address canonicalization used in the simp path's second pass:
 unfold `Addr.eval`, resolve register reads over writes, and push the
 `UInt64`/`BitVec`/`Int64` coercions, so an indexed load address (whose base
 register a preceding `lea` overwrote) matches the separation-derived address. -/
-private def addrUnfolds : List Name := [``Addr.eval, ``Reg64s.get64]
+private def addrUnfolds : List Name := [``Addr.eval]
+
+/-- Add a hypothesis to a simp set, splitting a conjunction into its conjuncts so
+each atomic equality becomes its own rewrite rule (a state precondition like
+`env = env₀ ∧ rip = 0 ∧ sd = s₀` reaches `easm` as one hypothesis otherwise). -/
+private partial def addHypSplit (thms : SimpTheorems) (proof ty : Expr) : MetaM SimpTheorems := do
+  if ty.isAppOfArity ``And 2 then
+    let a := ty.appFn!.appArg!
+    let b := ty.appArg!
+    let thms ← addHypSplit thms (← mkAppM ``And.left #[proof]) a
+    addHypSplit thms (← mkAppM ``And.right #[proof]) b
+  else
+    let fresh ← mkFreshId
+    let origin := match proof with | .fvar fid => .fvar fid | _ => .other fresh
+    try thms.add origin #[] proof catch _ => pure thms
 private def addrLemmas : List Name :=
   [``Reg64s.get64_set64, ``Reg64s.get_low64, ``Reg64s.set_low64,
+   -- Per-field reads over `set64`, so an address that unfolds `get64` to a named
+   -- field (`.rsp`, `.rbx`, …) still resolves the read over intervening writes.
+   ``Reg64s.rax_set64, ``Reg64s.rbx_set64, ``Reg64s.rcx_set64, ``Reg64s.rdx_set64,
+   ``Reg64s.rsi_set64, ``Reg64s.rdi_set64, ``Reg64s.rsp_set64, ``Reg64s.rbp_set64,
+   ``Reg64s.r8_set64, ``Reg64s.r9_set64, ``Reg64s.r10_set64, ``Reg64s.r11_set64,
+   ``Reg64s.r12_set64, ``Reg64s.r13_set64, ``Reg64s.r14_set64, ``Reg64s.r15_set64,
    ``Int64.toBitVec_lit, ``BitVec.ofInt_add, ``BitVec.ofInt_mul, ``BitVec.ofInt_toInt,
    ``BitVec.ofInt_toInt_int64, ``BitVec.add_zero,
    ``BitVec.ofInt_neg, ``BitVec.ofInt_ofNat, ``UInt64.toBitVec_sub, ``UInt64.toBitVec_ofNat,
@@ -125,15 +146,21 @@ private def easmCore (mvarId : MVarId) : MetaM Bool := mvarId.withContext do
     for decl in (← getLCtx) do
       unless decl.isImplementationDetail do
         if (← isProp decl.type) && !decl.type.hasExprMVar then
-          -- Some hypotheses (e.g. inequalities) are not orientable as simp lemmas.
-          thms ← try thms.add (.fvar decl.fvarId) #[] (mkFVar decl.fvarId) catch _ => pure thms
+          -- Some hypotheses (e.g. inequalities) are not orientable as simp lemmas;
+          -- a conjunction is split so each atomic equality is its own rule.
+          thms ← addHypSplit thms (mkFVar decl.fvarId) decl.type
     return thms
-  let ctx1 ← Simp.mkContext (simpTheorems := #[← mkThms [] []]) (congrTheorems := ← getSimpCongrTheorems)
-  let mut res := (← Meta.simp known ctx1).1
+  -- `decide := true` settles the `Reg64` equality guards a per-field read over
+  -- `set64` leaves behind; the default simprocs (`reduceIte`) then collapse the
+  -- resulting `if True/False then …`.
+  let cfg : Simp.Config := { decide := true }
+  let sprocs ← Simp.getSimprocs
+  let ctx1 ← Simp.mkContext cfg (simpTheorems := #[← mkThms [] []]) (congrTheorems := ← getSimpCongrTheorems)
+  let mut res := (← Meta.simp known ctx1 (simprocs := #[sprocs])).1
   unless ← isCtorHeaded res.expr do
-    let ctx2 ← Simp.mkContext (simpTheorems := #[← mkThms addrLemmas addrUnfolds])
+    let ctx2 ← Simp.mkContext cfg (simpTheorems := #[← mkThms addrLemmas addrUnfolds])
       (congrTheorems := ← getSimpCongrTheorems)
-    res := (← Meta.simp known ctx2).1
+    res := (← Meta.simp known ctx2 (simprocs := #[sprocs])).1
   let knownV := res.expr  -- expected `some V`
   unless ← isCtorHeaded knownV do return false
   -- `hKnown : known = knownV`; `knownV` is constructor-headed, so unifying it with

@@ -23,6 +23,23 @@ open Std.Internal.Do.WPMonad
 set_option mvcgen.warning false
 set_option grind.warning false
 
+/-! ## System state
+
+The denotational monad runs over `Sys D`: the CPU `MachineData` plus a device
+state `D`. Instruction primitives update `machine` and thread `device`; a `jump`
+carries the whole `Sys D` in the exception, so `device` survives control transfer.
+The projection-over-`mk` lemmas let the state-simplification and `easm` fold a
+`Sys` update the way they already fold a `MachineData` update. -/
+
+structure Sys (D : Type) where
+  machine : MachineData
+  device : D
+
+@[simp] theorem Sys.machine_mk {D : Type} (m : MachineData) (d : D) :
+    (Sys.mk m d).machine = m := rfl
+@[simp] theorem Sys.device_mk {D : Type} (m : MachineData) (d : D) :
+    (Sys.mk m d).device = d := rfl
+
 /-! ## `.unsigned`/`.signed` reductions -/
 @[grind hom] theorem BitVec.unsigned_hom {w} (x : BitVec w) : x.unsigned = (x.toNat : Int) := rfl
 @[simp] theorem BitVec.unsigned_eq {w} (x : BitVec w) : x.unsigned = (x.toNat : Int) := rfl
