@@ -21,11 +21,11 @@ def loadProg : X64MNew Unit Unit :=
 
 theorem load_single (env₀ : Env) (s₀ : MachineData) (v : Int)
     (h_load : Mem.loadInt s₀.dmem
-        (AddrExpr.interp env₀.labels (.mk .W64) aeRspM8 s₀.regs (.mk 0 0)) 8 = some v) :
+        (AddrExpr.interp env₀.labels (.mk .W64) aeRspM8 s₀.regs (.mk 0 (0 + Int64.ofNat env₀.curSize))) 8 = some v) :
     ⦃fun env rip sd => env = env₀ ∧ rip = 0 ∧ sd = ⟨s₀, ()⟩⦄ loadProg
       ⦃fun _ _ _ s => s.machine.regs.rax = BitVec.ofInt 64 v; fun _ _ => True⦄ := by
   vcgen [loadProg] with (first (easm) (skip))
-  all_goals (simp_all [BitVec.ofInt_toInt] <;> bv_decide)
+  all_goals (simp_all <;> bv_decide)
 
 def storeLoadProg : X64MNew Unit Unit := do
   Op.mov (.mem aeRspM8) (.imm (.int64 99))
@@ -33,12 +33,12 @@ def storeLoadProg : X64MNew Unit Unit := do
 
 theorem store_load_back (env₀ : Env) (s₀ : MachineData) (v : Int)
     (h_mapped : Mem.loadInt s₀.dmem
-        (AddrExpr.interp env₀.labels (.mk .W64) aeRspM8 s₀.regs (.mk 0 0)) 8 = some v)
+        (AddrExpr.interp env₀.labels (.mk .W64) aeRspM8 s₀.regs (.mk 0 (0 + Int64.ofNat env₀.curSize))) 8 = some v)
     (h_back : Mem.loadInt
-        (Mem.storeInt s₀.dmem (AddrExpr.interp env₀.labels (.mk .W64) aeRspM8 s₀.regs (.mk 0 0)) 8 99)
-        (AddrExpr.interp env₀.labels (.mk .W64) aeRspM8 s₀.regs (.mk 0 0)) 8 = some 99) :
+        (Mem.storeInt s₀.dmem (AddrExpr.interp env₀.labels (.mk .W64) aeRspM8 s₀.regs (.mk 0 (0 + Int64.ofNat env₀.curSize))) 8 99)
+        (AddrExpr.interp env₀.labels (.mk .W64) aeRspM8 s₀.regs (.mk 0 (0 + Int64.ofNat env₀.curSize))) 8 = some 99) :
     ⦃fun env rip sd => env = env₀ ∧ rip = 0 ∧ sd = ⟨s₀, ()⟩⦄ storeLoadProg
       ⦃fun _ _ _ s => s.machine.regs.rax = BitVec.ofInt 64 99; fun _ _ => True⦄ := by
   have h99 : (BitVec.setWidth 64 ((99 : Int64)).toBitVec).toInt = 99 := by decide
   vcgen [storeLoadProg] with (first (easm) (skip))
-  all_goals (simp_all [BitVec.ofInt_toInt] <;> bv_decide)
+  all_goals (simp_all <;> bv_decide)

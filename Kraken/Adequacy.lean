@@ -4,10 +4,9 @@ Adequacy of the `X64MNew` encoding against the baseline omni-semantics.
 The baseline is `Operation.interp`, the straightline interpreter over
 `EStateM X64Exit MachineData`. A device-parameterized action `Op.foo` runs over
 `Sys D`, touching only the `machine` component; `liftMachine` embeds a baseline
-computation into that component, `liftMachineP` reads `rip` first, and
-`liftBaseline` reads the label environment. Each deterministic `Op.foo` equals
-`liftBaseline` of the matching `Operation.interp` case at 64-bit operand and
-address size.
+computation into that component, and `liftBaseline` reads the label environment
+and `rip`. Each deterministic `Op.foo` equals `liftBaseline` of the matching
+`Operation.interp` case at 64-bit operand and address size.
 
 The proofs run against a characterizing API rather than by unfolding at the use
 site: a `liftMachine` monad-morphism dictionary (`lm_*`) pushes the lift to the
@@ -38,16 +37,12 @@ def liftMachine {D : Type} {α : Type} (c : X64M α) : X64MNew D α :=
     | .ok a m => .ok a { s with machine := m }
     | .error e m => .error e { s with machine := m })
 
-/-- Read `rip` and run a baseline computation whose position range is that `rip`. -/
-def liftMachineP {D : Type} {α : Type} (c : Int64 → X64M α) : X64MNew D α := do
-  let rip ← getThe Int64
-  liftMachine (c rip)
-
-/-- Read the label environment and run the baseline `Operation.interp` of `op` at
-64-bit address size against the current `rip`. -/
+/-- Read the label environment and `rip`, then run the baseline `Operation.interp`
+of `op` at 64-bit address size over the position range `.mk rip (rip + curSize)`. -/
 def liftBaseline {D : Type} (op : Operation .W64) : X64MNew D Unit := do
   let env ← read
-  liftMachineP (fun rip => Operation.interp env.labels (.mk .W64) op (.mk rip rip))
+  let rip ← getThe Int64
+  liftMachine (Operation.interp env.labels (.mk .W64) op (.mk rip (rip + Int64.ofNat env.curSize)))
 
 /-! ## `liftMachine` monad-morphism dictionary -/
 
@@ -152,6 +147,8 @@ theorem throw_apply {D α} (e : X64Exit) (env : Env) (rip : Int64) (s : Sys D) :
     (liftM (throw e : SysM D α) : X64MNew D α) env rip s = .error e s := rfl
 theorem pure_apply {D α} (a : α) (env : Env) (rip : Int64) (s : Sys D) :
     (pure a : X64MNew D α) env rip s = .ok (a, rip) s := rfl
+theorem withReader_apply {D α} (f : Env → Env) (x : X64MNew D α) (env : Env) (rip : Int64) (s : Sys D) :
+    (withReader f x : X64MNew D α) env rip s = x (f env) rip s := rfl
 
 /-- The value a store commits is read at store time; reading it from the earlier
 `getMachine` is the same, since nothing between modifies the state. This fuses the
@@ -180,7 +177,7 @@ the dictionary pushes the lift to the leaves, `match_bind` and the store fuse th
 memory access into the `match` shape the encoding uses, and the state-operation
 fusion and discard laws align the reads and writes. -/
 local macro "fw_simp" : tactic =>
-  `(tactic| simp only [Op.mov, Op.dec, Op.add, Op.adc, Op.lea, Op.xor, Op.push, Op.pop, liftBaseline, liftMachineP, Operation.interp, Operand.interp, RegOrMem.interp, Reg.interp, ConstExpr.interp, MachineData.set, evalAddr, getRco, lm_pure, lm_bind, lm_ebind, lm_get, lm_eget, lm_modify, lm_set, lm_throw, lm_throw_bind, lm_load_bind, lm_store, gm_gm, gm_mm, gm_mset, mm_mm, gm_gt, read_bind_const, getThe_bind_const, read_read, gt_gt, bind_assoc, pure_bind, bind_pure, match_bind, MachineData.setReg, Reg64s.get_low64, Reg64s.set_low64, Bv.ofBitVec_toBitVec, Width.bytes, Width.bytesv, BitVec.ofInt_toInt, ze64, gm_store_fuse, BitVec.setWidth_64_64])
+  `(tactic| simp only [Op.exec, Op.mov, Op.dec, Op.add, Op.adc, Op.lea, Op.xor, Op.push, Op.pop, liftBaseline, Operation.interp, Operand.interp, RegOrMem.interp, Reg.interp, ConstExpr.interp, MachineData.set, evalAddr, lm_pure, lm_bind, lm_ebind, lm_get, lm_eget, lm_modify, lm_set, lm_throw, lm_throw_bind, lm_load_bind, lm_store, gm_gm, gm_mm, gm_mset, mm_mm, gm_gt, read_bind_const, getThe_bind_const, read_read, gt_gt, bind_assoc, pure_bind, bind_pure, match_bind, MachineData.setReg, Reg64s.get_low64, Reg64s.set_low64, Bv.ofBitVec_toBitVec, Width.bytes, Width.bytesv, BitVec.ofInt_toInt, ze64, gm_store_fuse, BitVec.setWidth_64_64])
 
 /-- For the register and load cases: normalize, then apply to a state and reduce
 each primitive in one step, so the two matchers settle by a `rfl` over the small
@@ -188,78 +185,81 @@ residual rather than a whnf of the transformer stack. -/
 local macro "adeq" : tactic =>
   `(tactic| (fw_simp; all_goals (funext env rip s; simp only [read_apply, getThe_apply, gm_apply, mm_apply, throw_apply, pure_apply]; try rfl)))
 
-variable (labels : Labels)
+/-! ## Front-end dispatch adequacy
 
-/-! ## Register moves -/
+Each equation encodes one instruction shape against the baseline. `Op.exec` in
+the `fw_simp` set reduces the dispatch to its primitive first, so `adeq` closes
+the register and load cases; the memory-write, stack, and jump cases split the
+mapped-ness or the branch by hand. -/
 
-theorem Op.mov_reg_imm_adequate {D} (r : Reg64) (i : Int64) :
-    (Op.mov (.reg (.low r .W64)) (.imm (.int64 i)) : X64MNew D Unit)
+/-! ### Register moves -/
+
+theorem Op.exec_mov_reg_imm_adequate {D} (r : Reg64) (i : Int64) :
+    (Op.exec (.mov (.reg (.low r .W64)) (.imm (.int64 i))) : X64MNew D Unit)
       = liftBaseline (.mov (.reg (.low r .W64)) (.imm (.int64 i))) := by adeq
 
-theorem Op.mov_reg_reg_adequate {D} (rd rs : Reg64) :
-    (Op.mov (.reg (.low rd .W64)) (.regOrMem (.reg (.low rs .W64))) : X64MNew D Unit)
+theorem Op.exec_mov_reg_reg_adequate {D} (rd rs : Reg64) :
+    (Op.exec (.mov (.reg (.low rd .W64)) (.regOrMem (.reg (.low rs .W64)))) : X64MNew D Unit)
       = liftBaseline (.mov (.reg (.low rd .W64)) (.regOrMem (.reg (.low rs .W64)))) := by adeq
 
-theorem Op.mov_reg_mem_adequate {D} (rd : Reg64) (ae : AddrExpr) :
-    (Op.mov (.reg (.low rd .W64)) (.regOrMem (.mem ae)) : X64MNew D Unit)
+theorem Op.exec_mov_reg_mem_adequate {D} (rd : Reg64) (ae : AddrExpr) :
+    (Op.exec (.mov (.reg (.low rd .W64)) (.regOrMem (.mem ae))) : X64MNew D Unit)
       = liftBaseline (.mov (.reg (.low rd .W64)) (.regOrMem (.mem ae))) := by adeq
 
 /-- The memory-write cases commit a `Mem.storeInt`; a `rfl` over that record is
-slow, so instead reduce the reads, split the mapped-ness, and reduce each branch.
-The `cases` names the address the reads produced. -/
-theorem Op.mov_mem_imm_adequate {D} (ae : AddrExpr) (i : Int64) :
-    (Op.mov (.mem ae) (.imm (.int64 i)) : X64MNew D Unit)
+slow, so reduce the reads, split the mapped-ness, and reduce each branch. -/
+theorem Op.exec_mov_mem_imm_adequate {D} (ae : AddrExpr) (i : Int64) :
+    (Op.exec (.mov (.mem ae) (.imm (.int64 i))) : X64MNew D Unit)
       = liftBaseline (.mov (.mem ae) (.imm (.int64 i))) := by
   fw_simp
   funext env rip s
   simp only [read_apply, getThe_apply, gm_apply]
-  cases Mem.loadInt s.machine.dmem (AddrExpr.interp env.labels (.mk .W64) ae s.machine.regs (.mk rip rip)) 8 <;>
+  cases Mem.loadInt s.machine.dmem (AddrExpr.interp env.labels (.mk .W64) ae s.machine.regs (.mk rip (rip + Int64.ofNat env.curSize))) 8 <;>
     simp only [mm_apply, throw_apply]
 
-theorem Op.mov_mem_reg_adequate {D} (ae : AddrExpr) (rs : Reg64) :
-    (Op.mov (.mem ae) (.regOrMem (.reg (.low rs .W64))) : X64MNew D Unit)
+theorem Op.exec_mov_mem_reg_adequate {D} (ae : AddrExpr) (rs : Reg64) :
+    (Op.exec (.mov (.mem ae) (.regOrMem (.reg (.low rs .W64)))) : X64MNew D Unit)
       = liftBaseline (.mov (.mem ae) (.regOrMem (.reg (.low rs .W64)))) := by
   fw_simp
   funext env rip s
   simp only [read_apply, getThe_apply, gm_apply]
-  cases Mem.loadInt s.machine.dmem (AddrExpr.interp env.labels (.mk .W64) ae s.machine.regs (.mk rip rip)) 8 <;>
+  cases Mem.loadInt s.machine.dmem (AddrExpr.interp env.labels (.mk .W64) ae s.machine.regs (.mk rip (rip + Int64.ofNat env.curSize))) 8 <;>
     simp only [mm_apply, throw_apply]
 
-/-! ## Arithmetic -/
+/-! ### Arithmetic -/
 
-theorem Op.dec_reg_adequate {D} (r : Reg64) :
-    (Op.dec (.reg (.low r .W64)) : X64MNew D Unit)
+theorem Op.exec_dec_reg_adequate {D} (r : Reg64) :
+    (Op.exec (.dec (.reg (.low r .W64))) : X64MNew D Unit)
       = liftBaseline (.dec (.reg (.low r .W64))) := by adeq
 
-theorem Op.add_reg_imm_adequate {D} (r : Reg64) (i : Int64) :
-    (Op.add (.reg (.low r .W64)) (.imm (.int64 i)) : X64MNew D Unit)
+theorem Op.exec_add_reg_imm_adequate {D} (r : Reg64) (i : Int64) :
+    (Op.exec (.add (.reg (.low r .W64)) (.imm (.int64 i))) : X64MNew D Unit)
       = liftBaseline (.add (.reg (.low r .W64)) (.imm (.int64 i))) := by adeq
 
-theorem Op.add_reg_mem_adequate {D} (rd : Reg64) (ae : AddrExpr) :
-    (Op.add (.reg (.low rd .W64)) (.regOrMem (.mem ae)) : X64MNew D Unit)
+theorem Op.exec_add_reg_mem_adequate {D} (rd : Reg64) (ae : AddrExpr) :
+    (Op.exec (.add (.reg (.low rd .W64)) (.regOrMem (.mem ae))) : X64MNew D Unit)
       = liftBaseline (.add (.reg (.low rd .W64)) (.regOrMem (.mem ae))) := by adeq
 
-theorem Op.adc_reg_reg_adequate {D} (rd rs : Reg64) :
-    (Op.adc (.reg (.low rd .W64)) (.regOrMem (.reg (.low rs .W64))) : X64MNew D Unit)
+theorem Op.exec_adc_reg_reg_adequate {D} (rd rs : Reg64) :
+    (Op.exec (.adc (.reg (.low rd .W64)) (.regOrMem (.reg (.low rs .W64)))) : X64MNew D Unit)
       = liftBaseline (.adc (.reg (.low rd .W64)) (.regOrMem (.reg (.low rs .W64)))) := by adeq
 
-theorem Op.lea_adequate {D} (rd : Reg64) (ae : AddrExpr) :
-    (Op.lea rd ae : X64MNew D Unit)
+theorem Op.exec_lea_adequate {D} (rd : Reg64) (ae : AddrExpr) :
+    (Op.exec (.lea (.low rd .W64) ae) : X64MNew D Unit)
       = liftBaseline (.lea (.low rd .W64) ae) := by adeq
 
-/-! ## Flag-undefined family
+/-! ### Flag-undefined family
 
 `xor` (like the shifts and rotates) leaves a flag undefined, so both sides throw
 `undefinedFlags` regardless of the operands. -/
 
-theorem Op.xor_adequate {D} (dst : Dst .W64) (src : Operand .W64) :
-    (Op.xor dst src : X64MNew D Unit) = liftBaseline (.xor dst src) := by
-  fw_simp
+theorem Op.exec_xor_adequate {D} (dst : Dst .W64) (src : Operand .W64) :
+    (Op.exec (.xor dst src) : X64MNew D Unit) = liftBaseline (.xor dst src) := by fw_simp
 
-/-! ## Stack -/
+/-! ### Stack -/
 
-theorem Op.push_reg_adequate {D} (r : Reg64) :
-    (Op.push (.regOrMem (.reg (.low r .W64))) : X64MNew D Unit)
+theorem Op.exec_push_reg_adequate {D} (r : Reg64) :
+    (Op.exec (.push (.regOrMem (.reg (.low r .W64)))) : X64MNew D Unit)
       = liftBaseline (.push (.regOrMem (.reg (.low r .W64)))) := by
   fw_simp
   funext env rip s
@@ -267,8 +267,8 @@ theorem Op.push_reg_adequate {D} (r : Reg64) :
   cases Mem.loadInt s.machine.dmem ((s.machine.regs.get64 .rsp).toBitVec - 8#64) 8 <;>
     simp only [lm_throw_bind, mm_mm, mm_apply, throw_apply]
 
-theorem Op.pop_reg_adequate {D} (d : Reg64) :
-    (Op.pop (.reg (.low d .W64)) : X64MNew D Unit)
+theorem Op.exec_pop_reg_adequate {D} (d : Reg64) :
+    (Op.exec (.pop (.reg (.low d .W64))) : X64MNew D Unit)
       = liftBaseline (.pop (.reg (.low d .W64))) := by
   fw_simp
   funext env rip s
@@ -276,17 +276,15 @@ theorem Op.pop_reg_adequate {D} (d : Reg64) :
   cases Mem.loadInt s.machine.dmem (s.machine.regs.get64 .rsp).toBitVec 8 <;>
     simp only [mm_apply, throw_apply]
 
-/-! ## Conditional jump
+/-! ### Conditional jump
 
-The encoding carries the resolved `Int64` target; the baseline resolves the
-`Label` against `env.labels` at run time. The two agree exactly when the encoding
-was given that resolution, so the statement is applied to the environment and its
-label table, the layout/label correspondence a whole-program adequacy threads. -/
+`Op.exec` resolves the jump's `Label` against `env.labels`; the baseline resolves
+it inside `Operation.interp`. The two agree, so the equation holds unapplied. -/
 
-theorem Op.jcc_adequate {D} (cc : CondCode) (l : Label) (env : Env) (rip : Int64) (s : Sys D) :
-    (Op.jcc cc (env.labels.label l) : X64MNew D Unit) env rip s
-      = liftBaseline (.jcc cc l) env rip s := by
-  simp only [Op.jcc, liftBaseline, liftMachineP, Operation.interp, read_apply, getThe_apply,
+theorem Op.exec_jcc_adequate {D} (cc : CondCode) (l : Label) :
+    (Op.exec (.jcc cc l) : X64MNew D Unit) = liftBaseline (.jcc cc l) := by
+  funext env rip s
+  simp only [Op.exec, Op.jcc, liftBaseline, Operation.interp, read_apply, getThe_apply,
     gm_apply, lm_bind, lm_ebind, lm_get, lm_eget, apply_ite, lm_throw, lm_pure, bind_assoc,
     pure_bind, throw_apply, pure_apply]
 

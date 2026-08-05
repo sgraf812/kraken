@@ -1,8 +1,8 @@
 /-
 The denotational spec monad, parameterized by a device-state type `D`.
 
-`labels`/`layout` sit in a reader, `rip` in state, over the error-state machine
-monad whose state is `MachineData × D`. Putting `D` in the machine state (rather
+`labels` sits in a reader, `rip` in state, over the error-state machine monad
+whose state is `MachineData × D`. Putting `D` in the machine state (rather
 than an outer `StateT`) means a `jump` — an `EStateM` throw that carries the
 state — preserves the device state, exactly as it preserves `MachineData`.
 
@@ -19,16 +19,18 @@ open Lean.Order
 
 namespace Kraken
 
-/-- Program-constant inputs: the label table and the code layout. -/
+/-- Program-constant inputs: the label table, together with the encoded length of
+the instruction now executing, from which the position range's upper bound (the
+address of the next instruction) is formed. -/
 structure Env where
   labels : Labels
-  layout : List (Directive × Nat)
+  curSize : Nat
 
 /-- Error-state over the system state `Sys D`. A thrown exit (a `jump`)
 carries this whole state, so the device component survives control transfer. -/
 abbrev SysM (D : Type) := EStateM X64Exit (Sys D)
 
-/-- Reader over the layout environment, state over `rip`, over the system monad. -/
+/-- Reader over the label environment, state over `rip`, over the system monad. -/
 abbrev X64MNew (D : Type) := ReaderT Env (StateT Int64 (SysM D))
 
 /-- Read the `MachineData` component of the system state. -/
@@ -40,17 +42,15 @@ def getMachine {D : Type} : X64MNew D MachineData := do
 def modifyMachine {D : Type} (f : MachineData → MachineData) : X64MNew D Unit :=
   liftM (modify (fun s => { s with machine := f s.machine }) : SysM D Unit)
 
-/-- The current instruction's position range, derived from `rip` and the layout. -/
-def getRco {D : Type} : X64MNew D (Std.Rco Int64) := do
-  let pc ← getThe Int64
-  pure (.mk pc pc)
-
-/-- Effective address of a memory operand, via the baseline address semantics. -/
+/-- Effective address of a memory operand, via the baseline address semantics.
+The position range is `rip` up to the next instruction's address `rip + curSize`,
+matching the x86 resolution of a rip-relative reference against the following
+instruction. -/
 def evalAddr {D : Type} (ae : AddrExpr) : X64MNew D (BitVec 64) := do
   let e ← read
-  let p ← getRco
+  let pc ← getThe Int64
   let s ← getMachine
-  pure (AddrExpr.interp e.labels (.mk .W64) ae s.regs p)
+  pure (AddrExpr.interp e.labels (.mk .W64) ae s.regs (.mk pc (pc + Int64.ofNat e.curSize)))
 
 namespace Op
 variable {D : Type}
@@ -180,7 +180,72 @@ def pop (dst : Dst .W64) : X64MNew D Unit := do
     | none => liftM (throw (.nonmemLoad s.dmem rsp .W64) : SysM D Unit)
   | _ => liftM (throw (.unimplemented "pop") : SysM D Unit)
 
+/-- Dispatch a decoded operation to its encoded primitive, resolving a jump's
+label against the environment. An operation or operand shape without an encoding
+throws `unimplemented`. -/
+def exec (op : Operation .W64) : X64MNew D Unit :=
+  match op with
+  | .mov dst src => mov dst src
+  | .add dst src => add dst src
+  | .adc dst src => adc dst src
+  | .dec o => dec o
+  | .xor dst src => xor dst src
+  | .lea (.low r _) ae => lea r ae
+  | .push src => push src
+  | .pop dst => pop dst
+  | .jcc cc l => do let env ← read; jcc cc (env.labels.label l)
+  | _ => liftM (throw (.unimplemented "exec") : SysM D Unit)
+
 end Op
+
+/-! ## Program driver
+
+`execDirs` runs a laid-out directive list the way the baseline `Directives.interp`
+does: each instruction executes at its address, `rip` advancing by the encoded
+size, so the position range read for that instruction is `.mk pc (pc+sz)`, the one
+the baseline supplies. An instruction dispatches through `Op.exec`; a label is a
+no-op; a data block or a non-64-bit instruction throws. -/
+
+def execDir {D : Type} (d : Directive) : X64MNew D Unit :=
+  match d with
+  | .label _ => pure ()
+  | .instr (.regular .W64 .W64 op) => Op.exec op
+  | _ => liftM (throw (.unimplemented "execDir") : SysM D Unit)
+
+/-- Run `x` with the executing instruction's encoded length recorded on the
+reader, so the position range it reads spans to the next instruction. -/
+def withCurSize {D α : Type} (sz : Nat) (x : X64MNew D α) : X64MNew D α :=
+  withReader (fun e => { e with curSize := sz }) x
+
+def execDirs {D : Type} (ds : List (Directive × Nat)) : X64MNew D Unit := do
+  match ds with
+  | [] => pure ()
+  | (d, sz) :: ds =>
+    withCurSize sz (execDir d)
+    modifyThe Int64 (· + Int64.ofNat sz)
+    execDirs ds
+
+/-! ## Control flow
+
+`execStraightlineFrom` runs from the current `rip` to the end of the program, a
+taken jump throwing `X64Exit.jump`. `execProgram` catches that throw and resumes
+at the target, bounded by `fuel`: unrolling it `fuel` times yields a finite
+do-block, so a loop is verified by running the body a fixed number of times. A
+`modifyMachine` write lands in the `Sys D` state a `jump` throw carries, so the
+machine state at the jump survives into the handler; the handler sets `rip` to the
+target, replacing whatever `rip` the interrupted segment reached. -/
+
+def execStraightlineFrom {D : Type} (e : Executable) : X64MNew D Unit := do
+  let pc ← getThe Int64
+  execDirs (e.directivesFromAddress pc)
+
+def execProgram {D : Type} (e : Executable) : Nat → X64MNew D Unit
+  | 0 => pure ()
+  | fuel + 1 =>
+    tryCatch (execStraightlineFrom e) fun exc =>
+      match exc with
+      | .jump pc => do modifyThe Int64 (fun _ => pc); execProgram e fuel
+      | exc => throw exc
 
 /-! ## Specs, discriminating on operand shape, polymorphic in `D` -/
 
@@ -205,33 +270,33 @@ variable {D : Type} (Q : Unit → Env → Int64 → Sys D → Prop)
 
 @[spec] theorem Op.mov_reg_mem_spec (dst : Reg64) (ae : AddrExpr) (v : Int) :
     ⦃ fun env rip s =>
-        (Mem.loadInt s.machine.dmem (AddrExpr.interp env.labels (.mk .W64) ae s.machine.regs (.mk rip rip)) 8 = some v) ⊓
+        (Mem.loadInt s.machine.dmem (AddrExpr.interp env.labels (.mk .W64) ae s.machine.regs (.mk rip (rip + Int64.ofNat env.curSize))) 8 = some v) ⊓
         Q () env rip { s with machine := { s.machine with regs := s.machine.regs.set64 dst (.ofBitVec (BitVec.ofInt 64 v)) } } ⦄
       Op.mov (.reg (.low dst .W64)) (.regOrMem (.mem ae)) ⦃ Q; E ⦄ := by
   sym =>
-    vcgen [Op.mov, evalAddr, getRco, getMachine, modifyMachine]
+    vcgen [Op.mov, evalAddr, getMachine, modifyMachine]
     all_goals finish
 
 @[spec] theorem Op.mov_mem_imm_spec (ae : AddrExpr) (i : Int64) (v : Int) :
     ⦃ fun env rip s =>
-        (Mem.loadInt s.machine.dmem (AddrExpr.interp env.labels (.mk .W64) ae s.machine.regs (.mk rip rip)) 8 = some v) ⊓
+        (Mem.loadInt s.machine.dmem (AddrExpr.interp env.labels (.mk .W64) ae s.machine.regs (.mk rip (rip + Int64.ofNat env.curSize))) 8 = some v) ⊓
         Q () env rip { s with machine := { s.machine with
-          dmem := Mem.storeInt s.machine.dmem (AddrExpr.interp env.labels (.mk .W64) ae s.machine.regs (.mk rip rip)) 8
+          dmem := Mem.storeInt s.machine.dmem (AddrExpr.interp env.labels (.mk .W64) ae s.machine.regs (.mk rip (rip + Int64.ofNat env.curSize))) 8
             (BitVec.setWidth 64 i.toBitVec).toInt } } ⦄
       Op.mov (.mem ae) (.imm (.int64 i)) ⦃ Q; E ⦄ := by
   sym =>
-    vcgen [Op.mov, evalAddr, getRco, getMachine, modifyMachine]
+    vcgen [Op.mov, evalAddr, getMachine, modifyMachine]
     all_goals finish
 
 @[spec] theorem Op.mov_mem_reg_spec (ae : AddrExpr) (src : Reg64) (v : Int) :
     ⦃ fun env rip s =>
-        (Mem.loadInt s.machine.dmem (AddrExpr.interp env.labels (.mk .W64) ae s.machine.regs (.mk rip rip)) 8 = some v) ⊓
+        (Mem.loadInt s.machine.dmem (AddrExpr.interp env.labels (.mk .W64) ae s.machine.regs (.mk rip (rip + Int64.ofNat env.curSize))) 8 = some v) ⊓
         Q () env rip { s with machine := { s.machine with
-          dmem := Mem.storeInt s.machine.dmem (AddrExpr.interp env.labels (.mk .W64) ae s.machine.regs (.mk rip rip)) 8
+          dmem := Mem.storeInt s.machine.dmem (AddrExpr.interp env.labels (.mk .W64) ae s.machine.regs (.mk rip (rip + Int64.ofNat env.curSize))) 8
             (s.machine.regs.get64 src).toBitVec.toInt } } ⦄
       Op.mov (.mem ae) (.regOrMem (.reg (.low src .W64))) ⦃ Q; E ⦄ := by
   sym =>
-    vcgen [Op.mov, evalAddr, getRco, getMachine, modifyMachine]
+    vcgen [Op.mov, evalAddr, getMachine, modifyMachine]
     all_goals finish
 
 @[spec] theorem Op.dec_reg_spec (r : Reg64) :
@@ -280,7 +345,7 @@ device component survives. -/
 
 @[spec] theorem Op.add_reg_mem_spec (dst : Reg64) (ae : AddrExpr) (v : Int) :
     ⦃ fun env rip s =>
-        (Mem.loadInt s.machine.dmem (AddrExpr.interp env.labels (.mk .W64) ae s.machine.regs (.mk rip rip)) 8 = some v) ⊓
+        (Mem.loadInt s.machine.dmem (AddrExpr.interp env.labels (.mk .W64) ae s.machine.regs (.mk rip (rip + Int64.ofNat env.curSize))) 8 = some v) ⊓
         Q () env rip { s with machine := { s.machine with
             regs := s.machine.regs.set64 dst (.ofBitVec (BitVec.ofInt 64 v + (s.machine.regs.get64 dst).toBitVec))
             status := StatusFlags.from_result (BitVec.ofInt 64 v + (s.machine.regs.get64 dst).toBitVec)
@@ -292,7 +357,7 @@ device component survives. -/
                   != (BitVec.ofInt 64 v).signed + (s.machine.regs.get64 dst).toBitVec.signed } } } ⦄
       Op.add (.reg (.low dst .W64)) (.regOrMem (.mem ae)) ⦃ Q; E ⦄ := by
   sym =>
-    vcgen [Op.add, evalAddr, getRco, getMachine, modifyMachine]
+    vcgen [Op.add, evalAddr, getMachine, modifyMachine]
     all_goals finish
 
 @[spec] theorem Op.adc_reg_reg_spec (rd rs : Reg64) :
@@ -322,10 +387,10 @@ device component survives. -/
 @[spec] theorem Op.lea_spec (dst : Reg64) (ae : AddrExpr) :
     ⦃ fun env rip s =>
         Q () env rip { s with machine := { s.machine with
-          regs := s.machine.regs.set64 dst (.ofBitVec (AddrExpr.interp env.labels (.mk .W64) ae s.machine.regs (.mk rip rip))) } } ⦄
+          regs := s.machine.regs.set64 dst (.ofBitVec (AddrExpr.interp env.labels (.mk .W64) ae s.machine.regs (.mk rip (rip + Int64.ofNat env.curSize)))) } } ⦄
       Op.lea dst ae ⦃ Q; E ⦄ := by
   sym =>
-    vcgen [Op.lea, evalAddr, getRco, getMachine, modifyMachine]
+    vcgen [Op.lea, evalAddr, getMachine, modifyMachine]
     all_goals finish
 
 @[spec] theorem Op.xor_spec (dst : Dst .W64) (src : Operand .W64) :

@@ -19,12 +19,12 @@ def sibProg : X64MNew Unit Unit := do
 
 theorem sib_correct (env₀ : Env) (s₀ : MachineData) (v : Int)
     (h_mapped : Mem.loadInt s₀.dmem
-        (AddrExpr.interp env₀.labels (.mk .W64) aeSib s₀.regs (.mk 0 0)) 8 = some v)
+        (AddrExpr.interp env₀.labels (.mk .W64) aeSib s₀.regs (.mk 0 (0 + Int64.ofNat env₀.curSize))) 8 = some v)
     (h_back : Mem.loadInt
-        (Mem.storeInt s₀.dmem (AddrExpr.interp env₀.labels (.mk .W64) aeSib s₀.regs (.mk 0 0)) 8 42)
-        (AddrExpr.interp env₀.labels (.mk .W64) aeSib s₀.regs (.mk 0 0)) 8 = some 42) :
+        (Mem.storeInt s₀.dmem (AddrExpr.interp env₀.labels (.mk .W64) aeSib s₀.regs (.mk 0 (0 + Int64.ofNat env₀.curSize))) 8 42)
+        (AddrExpr.interp env₀.labels (.mk .W64) aeSib s₀.regs (.mk 0 (0 + Int64.ofNat env₀.curSize))) 8 = some 42) :
     ⦃fun env rip sd => env = env₀ ∧ rip = 0 ∧ sd = ⟨s₀, ()⟩⦄ sibProg
       ⦃fun _ _ _ s => s.machine.regs.rax = BitVec.ofInt 64 42; fun _ _ => True⦄ := by
   have h42 : (BitVec.setWidth 64 ((42 : Int64)).toBitVec).toInt = 42 := by decide
   vcgen [sibProg] with (first (easm) (skip))
-  all_goals (simp_all [BitVec.ofInt_toInt] <;> bv_decide)
+  all_goals (simp_all <;> bv_decide)

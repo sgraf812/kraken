@@ -19,10 +19,10 @@ def move2Prog : X64MNew Unit Unit := do
   Op.mov (.reg (.low .r13 .W64)) (.regOrMem (.mem ae8))
 
 theorem move2_correct (env₀ : Env) (s₀ : MachineData) (a0 a8 : BitVec 64)
-    (ha0 : AddrExpr.interp env₀.labels (.mk .W64) ae0 s₀.regs (.mk 0 0) = a0)
-    (ha8 : AddrExpr.interp env₀.labels (.mk .W64) ae8 s₀.regs (.mk 0 0) = a8)
+    (ha0 : AddrExpr.interp env₀.labels (.mk .W64) ae0 s₀.regs (.mk 0 (0 + Int64.ofNat env₀.curSize)) = a0)
+    (ha8 : AddrExpr.interp env₀.labels (.mk .W64) ae8 s₀.regs (.mk 0 (0 + Int64.ofNat env₀.curSize)) = a8)
     (ha8' : AddrExpr.interp env₀.labels (.mk .W64) ae8
-        (s₀.regs.set64 .r12 (.ofBitVec (BitVec.ofInt 64 (s₀.regs.get64 .rax).toBitVec.toInt))) (.mk 0 0) = a8)
+        (s₀.regs.set64 .r12 (.ofBitVec (BitVec.ofInt 64 (s₀.regs.get64 .rax).toBitVec.toInt))) (.mk 0 (0 + Int64.ofNat env₀.curSize)) = a8)
     (v0 v8 : Int)
     (h_map0 : Mem.loadInt s₀.dmem a0 8 = some v0)
     (h_map8 : Mem.loadInt (Mem.storeInt s₀.dmem a0 8 (s₀.regs.get64 .rax).toBitVec.toInt) a8 8 = some v8)
