@@ -16,7 +16,5 @@ def condProg (l : Int64) : X64MNew Unit Unit := do
 theorem cond_correct (l : Int64) :
     ⦃fun _ _ _ => True⦄
       condProg l
-      ⦃fun _ _ _ s => (s.machine.regs.get64 .rbx).toBitVec = 7#64; fun _ _ => True⦄ := by
-  sym =>
-    vcgen [condProg]
-    all_goals finish
+      ⦃fun _ _ _ s => (s.machine.regs.get64 .rbx) = 7#64; fun _ _ => True⦄ := by
+  vcgen [condProg] with finish

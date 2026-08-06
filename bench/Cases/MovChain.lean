@@ -18,7 +18,7 @@ def chain : Nat → X64MNew Unit Unit
 
 def Goal (n : Nat) : Prop :=
   ⦃fun _ _ _ => True⦄ chain (n+1)
-    ⦃fun _ _ _ s => s.machine.regs.get64 .rax = .ofBitVec (BitVec.setWidth 64 (1 : Int64).toBitVec);
+    ⦃fun _ _ _ s => s.machine.regs.get64 .rax = (BitVec.setWidth 64 (1 : Int64).toBitVec);
       fun _ _ => True⦄
 
 end MovChain

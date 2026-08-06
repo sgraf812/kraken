@@ -17,14 +17,15 @@ def pushPopProg : X64MNew Unit Unit := do
   Op.pop (.reg (.low .rbx .W64))
 
 theorem pushpop_roundtrip (s : MachineData)
-    (h_mapped : Mem.loadInt s.dmem ((s.regs.get64 .rsp).toBitVec - 8#64) 8
-      = some ((s.regs.get64 .rbx).toBitVec.toInt))
+    (h_mapped : Mem.loadInt s.dmem ((s.regs.get64 .rsp) - 8#64) 8
+      = some ((s.regs.get64 .rbx).toInt))
     (h_back : Mem.loadInt
-        (Mem.storeInt s.dmem ((s.regs.get64 .rsp).toBitVec - 8#64) 8
-          ((s.regs.get64 .rbx).toBitVec.toInt))
-        ((s.regs.get64 .rsp).toBitVec - 8#64) 8
-      = some ((s.regs.get64 .rbx).toBitVec.toInt)) :
+        (Mem.storeInt s.dmem ((s.regs.get64 .rsp) - 8#64) 8
+          ((s.regs.get64 .rbx).toInt))
+        ((s.regs.get64 .rsp) - 8#64) 8
+      = some ((s.regs.get64 .rbx).toInt)) :
     ⦃fun _ _ s0 => s0 = ⟨s, ()⟩⦄ pushPopProg
       ⦃fun _ _ _ s' => s'.machine.regs.get64 .rbx = s.regs.get64 .rbx; fun _ _ => True⦄ := by
   vcgen [pushPopProg] with (first (easm) (skip))
-  all_goals (simp_all [BitVec.ofInt_toInt])
+  simp_all
+  -- all_goals (simp_all [BitVec.ofInt_toInt])

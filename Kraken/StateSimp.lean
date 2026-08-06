@@ -15,14 +15,14 @@ open Lean Meta Sym Sym.Simp
 namespace Kraken.Fold
 
 /-- Reading the register just written, with no condition to discharge. -/
-theorem get64_set64_self (s : Reg64s) (r : Reg64) (v : Bv 64) :
+theorem get64_set64_self (s : Reg64s) (r : Reg64) (v : BitVec 64) :
     (s.set64 r v).get64 r = v := by
   cases r <;> simp [Reg64s.set64, Reg64s.get64]
 
 /-- Writing a register that is written again later leaves no trace. Without
 this the value of a state's register file is a write chain as long as the
 program, and every read has to look through all of it. -/
-theorem set64_set64_self (s : Reg64s) (r : Reg64) (v w : Bv 64) :
+theorem set64_set64_self (s : Reg64s) (r : Reg64) (v w : BitVec 64) :
     (s.set64 r v).set64 r w = s.set64 r w := by
   cases r <;> simp [Reg64s.set64]
 
@@ -38,7 +38,6 @@ arithmetic is left to `evalGround`, conditions to `simpControl` and
 `reduceCtorEq`. -/
 def lemmaNames : Array Name := #[
   ``Int64.toBitVec_ofNat, ``BitVec.ofNat_eq_ofNat, ``BitVec.setWidth_eq,
-  ``Bv.toBitVec_ofBitVec, ``Bv.ofBitVec_toBitVec, ``Bv.toBitVec_add, ``Bv.toBitVec_sub,
   ``get64_set64_self, ``Reg64s.get64_set64, ``set64_set64_self,
   ``Reg64s.rax_set64, ``Reg64s.rbx_set64, ``Reg64s.rcx_set64, ``Reg64s.rdx_set64,
   ``Reg64s.rsi_set64, ``Reg64s.rdi_set64, ``Reg64s.rsp_set64, ``Reg64s.rbp_set64,

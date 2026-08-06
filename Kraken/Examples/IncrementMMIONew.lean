@@ -39,6 +39,4 @@ theorem mmio_correct :
     ⦃fun _ _ s => s.device = Incr.idle ∧ Mem.loadInt s.machine.dmem VALUE_ADDR 8 = none⦄
       mmioProg
       ⦃fun _ _ _ s => s.device = Incr.done 42; fun _ _ => True⦄ := by
-  sym =>
-    vcgen [mmioProg]
-    all_goals finish
+  vcgen [mmioProg] with finish

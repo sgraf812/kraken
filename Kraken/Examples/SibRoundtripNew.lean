@@ -27,4 +27,5 @@ theorem sib_correct (env₀ : Env) (s₀ : MachineData) (v : Int)
       ⦃fun _ _ _ s => s.machine.regs.rax = BitVec.ofInt 64 42; fun _ _ => True⦄ := by
   have h42 : (BitVec.setWidth 64 ((42 : Int64)).toBitVec).toInt = 42 := by decide
   vcgen [sibProg] with (first (easm) (skip))
-  all_goals (simp_all <;> bv_decide)
+  simp_all
+  -- all_goals (simp_all <;> bv_decide)

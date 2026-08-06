@@ -177,7 +177,7 @@ the dictionary pushes the lift to the leaves, `match_bind` and the store fuse th
 memory access into the `match` shape the encoding uses, and the state-operation
 fusion and discard laws align the reads and writes. -/
 local macro "fw_simp" : tactic =>
-  `(tactic| simp only [Op.exec, Op.mov, Op.dec, Op.add, Op.adc, Op.lea, Op.xor, Op.push, Op.pop, liftBaseline, Operation.interp, Operand.interp, RegOrMem.interp, Reg.interp, ConstExpr.interp, MachineData.set, evalAddr, lm_pure, lm_bind, lm_ebind, lm_get, lm_eget, lm_modify, lm_set, lm_throw, lm_throw_bind, lm_load_bind, lm_store, gm_gm, gm_mm, gm_mset, mm_mm, gm_gt, read_bind_const, getThe_bind_const, read_read, gt_gt, bind_assoc, pure_bind, bind_pure, match_bind, MachineData.setReg, Reg64s.get_low64, Reg64s.set_low64, Bv.ofBitVec_toBitVec, Width.bytes, Width.bytesv, BitVec.ofInt_toInt, ze64, gm_store_fuse, BitVec.setWidth_64_64])
+  `(tactic| simp only [Op.exec, Op.mov, Op.dec, Op.add, Op.adc, Op.lea, Op.xor, Op.push, Op.pop, liftBaseline, Operation.interp, Operand.interp, RegOrMem.interp, Reg.interp, ConstExpr.interp, MachineData.set, evalAddr, lm_pure, lm_bind, lm_ebind, lm_get, lm_eget, lm_modify, lm_set, lm_throw, lm_throw_bind, lm_load_bind, lm_store, gm_gm, gm_mm, gm_mset, mm_mm, gm_gt, read_bind_const, getThe_bind_const, read_read, gt_gt, bind_assoc, pure_bind, bind_pure, match_bind, MachineData.setReg, Reg64s.get_low64, Reg64s.set_low64, Width.bytes, Width.bytesv, BitVec.ofInt_toInt, ze64, gm_store_fuse, BitVec.setWidth_64_64])
 
 /-- For the register and load cases: normalize, then apply to a state and reduce
 each primitive in one step, so the two matchers settle by a `rfl` over the small
@@ -264,7 +264,7 @@ theorem Op.exec_push_reg_adequate {D} (r : Reg64) :
   fw_simp
   funext env rip s
   simp only [read_apply, getThe_apply, gm_apply]
-  cases Mem.loadInt s.machine.dmem ((s.machine.regs.get64 .rsp).toBitVec - 8#64) 8 <;>
+  cases Mem.loadInt s.machine.dmem ((s.machine.regs.get64 .rsp) - 8#64) 8 <;>
     simp only [lm_throw_bind, mm_mm, mm_apply, throw_apply]
 
 theorem Op.exec_pop_reg_adequate {D} (d : Reg64) :
@@ -273,7 +273,7 @@ theorem Op.exec_pop_reg_adequate {D} (d : Reg64) :
   fw_simp
   funext env rip s
   simp only [read_apply, getThe_apply, gm_apply]
-  cases Mem.loadInt s.machine.dmem (s.machine.regs.get64 .rsp).toBitVec 8 <;>
+  cases Mem.loadInt s.machine.dmem (s.machine.regs.get64 .rsp) 8 <;>
     simp only [mm_apply, throw_apply]
 
 /-! ### Conditional jump

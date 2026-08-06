@@ -58,14 +58,14 @@ variable {D : Type}
 def mov (dst : Dst .W64) (src : Operand .W64) : X64MNew D Unit := do
   match dst, src with
   | .reg (.low r _), .imm (.int64 i) =>
-    modifyMachine (fun s => { s with regs := s.regs.set64 r (.ofBitVec (BitVec.setWidth 64 i.toBitVec)) })
+    modifyMachine (fun s => { s with regs := s.regs.set64 r ((BitVec.setWidth 64 i.toBitVec)) })
   | .reg (.low rd _), .regOrMem (.reg (.low rs _)) =>
     modifyMachine (fun s => { s with regs := s.regs.set64 rd (s.regs.get64 rs) })
   | .reg (.low dst _), .regOrMem (.mem ae) =>
     let addr ← evalAddr ae
     let s ← getMachine
     match Mem.loadInt s.dmem addr 8 with
-    | some i => modifyMachine (fun s => { s with regs := s.regs.set64 dst (.ofBitVec (BitVec.ofInt 64 i)) })
+    | some i => modifyMachine (fun s => { s with regs := s.regs.set64 dst ((BitVec.ofInt 64 i)) })
     | none => liftM (throw (.nonmemLoad s.dmem addr .W64) : SysM D Unit)
   | .mem ae, .imm (.int64 i) =>
     let addr ← evalAddr ae
@@ -79,7 +79,7 @@ def mov (dst : Dst .W64) (src : Operand .W64) : X64MNew D Unit := do
     let s ← getMachine
     match Mem.loadInt s.dmem addr 8 with
     | some _ =>
-      modifyMachine (fun s => { s with dmem := Mem.storeInt s.dmem addr 8 (s.regs.get64 src).toBitVec.toInt })
+      modifyMachine (fun s => { s with dmem := Mem.storeInt s.dmem addr 8 (s.regs.get64 src).toInt })
     | none => liftM (throw (.nonmemStore s.dmem addr .W64) : SysM D Unit)
   | _, _ => liftM (throw (.unimplemented "mov") : SysM D Unit)
 
@@ -87,13 +87,13 @@ def dec (o : Dst .W64) : X64MNew D Unit := do
   match o with
   | .reg (.low r _) =>
     modifyMachine (fun s =>
-      let a := (s.regs.get64 r).toBitVec
+      let a := s.regs.get64 r
       let v := a - 1
       let status := StatusFlags.from_result v
         { cf := s.status.cf,
           af := (v.take 4).unsigned != (a.take 4).unsigned - 1,
           of := v.signed != a.signed - 1 }
-      { s with status := status, regs := s.regs.set64 r (.ofBitVec v) })
+      { s with status := status, regs := s.regs.set64 r (v) })
   | _ => liftM (throw (.unimplemented "dec") : SysM D Unit)
 
 /-- Conditional jump to a resolved `Int64` target: jump when the condition holds,
@@ -107,13 +107,13 @@ def add (dst : Dst .W64) (src : Operand .W64) : X64MNew D Unit := do
   | .reg (.low r _), .imm (.int64 i) =>
     modifyMachine (fun s =>
       let a := BitVec.setWidth 64 i.toBitVec
-      let b := (s.regs.get64 r).toBitVec
+      let b := s.regs.get64 r
       let v := a + b
       let status := StatusFlags.from_result v
         { cf := v.unsigned != a.unsigned + b.unsigned,
           af := (v.take 4).unsigned != (a.take 4).unsigned + (b.take 4).unsigned,
           of := v.signed != a.signed + b.signed }
-      { s with status := status, regs := s.regs.set64 r (.ofBitVec v) })
+      { s with status := status, regs := s.regs.set64 r (v) })
   | .reg (.low dst _), .regOrMem (.mem ae) =>
     let addr ← evalAddr ae
     let s ← getMachine
@@ -121,13 +121,13 @@ def add (dst : Dst .W64) (src : Operand .W64) : X64MNew D Unit := do
     | some x =>
       modifyMachine (fun s =>
         let av := BitVec.ofInt 64 x
-        let bv := (s.regs.get64 dst).toBitVec
+        let bv := s.regs.get64 dst
         let v := av + bv
         let status := StatusFlags.from_result v
           { cf := v.unsigned != av.unsigned + bv.unsigned,
             af := (v.take 4).unsigned != (av.take 4).unsigned + (bv.take 4).unsigned,
             of := v.signed != av.signed + bv.signed }
-        { s with status := status, regs := s.regs.set64 dst (.ofBitVec v) })
+        { s with status := status, regs := s.regs.set64 dst (v) })
     | none => liftM (throw (.nonmemLoad s.dmem addr .W64) : SysM D Unit)
   | _, _ => liftM (throw (.unimplemented "add") : SysM D Unit)
 
@@ -135,20 +135,20 @@ def adc (dst : Dst .W64) (src : Operand .W64) : X64MNew D Unit := do
   match dst, src with
   | .reg (.low rd _), .regOrMem (.reg (.low rs _)) =>
     modifyMachine (fun s =>
-      let a := (s.regs.get64 rs).toBitVec
-      let b := (s.regs.get64 rd).toBitVec
+      let a := s.regs.get64 rs
+      let b := s.regs.get64 rd
       let c := s.status.cf
       let v := a + b + BitVec.ofNat 64 c.toNat
       let status := StatusFlags.from_result v
         { cf := v.unsigned != a.unsigned + b.unsigned + c.toNat,
           af := (v.take 4).unsigned != (a.take 4).unsigned + (b.take 4).unsigned + c.toNat,
           of := v.signed != a.signed + b.signed + c.toNat }
-      { s with status := status, regs := s.regs.set64 rd (.ofBitVec v) })
+      { s with status := status, regs := s.regs.set64 rd (v) })
   | _, _ => liftM (throw (.unimplemented "adc") : SysM D Unit)
 
 def lea (dst : Reg64) (ae : AddrExpr) : X64MNew D Unit := do
   let addr ← evalAddr ae
-  modifyMachine (fun s => { s with regs := s.regs.set64 dst (.ofBitVec addr) })
+  modifyMachine (fun s => { s with regs := s.regs.set64 dst (addr) })
 
 /-- `xor` leaves `AF` architecturally undefined, so the baseline throws
 `undefinedFlags` rather than commit to a value; the encoding matches it. -/
@@ -159,12 +159,12 @@ def push (o : Operand .W64) : X64MNew D Unit := do
   match o with
   | .regOrMem (.reg (.low r _)) =>
     let s ← getMachine
-    let rsp := (s.regs.get64 .rsp).toBitVec - 8#64
+    let rsp := s.regs.get64 .rsp - 8#64
     match Mem.loadInt s.dmem rsp 8 with
     | some _ =>
       modifyMachine (fun s => { s with
-        regs := s.regs.set64 .rsp (.ofBitVec rsp),
-        dmem := Mem.storeInt s.dmem rsp 8 (s.regs.get64 r).toBitVec.toInt })
+        regs := s.regs.set64 .rsp (rsp),
+        dmem := Mem.storeInt s.dmem rsp 8 (s.regs.get64 r).toInt })
     | none => liftM (throw (.nonmemStore s.dmem rsp .W64) : SysM D Unit)
   | _ => liftM (throw (.unimplemented "push") : SysM D Unit)
 
@@ -172,11 +172,11 @@ def pop (dst : Dst .W64) : X64MNew D Unit := do
   match dst with
   | .reg (.low d _) =>
     let s ← getMachine
-    let rsp := (s.regs.get64 .rsp).toBitVec
+    let rsp := s.regs.get64 .rsp
     match Mem.loadInt s.dmem rsp 8 with
     | some i =>
       modifyMachine (fun s => { s with
-        regs := (s.regs.set64 .rsp (.ofBitVec (rsp + 8#64))).set64 d (.ofBitVec (BitVec.ofInt 64 i)) })
+        regs := (s.regs.set64 .rsp ((rsp + 8#64))).set64 d ((BitVec.ofInt 64 i)) })
     | none => liftM (throw (.nonmemLoad s.dmem rsp .W64) : SysM D Unit)
   | _ => liftM (throw (.unimplemented "pop") : SysM D Unit)
 
@@ -255,7 +255,7 @@ variable {D : Type} (Q : Unit → Env → Int64 → Sys D → Prop)
 
 @[spec] theorem Op.mov_reg_imm_spec (r : Reg64) (i : Int64) :
     ⦃ fun env rip s =>
-        Q () env rip { s with machine := { s.machine with regs := s.machine.regs.set64 r (.ofBitVec (BitVec.setWidth 64 i.toBitVec)) } } ⦄
+        Q () env rip { s with machine := { s.machine with regs := s.machine.regs.set64 r ((BitVec.setWidth 64 i.toBitVec)) } } ⦄
       Op.mov (.reg (.low r .W64)) (.imm (.int64 i)) ⦃ Q; E ⦄ := by
   sym =>
     vcgen [Op.mov, modifyMachine]
@@ -271,7 +271,7 @@ variable {D : Type} (Q : Unit → Env → Int64 → Sys D → Prop)
 @[spec] theorem Op.mov_reg_mem_spec (dst : Reg64) (ae : AddrExpr) (v : Int) :
     ⦃ fun env rip s =>
         (Mem.loadInt s.machine.dmem (AddrExpr.interp env.labels (.mk .W64) ae s.machine.regs (.mk rip (rip + Int64.ofNat env.curSize))) 8 = some v) ⊓
-        Q () env rip { s with machine := { s.machine with regs := s.machine.regs.set64 dst (.ofBitVec (BitVec.ofInt 64 v)) } } ⦄
+        Q () env rip { s with machine := { s.machine with regs := s.machine.regs.set64 dst ((BitVec.ofInt 64 v)) } } ⦄
       Op.mov (.reg (.low dst .W64)) (.regOrMem (.mem ae)) ⦃ Q; E ⦄ := by
   sym =>
     vcgen [Op.mov, evalAddr, getMachine, modifyMachine]
@@ -293,7 +293,7 @@ variable {D : Type} (Q : Unit → Env → Int64 → Sys D → Prop)
         (Mem.loadInt s.machine.dmem (AddrExpr.interp env.labels (.mk .W64) ae s.machine.regs (.mk rip (rip + Int64.ofNat env.curSize))) 8 = some v) ⊓
         Q () env rip { s with machine := { s.machine with
           dmem := Mem.storeInt s.machine.dmem (AddrExpr.interp env.labels (.mk .W64) ae s.machine.regs (.mk rip (rip + Int64.ofNat env.curSize))) 8
-            (s.machine.regs.get64 src).toBitVec.toInt } } ⦄
+            (s.machine.regs.get64 src).toInt } } ⦄
       Op.mov (.mem ae) (.regOrMem (.reg (.low src .W64))) ⦃ Q; E ⦄ := by
   sym =>
     vcgen [Op.mov, evalAddr, getMachine, modifyMachine]
@@ -302,13 +302,13 @@ variable {D : Type} (Q : Unit → Env → Int64 → Sys D → Prop)
 @[spec] theorem Op.dec_reg_spec (r : Reg64) :
     ⦃ fun env rip s =>
         Q () env rip { s with machine := { s.machine with
-            regs := s.machine.regs.set64 r (.ofBitVec ((s.machine.regs.get64 r).toBitVec - 1))
-            status := StatusFlags.from_result ((s.machine.regs.get64 r).toBitVec - 1)
+            regs := s.machine.regs.set64 r (((s.machine.regs.get64 r) - 1))
+            status := StatusFlags.from_result ((s.machine.regs.get64 r) - 1)
               { cf := s.machine.status.cf,
-                af := (((s.machine.regs.get64 r).toBitVec - 1).take 4).unsigned
-                  != ((s.machine.regs.get64 r).toBitVec.take 4).unsigned - 1,
-                of := ((s.machine.regs.get64 r).toBitVec - 1).signed
-                  != (s.machine.regs.get64 r).toBitVec.signed - 1 } } } ⦄
+                af := (((s.machine.regs.get64 r) - 1).take 4).unsigned
+                  != ((s.machine.regs.get64 r).take 4).unsigned - 1,
+                of := ((s.machine.regs.get64 r) - 1).signed
+                  != (s.machine.regs.get64 r).signed - 1 } } } ⦄
       Op.dec (.reg (.low r .W64)) ⦃ Q; E ⦄ := by
   sym =>
     vcgen [Op.dec, modifyMachine]
@@ -328,16 +328,16 @@ device component survives. -/
     ⦃ fun env rip s =>
         Q () env rip { s with machine := { s.machine with
             regs := s.machine.regs.set64 r
-              (.ofBitVec (BitVec.setWidth 64 i.toBitVec + (s.machine.regs.get64 r).toBitVec))
+              ((BitVec.setWidth 64 i.toBitVec + (s.machine.regs.get64 r)))
             status := StatusFlags.from_result
-              (BitVec.setWidth 64 i.toBitVec + (s.machine.regs.get64 r).toBitVec)
-              { cf := (BitVec.setWidth 64 i.toBitVec + (s.machine.regs.get64 r).toBitVec).unsigned
-                  != (BitVec.setWidth 64 i.toBitVec).unsigned + (s.machine.regs.get64 r).toBitVec.unsigned,
-                af := ((BitVec.setWidth 64 i.toBitVec + (s.machine.regs.get64 r).toBitVec).take 4).unsigned
+              (BitVec.setWidth 64 i.toBitVec + (s.machine.regs.get64 r))
+              { cf := (BitVec.setWidth 64 i.toBitVec + (s.machine.regs.get64 r)).unsigned
+                  != (BitVec.setWidth 64 i.toBitVec).unsigned + (s.machine.regs.get64 r).unsigned,
+                af := ((BitVec.setWidth 64 i.toBitVec + (s.machine.regs.get64 r)).take 4).unsigned
                   != ((BitVec.setWidth 64 i.toBitVec).take 4).unsigned
-                    + ((s.machine.regs.get64 r).toBitVec.take 4).unsigned,
-                of := (BitVec.setWidth 64 i.toBitVec + (s.machine.regs.get64 r).toBitVec).signed
-                  != (BitVec.setWidth 64 i.toBitVec).signed + (s.machine.regs.get64 r).toBitVec.signed } } } ⦄
+                    + ((s.machine.regs.get64 r).take 4).unsigned,
+                of := (BitVec.setWidth 64 i.toBitVec + (s.machine.regs.get64 r)).signed
+                  != (BitVec.setWidth 64 i.toBitVec).signed + (s.machine.regs.get64 r).signed } } } ⦄
       Op.add (.reg (.low r .W64)) (.imm (.int64 i)) ⦃ Q; E ⦄ := by
   sym =>
     vcgen [Op.add, modifyMachine]
@@ -347,14 +347,14 @@ device component survives. -/
     ⦃ fun env rip s =>
         (Mem.loadInt s.machine.dmem (AddrExpr.interp env.labels (.mk .W64) ae s.machine.regs (.mk rip (rip + Int64.ofNat env.curSize))) 8 = some v) ⊓
         Q () env rip { s with machine := { s.machine with
-            regs := s.machine.regs.set64 dst (.ofBitVec (BitVec.ofInt 64 v + (s.machine.regs.get64 dst).toBitVec))
-            status := StatusFlags.from_result (BitVec.ofInt 64 v + (s.machine.regs.get64 dst).toBitVec)
-              { cf := (BitVec.ofInt 64 v + (s.machine.regs.get64 dst).toBitVec).unsigned
-                  != (BitVec.ofInt 64 v).unsigned + (s.machine.regs.get64 dst).toBitVec.unsigned,
-                af := ((BitVec.ofInt 64 v + (s.machine.regs.get64 dst).toBitVec).take 4).unsigned
-                  != ((BitVec.ofInt 64 v).take 4).unsigned + ((s.machine.regs.get64 dst).toBitVec.take 4).unsigned,
-                of := (BitVec.ofInt 64 v + (s.machine.regs.get64 dst).toBitVec).signed
-                  != (BitVec.ofInt 64 v).signed + (s.machine.regs.get64 dst).toBitVec.signed } } } ⦄
+            regs := s.machine.regs.set64 dst ((BitVec.ofInt 64 v + (s.machine.regs.get64 dst)))
+            status := StatusFlags.from_result (BitVec.ofInt 64 v + (s.machine.regs.get64 dst))
+              { cf := (BitVec.ofInt 64 v + (s.machine.regs.get64 dst)).unsigned
+                  != (BitVec.ofInt 64 v).unsigned + (s.machine.regs.get64 dst).unsigned,
+                af := ((BitVec.ofInt 64 v + (s.machine.regs.get64 dst)).take 4).unsigned
+                  != ((BitVec.ofInt 64 v).take 4).unsigned + ((s.machine.regs.get64 dst).take 4).unsigned,
+                of := (BitVec.ofInt 64 v + (s.machine.regs.get64 dst)).signed
+                  != (BitVec.ofInt 64 v).signed + (s.machine.regs.get64 dst).signed } } } ⦄
       Op.add (.reg (.low dst .W64)) (.regOrMem (.mem ae)) ⦃ Q; E ⦄ := by
   sym =>
     vcgen [Op.add, evalAddr, getMachine, modifyMachine]
@@ -363,21 +363,21 @@ device component survives. -/
 @[spec] theorem Op.adc_reg_reg_spec (rd rs : Reg64) :
     ⦃ fun env rip s =>
         Q () env rip { s with machine := { s.machine with
-            regs := s.machine.regs.set64 rd (.ofBitVec ((s.machine.regs.get64 rs).toBitVec
-              + (s.machine.regs.get64 rd).toBitVec + BitVec.ofNat 64 s.machine.status.cf.toNat))
-            status := StatusFlags.from_result ((s.machine.regs.get64 rs).toBitVec
-                + (s.machine.regs.get64 rd).toBitVec + BitVec.ofNat 64 s.machine.status.cf.toNat)
-              { cf := ((s.machine.regs.get64 rs).toBitVec + (s.machine.regs.get64 rd).toBitVec
+            regs := s.machine.regs.set64 rd (((s.machine.regs.get64 rs)
+              + (s.machine.regs.get64 rd) + BitVec.ofNat 64 s.machine.status.cf.toNat))
+            status := StatusFlags.from_result ((s.machine.regs.get64 rs)
+                + (s.machine.regs.get64 rd) + BitVec.ofNat 64 s.machine.status.cf.toNat)
+              { cf := ((s.machine.regs.get64 rs) + (s.machine.regs.get64 rd)
                     + BitVec.ofNat 64 s.machine.status.cf.toNat).unsigned
-                  != (s.machine.regs.get64 rs).toBitVec.unsigned + (s.machine.regs.get64 rd).toBitVec.unsigned
+                  != (s.machine.regs.get64 rs).unsigned + (s.machine.regs.get64 rd).unsigned
                     + s.machine.status.cf.toNat,
-                af := (((s.machine.regs.get64 rs).toBitVec + (s.machine.regs.get64 rd).toBitVec
+                af := (((s.machine.regs.get64 rs) + (s.machine.regs.get64 rd)
                     + BitVec.ofNat 64 s.machine.status.cf.toNat).take 4).unsigned
-                  != ((s.machine.regs.get64 rs).toBitVec.take 4).unsigned
-                    + ((s.machine.regs.get64 rd).toBitVec.take 4).unsigned + s.machine.status.cf.toNat,
-                of := ((s.machine.regs.get64 rs).toBitVec + (s.machine.regs.get64 rd).toBitVec
+                  != ((s.machine.regs.get64 rs).take 4).unsigned
+                    + ((s.machine.regs.get64 rd).take 4).unsigned + s.machine.status.cf.toNat,
+                of := ((s.machine.regs.get64 rs) + (s.machine.regs.get64 rd)
                     + BitVec.ofNat 64 s.machine.status.cf.toNat).signed
-                  != (s.machine.regs.get64 rs).toBitVec.signed + (s.machine.regs.get64 rd).toBitVec.signed
+                  != (s.machine.regs.get64 rs).signed + (s.machine.regs.get64 rd).signed
                     + s.machine.status.cf.toNat } } } ⦄
       Op.adc (.reg (.low rd .W64)) (.regOrMem (.reg (.low rs .W64))) ⦃ Q; E ⦄ := by
   sym =>
@@ -387,7 +387,7 @@ device component survives. -/
 @[spec] theorem Op.lea_spec (dst : Reg64) (ae : AddrExpr) :
     ⦃ fun env rip s =>
         Q () env rip { s with machine := { s.machine with
-          regs := s.machine.regs.set64 dst (.ofBitVec (AddrExpr.interp env.labels (.mk .W64) ae s.machine.regs (.mk rip (rip + Int64.ofNat env.curSize)))) } } ⦄
+          regs := s.machine.regs.set64 dst ((AddrExpr.interp env.labels (.mk .W64) ae s.machine.regs (.mk rip (rip + Int64.ofNat env.curSize)))) } } ⦄
       Op.lea dst ae ⦃ Q; E ⦄ := by
   sym =>
     vcgen [Op.lea, evalAddr, getMachine, modifyMachine]
@@ -401,11 +401,11 @@ device component survives. -/
 
 @[spec] theorem Op.push_reg_spec (r : Reg64) (v : Int) :
     ⦃ fun env rip s =>
-        (Mem.loadInt s.machine.dmem ((s.machine.regs.get64 .rsp).toBitVec - 8#64) 8 = some v) ⊓
+        (Mem.loadInt s.machine.dmem ((s.machine.regs.get64 .rsp) - 8#64) 8 = some v) ⊓
         Q () env rip { s with machine := { s.machine with
-          regs := s.machine.regs.set64 .rsp (.ofBitVec ((s.machine.regs.get64 .rsp).toBitVec - 8#64))
-          dmem := Mem.storeInt s.machine.dmem ((s.machine.regs.get64 .rsp).toBitVec - 8#64) 8
-            (s.machine.regs.get64 r).toBitVec.toInt } } ⦄
+          regs := s.machine.regs.set64 .rsp (((s.machine.regs.get64 .rsp) - 8#64))
+          dmem := Mem.storeInt s.machine.dmem ((s.machine.regs.get64 .rsp) - 8#64) 8
+            (s.machine.regs.get64 r).toInt } } ⦄
       Op.push (.regOrMem (.reg (.low r .W64))) ⦃ Q; E ⦄ := by
   sym =>
     vcgen [Op.push, getMachine, modifyMachine]
@@ -413,10 +413,10 @@ device component survives. -/
 
 @[spec] theorem Op.pop_reg_spec (dst : Reg64) (v : Int) :
     ⦃ fun env rip s =>
-        (Mem.loadInt s.machine.dmem (s.machine.regs.get64 .rsp).toBitVec 8 = some v) ⊓
+        (Mem.loadInt s.machine.dmem (s.machine.regs.get64 .rsp) 8 = some v) ⊓
         Q () env rip { s with machine := { s.machine with
-          regs := (s.machine.regs.set64 .rsp (.ofBitVec ((s.machine.regs.get64 .rsp).toBitVec + 8#64))).set64 dst
-            (.ofBitVec (BitVec.ofInt 64 v)) } } ⦄
+          regs := (s.machine.regs.set64 .rsp (((s.machine.regs.get64 .rsp) + 8#64))).set64 dst
+            ((BitVec.ofInt 64 v)) } } ⦄
       Op.pop (.reg (.low dst .W64)) ⦃ Q; E ⦄ := by
   sym =>
     vcgen [Op.pop, getMachine, modifyMachine]

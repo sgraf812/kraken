@@ -16,7 +16,7 @@ def aluMemProg : X64MNew Unit Unit := do
   Op.add (.reg (.low .rcx .W64)) (.regOrMem (.mem aeRdx136))
 
 theorem alu_mem_correct (env₀ : Env) (s₀ : MachineData) (v : Int)
-    (h_rcx : (s₀.regs.get64 .rcx).toBitVec = 100#64)
+    (h_rcx : (s₀.regs.get64 .rcx) = 100#64)
     (h_mapped : Mem.loadInt s₀.dmem
         (AddrExpr.interp env₀.labels (.mk .W64) aeRdx136 s₀.regs (.mk 0 (0 + Int64.ofNat env₀.curSize))) 8 = some v)
     (h_back : Mem.loadInt

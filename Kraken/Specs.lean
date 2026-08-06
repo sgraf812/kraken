@@ -70,7 +70,7 @@ Register reads are characterized by rewriting, so discharging queries only the
 registers the postcondition mentions and a state literal's register file is
 never unfolded. -/
 
-@[simp, grind =] theorem Reg64s.get64_set64 (s : Reg64s) (r r' : Reg64) (v : Bv 64) :
+@[simp, grind =] theorem Reg64s.get64_set64 (s : Reg64s) (r r' : Reg64) (v : BitVec 64) :
     (s.set64 r v).get64 r' = if r' = r then v else s.get64 r' := by
   cases r <;> cases r' <;> simp [Reg64s.set64, Reg64s.get64]
 
@@ -78,7 +78,7 @@ never unfolded. -/
     s.get (.low r .W64) = s.get64 r := by
   simp [Reg64s.get, Reg.base, Reg.offset, BitVec.take, BitVec.drop]
 
-@[simp, grind =] theorem Reg64s.set_low64 (s : Reg64s) (r : Reg64) (v : Bv 64) :
+@[simp, grind =] theorem Reg64s.set_low64 (s : Reg64s) (r : Reg64) (v : BitVec 64) :
     Reg64s.set s (.low r .W64) v = s.set64 r v := rfl
 
 @[simp, grind =] theorem MachineData.regs_setReg (s : MachineData) {w} (r : Reg w) (v : w.type) :
@@ -106,35 +106,35 @@ never unfolded. -/
 
 /-! ## Per-register field reads over `set64`, one lemma per field -/
 
-@[simp, grind =] theorem Reg64s.rax_set64 (s : Reg64s) (r : Reg64) (v : Bv 64) :
-    (s.set64 r v).rax = if r = .rax then .ofBitVec v.toBitVec else s.rax := by cases r <;> simp [Reg64s.set64]
-@[simp, grind =] theorem Reg64s.rbx_set64 (s : Reg64s) (r : Reg64) (v : Bv 64) :
-    (s.set64 r v).rbx = if r = .rbx then .ofBitVec v.toBitVec else s.rbx := by cases r <;> simp [Reg64s.set64]
-@[simp, grind =] theorem Reg64s.rcx_set64 (s : Reg64s) (r : Reg64) (v : Bv 64) :
-    (s.set64 r v).rcx = if r = .rcx then .ofBitVec v.toBitVec else s.rcx := by cases r <;> simp [Reg64s.set64]
-@[simp, grind =] theorem Reg64s.rdx_set64 (s : Reg64s) (r : Reg64) (v : Bv 64) :
-    (s.set64 r v).rdx = if r = .rdx then .ofBitVec v.toBitVec else s.rdx := by cases r <;> simp [Reg64s.set64]
-@[simp, grind =] theorem Reg64s.rsi_set64 (s : Reg64s) (r : Reg64) (v : Bv 64) :
-    (s.set64 r v).rsi = if r = .rsi then .ofBitVec v.toBitVec else s.rsi := by cases r <;> simp [Reg64s.set64]
-@[simp, grind =] theorem Reg64s.rdi_set64 (s : Reg64s) (r : Reg64) (v : Bv 64) :
-    (s.set64 r v).rdi = if r = .rdi then .ofBitVec v.toBitVec else s.rdi := by cases r <;> simp [Reg64s.set64]
-@[simp, grind =] theorem Reg64s.rsp_set64 (s : Reg64s) (r : Reg64) (v : Bv 64) :
-    (s.set64 r v).rsp = if r = .rsp then .ofBitVec v.toBitVec else s.rsp := by cases r <;> simp [Reg64s.set64]
-@[simp, grind =] theorem Reg64s.rbp_set64 (s : Reg64s) (r : Reg64) (v : Bv 64) :
-    (s.set64 r v).rbp = if r = .rbp then .ofBitVec v.toBitVec else s.rbp := by cases r <;> simp [Reg64s.set64]
-@[simp, grind =] theorem Reg64s.r8_set64 (s : Reg64s) (r : Reg64) (v : Bv 64) :
-    (s.set64 r v).r8 = if r = .r8 then .ofBitVec v.toBitVec else s.r8 := by cases r <;> simp [Reg64s.set64]
-@[simp, grind =] theorem Reg64s.r9_set64 (s : Reg64s) (r : Reg64) (v : Bv 64) :
-    (s.set64 r v).r9 = if r = .r9 then .ofBitVec v.toBitVec else s.r9 := by cases r <;> simp [Reg64s.set64]
-@[simp, grind =] theorem Reg64s.r10_set64 (s : Reg64s) (r : Reg64) (v : Bv 64) :
-    (s.set64 r v).r10 = if r = .r10 then .ofBitVec v.toBitVec else s.r10 := by cases r <;> simp [Reg64s.set64]
-@[simp, grind =] theorem Reg64s.r11_set64 (s : Reg64s) (r : Reg64) (v : Bv 64) :
-    (s.set64 r v).r11 = if r = .r11 then .ofBitVec v.toBitVec else s.r11 := by cases r <;> simp [Reg64s.set64]
-@[simp, grind =] theorem Reg64s.r12_set64 (s : Reg64s) (r : Reg64) (v : Bv 64) :
-    (s.set64 r v).r12 = if r = .r12 then .ofBitVec v.toBitVec else s.r12 := by cases r <;> simp [Reg64s.set64]
-@[simp, grind =] theorem Reg64s.r13_set64 (s : Reg64s) (r : Reg64) (v : Bv 64) :
-    (s.set64 r v).r13 = if r = .r13 then .ofBitVec v.toBitVec else s.r13 := by cases r <;> simp [Reg64s.set64]
-@[simp, grind =] theorem Reg64s.r14_set64 (s : Reg64s) (r : Reg64) (v : Bv 64) :
-    (s.set64 r v).r14 = if r = .r14 then .ofBitVec v.toBitVec else s.r14 := by cases r <;> simp [Reg64s.set64]
-@[simp, grind =] theorem Reg64s.r15_set64 (s : Reg64s) (r : Reg64) (v : Bv 64) :
-    (s.set64 r v).r15 = if r = .r15 then .ofBitVec v.toBitVec else s.r15 := by cases r <;> simp [Reg64s.set64]
+@[simp, grind =] theorem Reg64s.rax_set64 (s : Reg64s) (r : Reg64) (v : BitVec 64) :
+    (s.set64 r v).rax = if r = .rax then .ofBitVec v else s.rax := by cases r <;> simp [Reg64s.set64]
+@[simp, grind =] theorem Reg64s.rbx_set64 (s : Reg64s) (r : Reg64) (v : BitVec 64) :
+    (s.set64 r v).rbx = if r = .rbx then .ofBitVec v else s.rbx := by cases r <;> simp [Reg64s.set64]
+@[simp, grind =] theorem Reg64s.rcx_set64 (s : Reg64s) (r : Reg64) (v : BitVec 64) :
+    (s.set64 r v).rcx = if r = .rcx then .ofBitVec v else s.rcx := by cases r <;> simp [Reg64s.set64]
+@[simp, grind =] theorem Reg64s.rdx_set64 (s : Reg64s) (r : Reg64) (v : BitVec 64) :
+    (s.set64 r v).rdx = if r = .rdx then .ofBitVec v else s.rdx := by cases r <;> simp [Reg64s.set64]
+@[simp, grind =] theorem Reg64s.rsi_set64 (s : Reg64s) (r : Reg64) (v : BitVec 64) :
+    (s.set64 r v).rsi = if r = .rsi then .ofBitVec v else s.rsi := by cases r <;> simp [Reg64s.set64]
+@[simp, grind =] theorem Reg64s.rdi_set64 (s : Reg64s) (r : Reg64) (v : BitVec 64) :
+    (s.set64 r v).rdi = if r = .rdi then .ofBitVec v else s.rdi := by cases r <;> simp [Reg64s.set64]
+@[simp, grind =] theorem Reg64s.rsp_set64 (s : Reg64s) (r : Reg64) (v : BitVec 64) :
+    (s.set64 r v).rsp = if r = .rsp then .ofBitVec v else s.rsp := by cases r <;> simp [Reg64s.set64]
+@[simp, grind =] theorem Reg64s.rbp_set64 (s : Reg64s) (r : Reg64) (v : BitVec 64) :
+    (s.set64 r v).rbp = if r = .rbp then .ofBitVec v else s.rbp := by cases r <;> simp [Reg64s.set64]
+@[simp, grind =] theorem Reg64s.r8_set64 (s : Reg64s) (r : Reg64) (v : BitVec 64) :
+    (s.set64 r v).r8 = if r = .r8 then .ofBitVec v else s.r8 := by cases r <;> simp [Reg64s.set64]
+@[simp, grind =] theorem Reg64s.r9_set64 (s : Reg64s) (r : Reg64) (v : BitVec 64) :
+    (s.set64 r v).r9 = if r = .r9 then .ofBitVec v else s.r9 := by cases r <;> simp [Reg64s.set64]
+@[simp, grind =] theorem Reg64s.r10_set64 (s : Reg64s) (r : Reg64) (v : BitVec 64) :
+    (s.set64 r v).r10 = if r = .r10 then .ofBitVec v else s.r10 := by cases r <;> simp [Reg64s.set64]
+@[simp, grind =] theorem Reg64s.r11_set64 (s : Reg64s) (r : Reg64) (v : BitVec 64) :
+    (s.set64 r v).r11 = if r = .r11 then .ofBitVec v else s.r11 := by cases r <;> simp [Reg64s.set64]
+@[simp, grind =] theorem Reg64s.r12_set64 (s : Reg64s) (r : Reg64) (v : BitVec 64) :
+    (s.set64 r v).r12 = if r = .r12 then .ofBitVec v else s.r12 := by cases r <;> simp [Reg64s.set64]
+@[simp, grind =] theorem Reg64s.r13_set64 (s : Reg64s) (r : Reg64) (v : BitVec 64) :
+    (s.set64 r v).r13 = if r = .r13 then .ofBitVec v else s.r13 := by cases r <;> simp [Reg64s.set64]
+@[simp, grind =] theorem Reg64s.r14_set64 (s : Reg64s) (r : Reg64) (v : BitVec 64) :
+    (s.set64 r v).r14 = if r = .r14 then .ofBitVec v else s.r14 := by cases r <;> simp [Reg64s.set64]
+@[simp, grind =] theorem Reg64s.r15_set64 (s : Reg64s) (r : Reg64) (v : BitVec 64) :
+    (s.set64 r v).r15 = if r = .r15 then .ofBitVec v else s.r15 := by cases r <;> simp [Reg64s.set64]

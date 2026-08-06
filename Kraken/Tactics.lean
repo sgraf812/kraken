@@ -24,7 +24,6 @@ metavariable. The `Kraken.easm` trace class reports which path closed each goal.
 -/
 import Kraken.OmniSemantics
 import Kraken.Specs
-import Std.Tactic.Do
 
 open Lean Meta
 open Lean.Meta.Grind

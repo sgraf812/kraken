@@ -1,6 +1,5 @@
 import Lean
 import Std
-import Kraken.Bv
 
 inductive Width | W8 | W16 | W32 | W64 deriving Repr, BEq, DecidableEq, Hashable, Lean.ToExpr
 
@@ -11,24 +10,21 @@ namespace Width
 @[simp, reducible] def bits : Width → Nat | W8 => 8 | W16 => 16 | W32 => 32 | W64 => 64
 @[simp, reducible] def bytes : Width → Nat | W8 => 1 | W16 => 2 | W32 => 4 | W64 => 8
 abbrev bytesv (w : Width) {n} : BitVec n := BitVec.ofNat n w.bytes
-/-- The type of a value of this operand width. A read reaches the bits through
-`Bv.toBitVec`, whose result width is the one the reader's signature states, so
-arithmetic over a concrete width is homogeneous at a literal `BitVec` width. -/
-abbrev type (w : Width) : Type := Bv w.bits
-instance {w : Width} : Coe Bool w.type where coe := fun b : Bool => .ofBitVec (BitVec.ofNat _ b.toNat)
+abbrev type (w : Width) : Type := BitVec w.bits
+instance {w : Width} : Coe Bool w.type where coe := fun b : Bool => BitVec.ofNat _ b.toNat
 end Width
 
 unif_hint (w : Width) where
-  w =?= Width.W8 |- Width.type w =?= Bv 8
+  w =?= Width.W8 |- Width.type w =?= BitVec 8
 
 unif_hint (w : Width) where
-  w =?= Width.W16 |- Width.type w =?= Bv 16
+  w =?= Width.W16 |- Width.type w =?= BitVec 16
 
 unif_hint (w : Width) where
-  w =?= Width.W32 |- Width.type w =?= Bv 32
+  w =?= Width.W32 |- Width.type w =?= BitVec 32
 
 unif_hint (w : Width) where
-  w =?= Width.W64 |- Width.type w =?= Bv 64
+  w =?= Width.W64 |- Width.type w =?= BitVec 64
 
 inductive AvxWidth | W128 | W256 | W512 deriving Repr, BEq, DecidableEq, Hashable, Lean.ToExpr
 
