@@ -3,11 +3,13 @@ Where the time goes on one workload: the register add chain, stepped and
 discharged four ways.
 
 `sorry` discharge isolates the cost of the stepping certificate alone; the other
-rows add the cost of a checked proof. Without `simplifying_assumptions` the
-state literals reach the discharge unfolded, so the fold has to run over the
-finished verification condition instead of over each state as it is produced.
+rows add the cost of a checked proof. Without `simplifying_assumptions` the state
+literals reach the discharge unfolded, so the fold has to run over the finished
+verification condition instead of over each state as it is produced.
+
+Open this file to run the benchmark; each `#eval` reports one pipeline.
 -/
-import Cases
+import Cases.AddChain
 import Driver
 import KrakenTactics.Fold
 
