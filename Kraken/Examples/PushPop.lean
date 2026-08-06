@@ -1,4 +1,4 @@
-import Kraken.X64MNew
+import Kraken.X64M
 import Kraken.Tactics
 import Kraken.StateSimp
 import Std.Tactic.BVDecide
@@ -11,7 +11,7 @@ set_option grind.warning false
 set_option maxHeartbeats 10000000
 set_option maxRecDepth 1000000
 
-def pushPopProg : X64MNew Unit Unit := do
+def pushPopProg : X64M Unit Unit := do
   Op.push (.regOrMem (.reg (.low .rbx .W64)))
   Op.mov (.reg (.low .rbx .W64)) (.imm (.int64 0))
   Op.pop (.reg (.low .rbx .W64))

@@ -31,9 +31,9 @@ with and without `simplifying_assumptions`.
 
 ## Phase split (ms: stepping / discharge / kernel)
 
-The pipeline is the let-form `@[spec]` triples of `Kraken/X64MNew.lean`, stepped
+The pipeline is the let-form `@[spec]` triples of `Kraken/X64M.lean`, stepped
 with `vcgen -internalize simplifying_assumptions` and discharged with
-`bv_decide`, over `X64MNew`: a reader over the label environment and a state over
+`bv_decide`, over `X64M`: a reader over the label environment and a state over
 `rip`, above the error-state machine over `Sys D`.
 
 | family | n=40 | n=160 | n=640 |

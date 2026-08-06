@@ -5,14 +5,14 @@ The program is a recursive function of `n`, so a benchmark run elaborates and
 compiles a fixed amount of source no matter the size, and the driver reports
 stepping, discharge and kernel time separately.
 -/
-import Kraken.X64MNew
+import Kraken.X64M
 
 open Std.Internal.Do
 open Kraken
 
 namespace MovChain
 
-def chain : Nat → X64MNew Unit Unit
+def chain : Nat → X64M Unit Unit
   | 0 => pure ()
   | n+1 => do Op.mov (.reg (.low .rax .W64)) (.imm (.int64 1)); chain n
 

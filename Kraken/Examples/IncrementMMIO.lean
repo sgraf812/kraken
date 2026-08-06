@@ -4,7 +4,7 @@ latches an incremented value into device state, a load reads it back and idles t
 device, and the returned value is fed back through arithmetic to pin it. The device
 state lives in `σ`, so it would survive a jump.
 -/
-import Kraken.DeviceNew
+import Kraken.Device
 
 open Std.Internal.Do
 open Kraken
@@ -30,7 +30,7 @@ abbrev incrDev : Device Incr where
   writeStep addr v dmem _d :=
     if addr = VALUE_ADDR then some (dmem, .done (v + 1)) else none
 
-def mmioProg : X64MNew Incr Unit := do
+def mmioProg : X64M Incr Unit := do
   Op.devStore incrDev VALUE_ADDR 41
   let answer ← Op.devLoad incrDev VALUE_ADDR
   Op.devStore incrDev VALUE_ADDR (answer - 1)

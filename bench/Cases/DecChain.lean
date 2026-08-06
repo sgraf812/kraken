@@ -4,14 +4,14 @@ Register decrement chain: `n` decrements of `rax` from a concrete start.
 Ground values throughout, so the discharge folds constants at every step.
 Contrast `AddChain`, whose initial value is symbolic.
 -/
-import Kraken.X64MNew
+import Kraken.X64M
 
 open Std.Internal.Do
 open Kraken
 
 namespace DecChain
 
-def chain : Nat → X64MNew Unit Unit
+def chain : Nat → X64M Unit Unit
   | 0 => pure ()
   | n+1 => do Op.dec (.reg (.low .rax .W64)); chain n
 

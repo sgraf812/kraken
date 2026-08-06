@@ -48,7 +48,7 @@ register reads over writes, and push the `UInt64`/`BitVec`/`Int64` coercions, so
 an indexed load address (whose base register a preceding `lea` overwrote) matches
 the separation-derived address. -/
 private def addrUnfolds : List Name :=
-  [``AddrExpr.interp, ``BitVec.toAddressSize, ``ConstExpr.interp, ``BitVec.take, ``Width.bytes]
+  [``AddrExpr.interp64, ``AddrExpr.interp, ``BitVec.toAddressSize, ``ConstExpr.interp, ``BitVec.take, ``Width.bytes]
 
 /-- Add a hypothesis to a simp set, splitting a conjunction into its conjuncts so
 each atomic equality becomes its own rewrite rule (a state precondition like

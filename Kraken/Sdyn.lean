@@ -1,5 +1,5 @@
 /-
-The dynamic-stack benchmark on the `X64MNew` instruction semantics.
+The dynamic-stack benchmark on the `X64M` instruction semantics.
 
 The nine-instruction program spills to and reloads from a caller stack region
 through a dynamically computed frame. Its correctness is proved with the
@@ -9,7 +9,7 @@ through a dynamically computed frame. Its correctness is proved with the
 postcondition. The separation preamble is the encoding-independent memory theory
 shared with the reference proof.
 -/
-import Kraken.X64MNew
+import Kraken.X64M
 import Kraken.Tactics
 import Kraken.SeparationMem
 open Std.Internal.Do
@@ -22,13 +22,13 @@ set_option maxHeartbeats 1000000
 set_option maxRecDepth 20000
 
 /-- `-8(%rsp)`. -/
-def ae8 : AddrExpr := { base := some (.reg .rsp), idx := none, disp := .int64 (-8) }
+private def ae8 : AddrExpr := { base := some (.reg .rsp), idx := none, disp := .int64 (-8) }
 /-- `-1024(%rsp,%r9,8)`, the dynamically computed frame base. -/
 def aeLea : AddrExpr := { base := some (.reg .rsp), idx := some ⟨.r9, .W64⟩, disp := .int64 (-1024) }
 /-- `16(%rsp,%r15,8)`, a slot in the frame. -/
 def aeFrame : AddrExpr := { base := some (.reg .rsp), idx := some ⟨.r15, .W64⟩, disp := .int64 16 }
 
-def sdynProg : X64MNew Unit Unit := do
+def sdynProg : X64M Unit Unit := do
   Op.mov (.mem ae8) (.imm (.int64 99))
   Op.mov (.reg (.low .rbp .W64)) (.regOrMem (.reg (.low .rsp .W64)))
   Op.lea .rsp aeLea

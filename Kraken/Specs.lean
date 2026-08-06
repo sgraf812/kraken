@@ -32,6 +32,16 @@ structure Sys (D : Type) where
 @[simp] theorem Sys.device_mk {D : Type} (m : MachineData) (d : D) :
     (Sys.mk m d).device = d := rfl
 
+/-! ## Address spelling -/
+
+/-- The baseline address semantics at 64-bit address size, with the label table
+explicit. The explicit argument keeps every subterm rewritable (`simp`'s
+congruence holds an instance-implicit argument fixed, so a state equation never
+reaches a label table passed as an instance), and the literal `BitVec 64`
+result is the width spelling the proof engines read. -/
+def AddrExpr.interp64 (labels : Labels) (a : AddrExpr) (s : Reg64s) (p : Std.Rco Int64) : BitVec 64 :=
+  @AddrExpr.interp labels (.mk .W64) a s p
+
 /-! ## `.unsigned`/`.signed` reductions -/
 @[grind hom] theorem BitVec.unsigned_hom {w} (x : BitVec w) : x.unsigned = (x.toNat : Int) := rfl
 @[simp] theorem BitVec.unsigned_eq {w} (x : BitVec w) : x.unsigned = (x.toNat : Int) := rfl

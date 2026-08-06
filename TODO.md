@@ -1,5 +1,11 @@
 # TODO
 
+- Prove the refinement stated in Kraken/X64M.lean: `Operation.interpM` refines
+  the baseline `Operation.interp` over `Effects` (a determinization; an
+  `undefined` flag branch or a `nonmem_load`/`nonmem_store` resumption on the
+  baseline side corresponds to a throw). Needs a reaches-relation on `Effects`
+  trees that resumes every `require_*` with `()`.
+
 - Engine (lean4/grind): `internalize` does not share/canonicalize its argument
   (`Grind.add`/`addFactStep` likewise); the hash-consing invariant `mkEqProof`
   relies on is unmaintainable caller-side (accessor-obtained terms are only
@@ -92,9 +98,9 @@
   post-free condition as conjunctive, and `solve` splits a top-level `ite`/`dite`/
   matcher on the entailment RHS.
 
-- MMIO and DMA compose through the device layer (`Kraken/DeviceNew.lean`). Device
+- MMIO and DMA compose through the device layer (`Kraken/Device.lean`). Device
   state `D` is the `device` component of `Sys D`, alongside the CPU `machine`, so
-  it lives in the exception-carrying state of `X64MNew D` and a `jump` preserves it.
+  it lives in the exception-carrying state of `X64M D` and a `jump` preserves it.
   Register and arithmetic actions stay polymorphic in `D`: they read and write
   `machine` and thread `device`, stepping unchanged under their existing `@[spec]`
   triples. Only the memory primitives become device-aware: `Op.devLoad`/`Op.devStore`
@@ -104,7 +110,7 @@
   `dmem` and the device: all four transfers of the MMIO/DMA matrix. Each spec's
   precondition matches on the address being mapped and on the device accepting it,
   premise-free and conjunctive in the schematic posts, so `vcgen` applies it
-  directly and splits per branch. `Kraken/Examples/Increment{MMIO,DMA}New.lean` run
+  directly and splits per branch. `Kraken/Examples/Increment{MMIO,DMA}.lean` run
   device programs through `vcgen` with no unfolding.
 
 - Benchmark harness and the current numbers: bench/README.md.

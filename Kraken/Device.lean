@@ -1,5 +1,5 @@
 /-
-Memory-mapped devices over the denotational monad `X64MNew D`.
+Memory-mapped devices over the denotational monad `X64M D`.
 
 A non-memory load or store consults a `Device D` model instead of faulting. The
 device state is the `device` component of `Sys D`, so it lives in the exception-
@@ -8,7 +8,7 @@ carrying machine state: a `jump` preserves it, exactly as it preserves the CPU
 device state, so a load or store transitions the device and either can move
 ownership of a memory range between `dmem` and the device.
 -/
-import Kraken.X64MNew
+import Kraken.X64M
 
 open Std.Internal.Do
 open Std.Internal.Do.WPMonad
@@ -25,11 +25,11 @@ structure Device (D : Type) where
   writeStep : BitVec 64 → Int → DataMem → D → Option (DataMem × D)
 
 /-- Set both the data memory and the device state in one system-state update. -/
-private def putMemDev {D : Type} (dmem : DataMem) (d : D) : X64MNew D Unit :=
+private def putMemDev {D : Type} (dmem : DataMem) (d : D) : X64M D Unit :=
   liftM (modify (fun s => { machine := { s.machine with dmem := dmem }, device := d }) : SysM D Unit)
 
 /-- Read 8 bytes at `addr`: from `dmem` when mapped, otherwise from the device. -/
-def Op.devLoad {D : Type} (dev : Device D) (addr : BitVec 64) : X64MNew D Int := do
+def Op.devLoad {D : Type} (dev : Device D) (addr : BitVec 64) : X64M D Int := do
   let s ← liftM (getThe (Sys D) : SysM D (Sys D))
   match Mem.loadInt s.machine.dmem addr 8 with
   | some i => pure i
@@ -39,7 +39,7 @@ def Op.devLoad {D : Type} (dev : Device D) (addr : BitVec 64) : X64MNew D Int :=
     | none => liftM (throw (.nonmemLoad s.machine.dmem addr .W64) : SysM D Int)
 
 /-- Write 8 bytes at `addr`: to `dmem` when mapped, otherwise to the device. -/
-def Op.devStore {D : Type} (dev : Device D) (addr : BitVec 64) (v : Int) : X64MNew D Unit := do
+def Op.devStore {D : Type} (dev : Device D) (addr : BitVec 64) (v : Int) : X64M D Unit := do
   let s ← liftM (getThe (Sys D) : SysM D (Sys D))
   match Mem.loadInt s.machine.dmem addr 8 with
   | some _ => modifyMachine (fun m => { m with dmem := Mem.storeInt m.dmem addr 8 v })

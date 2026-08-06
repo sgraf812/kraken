@@ -1,6 +1,6 @@
 /-
 Whole-program adequacy: the `execDirs` driver against the baseline
-`Directives.interp`.
+`Directives.interpM`.
 
 The baseline threads the program counter functionally, running each directive at
 `.mk pc (pc+sz)` and returning the final `pc`. The driver threads `rip` through
@@ -19,14 +19,14 @@ namespace Kraken
 
 /-- Baseline single directive, lifted: read the environment and `rip`, then run
 the directive at the position range `.mk pc (pc+sz)`. -/
-def liftDir {D : Type} (d : Directive) (sz : Nat) : X64MNew D Unit := do
+def liftDir {D : Type} (d : Directive) (sz : Nat) : X64M D Unit := do
   let env ← read
   let pc ← getThe Int64
-  liftMachine (d.interp env.labels (.mk pc (pc + Int64.ofNat sz)))
+  liftMachine (d.interpM env.labels (.mk pc (pc + Int64.ofNat sz)))
 
 /-- Baseline directive list, lifted: each directive's baseline step in sequence,
 `rip` advancing by the encoded size, mirroring the driver's own recursion. -/
-def liftDirs {D : Type} (ds : List (Directive × Nat)) : X64MNew D Unit :=
+def liftDirs {D : Type} (ds : List (Directive × Nat)) : X64M D Unit :=
   match ds with
   | [] => pure ()
   | (d, sz) :: ds => do
@@ -37,22 +37,22 @@ def liftDirs {D : Type} (ds : List (Directive × Nat)) : X64MNew D Unit :=
 /-- On a label the driver's step matches the baseline's: both leave the state
 untouched. -/
 theorem liftDir_label {D} (l : Label) (sz : Nat) :
-    (withCurSize sz (execDir (.label l)) : X64MNew D Unit)
+    (withCurSize sz (execDir (.label l)) : X64M D Unit)
       = liftDir (.label l) sz := by
   funext env rip s
-  simp only [execDir, liftDir, Directive.interp, lm_pure, withCurSize, withReader_apply, read_apply,
+  simp only [execDir, liftDir, Directive.interpM, lm_pure, withCurSize, withReader_apply, read_apply,
     getThe_apply, pure_apply]
 
 /-- On an encoded 64-bit instruction the driver's step matches the baseline's,
 given the operation is adequate. The `withReader` sets `curSize := sz`, so
 the range read is `.mk pc (pc+sz)`, the one the baseline supplies. -/
 theorem liftDir_instr {D} (op : Operation .W64) (sz : Nat)
-    (hop : (Op.exec op : X64MNew D Unit) = liftBaseline op) :
+    (hop : (Op.exec op : X64M D Unit) = liftBaseline op) :
     (withCurSize sz (execDir (.instr (.regular .W64 .W64 op)))
-        : X64MNew D Unit)
+        : X64M D Unit)
       = liftDir (.instr (.regular .W64 .W64 op)) sz := by
   funext env rip s
-  simp only [execDir, liftDir, Directive.interp, Instr.interp, withCurSize, withReader_apply, hop,
+  simp only [execDir, liftDir, Directive.interpM, Instr.interpM, withCurSize, withReader_apply, hop,
     liftBaseline, read_apply, getThe_apply]
   rfl
 
@@ -60,21 +60,21 @@ theorem liftDir_instr {D} (op : Operation .W64) (sz : Nat)
 baseline over the whole list. -/
 theorem execDirs_eq_liftDirs {D} (ds : List (Directive × Nat))
     (h : ∀ d sz, (d, sz) ∈ ds →
-      (withCurSize sz (execDir d) : X64MNew D Unit) = liftDir d sz) :
-    (execDirs ds : X64MNew D Unit) = liftDirs ds := by
+      (withCurSize sz (execDir d) : X64M D Unit) = liftDir d sz) :
+    (execDirs ds : X64M D Unit) = liftDirs ds := by
   induction ds with
   | nil => rfl
   | cons hd tl ih =>
     obtain ⟨d, sz⟩ := hd
     have hhd := h d sz (by simp)
     have htl : ∀ d sz, (d, sz) ∈ tl →
-        (withCurSize sz (execDir d) : X64MNew D Unit) = liftDir d sz :=
+        (withCurSize sz (execDir d) : X64M D Unit) = liftDir d sz :=
       fun d sz hmem => h d sz (by simp [hmem])
     simp only [execDirs, liftDirs, hhd, ih htl]
 
 /-- Lifted baseline of a straightline segment: from the current `rip`, run the
 lifted baseline of the directives at that address. -/
-def liftStraightlineFrom {D : Type} (e : Executable) : X64MNew D Unit := do
+def liftStraightlineFrom {D : Type} (e : Executable) : X64M D Unit := do
   let pc ← getThe Int64
   liftDirs (e.directivesFromAddress pc)
 
@@ -83,8 +83,8 @@ whenever the directives at that address are encoded. This is the body each fuel
 step of `execProgram` runs, so it carries the driver's per-segment adequacy. -/
 theorem execStraightlineFrom_eq {D} (e : Executable)
     (h : ∀ pc d sz, (d, sz) ∈ e.directivesFromAddress pc →
-      (withCurSize sz (execDir d) : X64MNew D Unit) = liftDir d sz) :
-    (execStraightlineFrom e : X64MNew D Unit) = liftStraightlineFrom e := by
+      (withCurSize sz (execDir d) : X64M D Unit) = liftDir d sz) :
+    (execStraightlineFrom e : X64M D Unit) = liftStraightlineFrom e := by
   simp only [execStraightlineFrom, liftStraightlineFrom]
   congr 1
   funext pc
@@ -92,7 +92,7 @@ theorem execStraightlineFrom_eq {D} (e : Executable)
 
 /-- Lifted baseline control-flow driver: the fuel-bounded loop that catches a
 jump and resumes at the target, built from lifted baseline segments. -/
-def liftProgram {D : Type} (e : Executable) : Nat → X64MNew D Unit
+def liftProgram {D : Type} (e : Executable) : Nat → X64M D Unit
   | 0 => pure ()
   | fuel + 1 =>
     tryCatch (liftStraightlineFrom e) fun exc =>
@@ -105,8 +105,8 @@ driver at every fuel, whenever the reachable directives are encoded. A jump is
 caught identically on both sides, so the fuel induction closes by congruence. -/
 theorem execProgram_eq_liftProgram {D} (e : Executable) (fuel : Nat)
     (h : ∀ pc d sz, (d, sz) ∈ e.directivesFromAddress pc →
-      (withCurSize sz (execDir d) : X64MNew D Unit) = liftDir d sz) :
-    (execProgram e fuel : X64MNew D Unit) = liftProgram e fuel := by
+      (withCurSize sz (execDir d) : X64M D Unit) = liftDir d sz) :
+    (execProgram e fuel : X64M D Unit) = liftProgram e fuel := by
   induction fuel with
   | zero => rfl
   | succ fuel ih => simp only [execProgram, liftProgram, execStraightlineFrom_eq e h, ih]; rfl
@@ -121,7 +121,7 @@ def demoProg : List (Directive × Nat) :=
     (.instr (.regular .W64 .W64 (.dec (.reg (.low .rax .W64)))), 3),
     (.label "done", 0) ]
 
-theorem demoProg_adequate : (execDirs demoProg : X64MNew Unit Unit) = liftDirs demoProg := by
+theorem demoProg_adequate : (execDirs demoProg : X64M Unit Unit) = liftDirs demoProg := by
   apply execDirs_eq_liftDirs
   intro d sz hmem
   simp only [demoProg, List.mem_cons, List.mem_singleton, List.not_mem_nil, or_false,
@@ -145,7 +145,7 @@ def loopExe : Executable :=
       (.instr (.regular .W64 .W64 (.jcc .nz "loop")), 2) ] )
 
 theorem loopExe_adequate (fuel : Nat) :
-    (execProgram loopExe fuel : X64MNew Unit Unit) = liftProgram loopExe fuel := by
+    (execProgram loopExe fuel : X64M Unit Unit) = liftProgram loopExe fuel := by
   apply execProgram_eq_liftProgram
   intro pc d sz hmem
   simp only [loopExe, Executable.directivesFromAddress] at hmem

@@ -1,4 +1,4 @@
-import Kraken.X64MNew
+import Kraken.X64M
 import Kraken.Tactics
 
 open Std.Internal.Do
@@ -12,16 +12,16 @@ set_option maxRecDepth 20000
 def ae0 : AddrExpr := { base := some (.reg .rdi), idx := none, disp := .int64 0 }
 def ae8 : AddrExpr := { base := some (.reg .rdi), idx := none, disp := .int64 8 }
 
-def move2Prog : X64MNew Unit Unit := do
+def move2Prog : X64M Unit Unit := do
   Op.mov (.mem ae0) (.regOrMem (.reg (.low .rax .W64)))
   Op.mov (.mem ae8) (.regOrMem (.reg (.low .rcx .W64)))
   Op.mov (.reg (.low .r12 .W64)) (.regOrMem (.mem ae0))
   Op.mov (.reg (.low .r13 .W64)) (.regOrMem (.mem ae8))
 
 theorem move2_correct (env₀ : Env) (s₀ : MachineData) (a0 a8 : BitVec 64)
-    (ha0 : AddrExpr.interp env₀.labels (.mk .W64) ae0 s₀.regs (.mk 0 (0 + Int64.ofNat env₀.curSize)) = a0)
-    (ha8 : AddrExpr.interp env₀.labels (.mk .W64) ae8 s₀.regs (.mk 0 (0 + Int64.ofNat env₀.curSize)) = a8)
-    (ha8' : AddrExpr.interp env₀.labels (.mk .W64) ae8
+    (ha0 : AddrExpr.interp64 env₀.labels ae0 s₀.regs (.mk 0 (0 + Int64.ofNat env₀.curSize)) = a0)
+    (ha8 : AddrExpr.interp64 env₀.labels ae8 s₀.regs (.mk 0 (0 + Int64.ofNat env₀.curSize)) = a8)
+    (ha8' : AddrExpr.interp64 env₀.labels ae8
         (s₀.regs.set64 .r12 ((BitVec.ofInt 64 (s₀.regs.get64 .rax).toInt))) (.mk 0 (0 + Int64.ofNat env₀.curSize)) = a8)
     (v0 v8 : Int)
     (h_map0 : Mem.loadInt s₀.dmem a0 8 = some v0)

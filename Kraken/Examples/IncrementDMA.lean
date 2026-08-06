@@ -5,7 +5,7 @@ and data memory both change); a control load returns a status word and DMA-write
 completion marker. All four transfers of the MMIO/DMA matrix, with device state in
 `σ` so it survives control transfer.
 -/
-import Kraken.DeviceNew
+import Kraken.Device
 
 open Std.Internal.Do
 open Kraken
@@ -37,7 +37,7 @@ abbrev dmaDev : Device Dma where
       | .busy => none
     else none
 
-def dmaStartProg : X64MNew Dma Unit :=
+def dmaStartProg : X64M Dma Unit :=
   Op.devStore dmaDev CTRL_ADDR 42
 
 theorem dma_start_correct (m0 : DataMem) :
@@ -50,7 +50,7 @@ theorem dma_start_correct (m0 : DataMem) :
     vcgen [dmaStartProg]
     all_goals finish
 
-def dmaFinishProg : X64MNew Dma Unit := do
+def dmaFinishProg : X64M Dma Unit := do
   let _ ← Op.devLoad dmaDev CTRL_ADDR
   pure ()
 

@@ -1,4 +1,4 @@
-import Kraken.X64MNew
+import Kraken.X64M
 import Std.Tactic.BVDecide
 
 open Std.Internal.Do
@@ -8,7 +8,7 @@ set_option mvcgen.warning false
 set_option grind.warning false
 set_option maxHeartbeats 1000000
 
-def swapProg : X64MNew Unit Unit := do
+def swapProg : X64M Unit Unit := do
   Op.xor (.reg (.low .rax .W64)) (.regOrMem (.reg (.low .rbx .W64)))
   Op.xor (.reg (.low .rbx .W64)) (.regOrMem (.reg (.low .rax .W64)))
   Op.xor (.reg (.low .rax .W64)) (.regOrMem (.reg (.low .rbx .W64)))
