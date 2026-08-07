@@ -8,12 +8,14 @@ straightline model leaves unresolved (a non-memory access, an architecturally
 undefined flag) throws the corresponding exit. Address and constant evaluation
 reuse the baseline `AddrExpr.interp`/`ConstExpr.interp` unchanged.
 
-Obligation, stated here and not yet proved: `Operation.interpM` refines the
-baseline `Operation.interp`. A run returning `.ok () s'` corresponds to the
-baseline `Effects` tree reaching `next s'` with every `require_*` resumed, and
-a `.jump pc` throw carrying `s'` to reaching `jmp pc s'`. The re-encoding is a
-determinization: where the baseline branches on an `undefined` flag or resumes
-a `nonmem_load`/`nonmem_store`, `interpM` throws instead of committing.
+`Operation.interpM` refines the baseline `Operation.interp`: a run's
+fall-through or jump outcome is the unique baseline behavior, proved in
+`Operation.interpM_All` through `Executable.straightlineM_adequate`
+(Kraken/Adequacy.lean). The re-encoding is a determinization: where the
+baseline branches on an `undefined` flag or resumes a
+`nonmem_load`/`nonmem_store`, `interpM` throws instead of committing, so a
+throwing run claims nothing about the baseline. AVX instructions throw
+`unimplemented`, joining that under-approximated family.
 
 The second half is the spec monad `X64M D`, parameterized by a device-state
 type `D`: `labels` sits in a reader, `rip` in state, over the error-state
@@ -60,57 +62,26 @@ def MachineData.loadM (addr : BitVec 64) (w : Width) : MachineM w.type := do
   | .some i => pure (.ofInt _ i)
   | .none => throw (.nonmemLoad s.dmem addr w)
 
-def MachineData.loadAvxM (addr : BitVec 64) (w : AvxWidth) : MachineM w.type := do
-  let s ← get
-  match Mem.loadInt s.dmem addr w.bytes with
-  | .some i => pure (.ofInt _ i)
-  | .none => throw (.unimplemented "AVX nonmem load not supported")
-
 def MachineData.storeM (addr : BitVec 64) {w : Width} (v : w.type) : MachineM Unit := do
   let s ← get
   match Mem.loadInt s.dmem addr w.bytes with
   | .some _ => MonadStateOf.set { s with dmem := Mem.storeInt s.dmem addr w.bytes v.toInt }
   | .none => throw (.nonmemStore s.dmem addr w)
 
-def MachineData.storeAvxM (addr : BitVec 64) {w : AvxWidth} (v : w.type) : MachineM Unit := do
-  let s ← get
-  match Mem.loadInt s.dmem addr w.bytes with
-  | .some _ => MonadStateOf.set { s with dmem := Mem.storeInt s.dmem addr w.bytes v.toInt }
-  | .none => throw (.unimplemented "AVX nonmem store not supported")
-
 def RegOrMem.interpM {w} (o : RegOrMem w) (p : Std.Rco Int64) : MachineM w.type := do
   match o with
   | .reg r => return (← get).regs.get r
   | .mem a => MachineData.loadM ((@AddrExpr.interp labels address_size a (← get).regs p).zeroExtend _) w
-
-def AvxRegOrMem.interpM {w} (o : AvxRegOrMem w) (p : Std.Rco Int64) : MachineM w.type := do
-  match o with
-  | .avx r => return (← get).zmms.get r
-  | .mem a => MachineData.loadAvxM ((@AddrExpr.interp labels address_size a (← get).regs p).zeroExtend _) w
 
 def MachineData.setM {w} (d : Dst w) (v : w.type) (p : Std.Rco Int64) : MachineM Unit := do
   match d with
   | .reg r => modify (·.setReg r v)
   | .mem a => MachineData.storeM ((@AddrExpr.interp labels address_size a (← get).regs p).zeroExtend _) v
 
-def MachineData.setAvxM {aw} (d : AvxDst aw) (v : aw.type) (p : Std.Rco Int64) : MachineM Unit := do
-  match d with
-  | .avx r => modify (·.setAvxReg r v)
-  | .mem a => MachineData.storeAvxM ((@AddrExpr.interp labels address_size a (← get).regs p).zeroExtend _) v
-
-def MachineData.setAvxLegacyM {w} (d : AvxDst w) (v : w.type) (p : Std.Rco Int64) : MachineM Unit := do
-  match d with
-  | .avx r => modify (·.setAvxLegacyReg r v)
-  | .mem a => MachineData.storeAvxM ((@AddrExpr.interp labels address_size a (← get).regs p).zeroExtend _) v
-
 def Operand.interpM {w} (o : Operand w) (p : Std.Rco Int64) : MachineM w.type := do
   match o with
   | .regOrMem rm => rm.interpM labels address_size p
   | .imm v => pure ((@ConstExpr.interp labels v p).toBitVec.truncate _)
-
-def AvxOperand.interpM {aw} (o : AvxOperand aw) (p : Std.Rco Int64) : MachineM aw.type := do
-  match o with
-  | .regOrMem rm => rm.interpM labels address_size p
 
 def RelRegOrMem.interpM (o : RelRegOrMem) (p : Std.Rco Int64) : MachineM (BitVec 64) := do
   match o with
@@ -294,24 +265,13 @@ def Operation.interpM {w} (i : Operation w) (p : Std.Rco Int64) : MachineM Unit 
   | .shl .. | .shr .. | .sar .. | .shld .. | .shrd ..
   | .rol .. | .ror .. | .rcl .. | .rcr .. => throw .undefinedFlags
 
--- AVX Operations Interpreter
-def AvxOperation.interpM {w} (i : AvxOperation w) (p : Std.Rco Int64) : MachineM Unit := do
-  match i with
-  | .movups dst src =>
-    let val ← src.interpM labels address_size p
-    MachineData.setAvxLegacyM labels address_size dst val p
-  | .vmovups dst src =>
-    let val ← src.interpM labels address_size p
-    MachineData.setAvxM labels address_size dst val p
-
 end InterpM
 
 def Instr.interpM (labels : Labels) (i : Instr) (p : Std.Rco Int64) : MachineM Unit :=
   match i with
     | .regular addr_sz op_sz op =>
         Operation.interpM (w := op_sz) labels (.mk addr_sz) op p
-    | .avx addr_sz op_sz op =>
-        AvxOperation.interpM (w := op_sz) labels (.mk addr_sz) op p
+    | .avx _ _ _ => throw (.unimplemented "AVX not modeled straightline")
 
 def Directive.interpM (labels : Labels) (d : Directive) (p : Std.Rco Int64) : MachineM Unit :=
   match d with

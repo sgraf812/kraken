@@ -1,10 +1,23 @@
 # TODO
 
-- Prove the refinement stated in Kraken/X64M.lean: `Operation.interpM` refines
-  the baseline `Operation.interp` over `Effects` (a determinization; an
-  `undefined` flag branch or a `nonmem_load`/`nonmem_store` resumption on the
-  baseline side corresponds to a throw). Needs a reaches-relation on `Effects`
-  trees that resumes every `require_*` with `()`.
+- Whole-program adequacy against the baseline: chain
+  `Executable.straightlineM_adequate` (Kraken/Adequacy.lean) through the
+  baseline's `Eventually`, so a k-segment monadic run discharges into
+  `Eventually (straightlineStep e) (· = st)`, and connect
+  `execProgram`/`liftProgram` (AdequacyProgram.lean) to it through the `lm_*`
+  dictionary.
+
+- Engine (lean4/kernel): the kernel defeq relating the monadic and CPS
+  elaborations of the AVX memory access (`AvxRegOrMem.interpM`'s mem arm
+  against `AvxRegOrMem.interp`, both heading
+  `(AddrExpr.interp …).zeroExtend _` at `AvxWidth`) takes ~330s, a kernel
+  deterministic timeout at default heartbeats; the `Width`-side twin of the
+  same shape checks in milliseconds, and the elaborator closes both instantly.
+  The AVX monadic re-encoding was dropped rather than pay this per build (AVX
+  instructions throw `unimplemented` in `Instr.interpM`); to reproduce,
+  re-add `MachineData.loadAvxM` and `AvxRegOrMem.interpM` to Kraken/X64M.lean
+  and prove `(AvxRegOrMem.interp (.mem a) s p ret).All post` from the
+  `MachineM.Outcomes` hypothesis by `exact MachineData.loadAvxM_All h`.
 
 - Engine (lean4/grind): `internalize` does not share/canonicalize its argument
   (`Grind.add`/`addFactStep` likewise); the hash-consing invariant `mkEqProof`

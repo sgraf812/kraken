@@ -1,12 +1,18 @@
 /-
-Adequacy of the `Op.*` encoding against the monadic instruction semantics.
+Adequacy of the `Op.*` encoding against the baseline omni-semantics, in two
+halves through the waypoint `Operation.interpM`, the straightline interpreter
+over `MachineM`.
 
-The reference is `Operation.interpM`, the straightline interpreter over
-`MachineM`. A device-parameterized action `Op.foo` runs over `Sys D`, touching
+First half: a device-parameterized action `Op.foo` runs over `Sys D`, touching
 only the `machine` component; `liftMachine` embeds a `MachineM` computation
 into that component, and `liftBaseline` reads the label environment and `rip`.
 Each deterministic `Op.foo` equals `liftBaseline` of the matching
 `Operation.interpM` case at 64-bit operand and address size.
+
+Second half: an `interpM` run's outcome transports into the baseline's
+`Effects.All`, culminating in `Executable.straightlineM_adequate`: the monadic
+straightline run's outcome is the strongest postcondition of the baseline's
+`straightlineStep` judgment.
 
 The proofs run against a characterizing API rather than by unfolding at the use
 site: a `liftMachine` monad-morphism dictionary (`lm_*`) pushes the lift to the
@@ -287,5 +293,463 @@ theorem Op.exec_jcc_adequate {D} (cc : CondCode) (l : Label) :
   simp only [Op.exec, Op.jcc, liftBaseline, Operation.interpM, read_apply, getThe_apply,
     gm_apply, lm_bind, lm_ebind, lm_get, lm_eget, apply_ite, lm_throw, lm_pure, bind_assoc,
     pure_bind, throw_apply, pure_apply]
+
+/-! ## Adequacy against the baseline omni-semantics
+
+The half above ends at `Operation.interpM`, a reference we wrote; this half ties
+that reference to the baseline. `MachineM.Outcomes` transports a run's outcome
+onto the continuations of the CPS interpreter: a fall-through obligates `next`,
+a jump obligates `jmp`, and any other exit obligates nothing (`False`), so a
+lemma consumer closes impossible branches by the hypothesis itself. The
+dictionary transports each memory and operand primitive, `Operation.interpM_All`
+covers every instruction, and `Executable.straightlineM_adequate` concludes in
+`Effects.All`, the body of the baseline's `straightlineStep` judgment: the
+monadic run's outcome is the strongest postcondition of master's straightline
+judgment. -/
+
+section OmniAdequacy
+
+variable {post : MachineState → Prop}
+
+/-- Obligations a CPS interpreter's continuations inherit from a `MachineM`
+run: the fall-through state obligates `next`, a jump target obligates `jmp`,
+and every other exit is unreachable, so it obligates `False`. -/
+def MachineM.Outcomes {α} (post : MachineState → Prop) (next : α → MachineData → Effects)
+    (jmp : Int64 → MachineData → Effects) : EStateM.Result X64Exit MachineData α → Prop
+  | .ok a s' => (next a s').All post
+  | .error (.jump pc) s' => (jmp pc s').All post
+  | .error _ _ => False
+
+/-- Reduce a `MachineM` run in the hypothesis to a `match` over its primitive
+sub-runs. -/
+local macro "mrun" h:ident : tactic =>
+  `(tactic| simp only [MachineM.Outcomes, bind, EStateM.bind, pure, EStateM.pure, get, getThe,
+      MonadStateOf.get, EStateM.get, set, MonadStateOf.set, EStateM.set, modify, modifyGet,
+      MonadStateOf.modifyGet, EStateM.modifyGet, throw, throwThe, MonadExceptOf.throw,
+      EStateM.throw] at $h:ident)
+
+/-! ### Primitive dictionary
+
+Each lemma transports `Effects.All` from a run's outcome to the corresponding
+CPS access. The proofs case on the actual behaviors (`Mem.loadInt`), so the
+hypothesis arms for outcomes the primitive cannot produce are never consumed. -/
+
+theorem MachineData.loadM_All {w : Width} {addr : BitVec 64} {s : MachineData}
+    {ret : w.type → MachineData → Effects} {jmp}
+    (h : MachineM.Outcomes post ret jmp (MachineData.loadM addr w s)) :
+    (MachineData.load s addr w ret).All post := by
+  unfold MachineData.loadM at h
+  mrun h
+  unfold MachineData.load
+  simp only [Effects.All]
+  cases hm : Mem.loadInt s.dmem addr w.bytes <;> simp only [hm] at h ⊢ <;> mrun h <;>
+    first
+      | exact h
+      | exact h.elim
+
+theorem MachineData.storeM_All {w : Width} {addr : BitVec 64} {v : w.type} {s : MachineData}
+    {ret : MachineData → Effects} {jmp}
+    (h : MachineM.Outcomes post (fun _ => ret) jmp (MachineData.storeM addr v s)) :
+    (MachineData.store s addr v ret).All post := by
+  unfold MachineData.storeM at h
+  mrun h
+  unfold MachineData.store
+  simp only [Effects.All]
+  cases hm : Mem.loadInt s.dmem addr w.bytes <;> simp only [hm] at h ⊢ <;> mrun h <;>
+    first
+      | exact h
+      | exact h.elim
+
+theorem RegOrMem.interpM_All {w} (labels : Labels) (address_size : AddressSize)
+    {o : RegOrMem w} {s : MachineData} {p : Std.Rco Int64}
+    {ret : w.type → MachineData → Effects} {jmp}
+    (h : MachineM.Outcomes post ret jmp (RegOrMem.interpM labels address_size o p s)) :
+    (@RegOrMem.interp w labels address_size o s p ret).All post := by
+  cases o with
+  | reg r =>
+      simp only [RegOrMem.interpM] at h; mrun h
+      simpa only [RegOrMem.interp] using h
+  | mem a =>
+      simp only [RegOrMem.interpM] at h; mrun h
+      simp only [RegOrMem.interp]
+      exact MachineData.loadM_All h
+
+theorem Operand.interpM_All {w} (labels : Labels) (address_size : AddressSize)
+    {o : Operand w} {s : MachineData} {p : Std.Rco Int64}
+    {ret : w.type → MachineData → Effects} {jmp}
+    (h : MachineM.Outcomes post ret jmp (Operand.interpM labels address_size o p s)) :
+    (@Operand.interp w labels address_size o s p ret).All post := by
+  cases o with
+  | regOrMem rm =>
+      simp only [Operand.interpM] at h
+      simp only [Operand.interp]
+      exact RegOrMem.interpM_All labels address_size h
+  | imm v =>
+      simp only [Operand.interpM] at h; mrun h
+      simpa only [Operand.interp] using h
+
+theorem RelRegOrMem.interpM_All (labels : Labels) (address_size : AddressSize)
+    {o : RelRegOrMem} {s : MachineData} {p : Std.Rco Int64}
+    {ret : BitVec 64 → MachineData → Effects} {jmp}
+    (h : MachineM.Outcomes post ret jmp (RelRegOrMem.interpM labels address_size o p s)) :
+    (@RelRegOrMem.interp labels address_size o s p ret).All post := by
+  cases o with
+  | rel c =>
+      simp only [RelRegOrMem.interpM] at h; mrun h
+      simpa only [RelRegOrMem.interp] using h
+  | reg r =>
+      simp only [RelRegOrMem.interpM] at h; mrun h
+      simpa only [RelRegOrMem.interp] using h
+  | mem a =>
+      simp only [RelRegOrMem.interpM] at h; mrun h
+      simp only [RelRegOrMem.interp]
+      exact MachineData.loadM_All h
+
+theorem MachineData.setM_All {w} (labels : Labels) (address_size : AddressSize)
+    {d : Dst w} {v : w.type} {s : MachineData} {p : Std.Rco Int64}
+    {ret : MachineData → Effects} {jmp}
+    (h : MachineM.Outcomes post (fun _ => ret) jmp (MachineData.setM labels address_size d v p s)) :
+    (@MachineData.set w labels address_size s d v p ret).All post := by
+  cases d with
+  | reg r =>
+      simp only [MachineData.setM] at h; mrun h
+      simpa only [MachineData.set] using h
+  | mem a =>
+      simp only [MachineData.setM] at h; mrun h
+      simp only [MachineData.set]
+      exact MachineData.storeM_All h
+
+/-! ### Instruction-level transport -/
+
+/-- Reduce one sub-run in both the hypothesis and the transported goal. -/
+local macro "mstep" hx:ident h:ident : tactic =>
+  `(tactic| simp only [MachineM.Outcomes, bind, EStateM.bind, pure, EStateM.pure, get, getThe,
+      MonadStateOf.get, EStateM.get, set, MonadStateOf.set, EStateM.set, modify, modifyGet,
+      MonadStateOf.modifyGet, EStateM.modifyGet, throw, throwThe, MonadExceptOf.throw,
+      EStateM.throw, $hx:ident] at $h:ident ⊢)
+
+/-- Close a failed sub-run: a jump outcome matches the transported jump arm,
+any other error contradicts the hypothesis. -/
+local macro "mdone" e:ident h:ident : tactic =>
+  `(tactic| (cases $e:ident <;> first | exact $h:ident | exact ($h:ident).elim))
+
+set_option maxHeartbeats 1000000 in
+/-- Every instruction's `interpM` run transports into the baseline `Effects`
+tree: the tree satisfies `All post` whenever the run's outcome obligates the
+continuations accordingly. The under-approximating family (shifts, `mul`,
+logic ops) exits with `undefinedFlags`, so its hypothesis is `False` and the
+case closes by contradiction. -/
+theorem Operation.interpM_All {w} (labels : Labels) (address_size : AddressSize)
+    {op : Operation w} {p : Std.Rco Int64} {s : MachineData}
+    {next : MachineData → Effects} {jmp : Int64 → MachineData → Effects}
+    (h : MachineM.Outcomes post (fun (_ : Unit) s' => next s') jmp
+      (Operation.interpM labels address_size op p s)) :
+    (@Operation.interp labels address_size w op p s next jmp).All post := by
+  cases op
+  case mov dst src =>
+    simp only [Operation.interpM] at h
+    simp only [Operation.interp]
+    apply Operand.interpM_All labels address_size
+    cases hx : Operand.interpM labels address_size src p s with
+    | ok v t => mstep hx h; exact MachineData.setM_All labels address_size h
+    | error e t => mstep hx h; mdone e h
+  case movsx dst src =>
+    simp only [Operation.interpM] at h
+    simp only [Operation.interp]
+    apply RegOrMem.interpM_All labels address_size
+    cases hx : RegOrMem.interpM labels address_size src p s with
+    | ok v t => mstep hx h; exact MachineData.setM_All labels address_size h
+    | error e t => mstep hx h; mdone e h
+  case movzx dst src =>
+    simp only [Operation.interpM] at h
+    simp only [Operation.interp]
+    apply RegOrMem.interpM_All labels address_size
+    cases hx : RegOrMem.interpM labels address_size src p s with
+    | ok v t => mstep hx h; exact MachineData.setM_All labels address_size h
+    | error e t => mstep hx h; mdone e h
+  case push src =>
+    simp only [Operation.interpM] at h
+    simp only [Operation.interp]
+    apply Operand.interpM_All labels address_size
+    cases hx : Operand.interpM labels address_size src p s with
+    | ok v t =>
+        mstep hx h
+        apply MachineData.storeM_All
+        cases hy : MachineData.storeM (t.regs.get64 .rsp - w.bytesv) v t with
+        | ok u t' => mstep hy h; exact h
+        | error e t' => mstep hy h; mdone e h
+    | error e t => mstep hx h; mdone e h
+  case pop dst =>
+    simp only [Operation.interpM] at h
+    simp only [Operation.interp]
+    apply MachineData.loadM_All
+    cases hx : MachineData.loadM (s.regs.get64 .rsp) w s with
+    | ok v t => mstep hx h; exact MachineData.setM_All labels address_size h
+    | error e t => mstep hx h; mdone e h
+  case setcc cc dst =>
+    simp only [Operation.interpM] at h; mrun h
+    simp only [Operation.interp]
+    exact MachineData.setM_All labels address_size h
+  case cmovcc cc dst src =>
+    simp only [Operation.interpM] at h
+    simp only [Operation.interp]
+    apply RegOrMem.interpM_All labels address_size
+    cases hx : RegOrMem.interpM labels address_size src p s with
+    | ok v t => mstep hx h; exact h
+    | error e t => mstep hx h; mdone e h
+  case lea dst src =>
+    simp only [Operation.interpM] at h; mrun h
+    simpa only [Operation.interp] using h
+  case add dst src =>
+    simp only [Operation.interpM] at h
+    simp only [Operation.interp]
+    apply Operand.interpM_All labels address_size
+    cases hx : Operand.interpM labels address_size src p s with
+    | ok a t =>
+        mstep hx h
+        apply RegOrMem.interpM_All labels address_size
+        cases hy : RegOrMem.interpM labels address_size dst p t with
+        | ok b u => mstep hy h; exact MachineData.setM_All labels address_size h
+        | error e u => mstep hy h; mdone e h
+    | error e t => mstep hx h; mdone e h
+  case adc dst src =>
+    simp only [Operation.interpM] at h
+    simp only [Operation.interp]
+    apply Operand.interpM_All labels address_size
+    cases hx : Operand.interpM labels address_size src p s with
+    | ok a t =>
+        mstep hx h
+        apply RegOrMem.interpM_All labels address_size
+        cases hy : RegOrMem.interpM labels address_size dst p t with
+        | ok b u => mstep hy h; exact MachineData.setM_All labels address_size h
+        | error e u => mstep hy h; mdone e h
+    | error e t => mstep hx h; mdone e h
+  case adcx dst src =>
+    simp only [Operation.interpM] at h
+    simp only [Operation.interp]
+    apply RegOrMem.interpM_All labels address_size
+    cases hx : RegOrMem.interpM labels address_size src p s with
+    | ok a t => mstep hx h; exact h
+    | error e t => mstep hx h; mdone e h
+  case adox dst src =>
+    simp only [Operation.interpM] at h
+    simp only [Operation.interp]
+    apply RegOrMem.interpM_All labels address_size
+    cases hx : RegOrMem.interpM labels address_size src p s with
+    | ok a t => mstep hx h; exact h
+    | error e t => mstep hx h; mdone e h
+  case inc dst =>
+    simp only [Operation.interpM] at h
+    simp only [Operation.interp]
+    apply RegOrMem.interpM_All labels address_size
+    cases hx : RegOrMem.interpM labels address_size dst p s with
+    | ok a t => mstep hx h; exact MachineData.setM_All labels address_size h
+    | error e t => mstep hx h; mdone e h
+  case dec dst =>
+    simp only [Operation.interpM] at h
+    simp only [Operation.interp]
+    apply RegOrMem.interpM_All labels address_size
+    cases hx : RegOrMem.interpM labels address_size dst p s with
+    | ok a t => mstep hx h; exact MachineData.setM_All labels address_size h
+    | error e t => mstep hx h; mdone e h
+  case neg dst =>
+    simp only [Operation.interpM] at h
+    simp only [Operation.interp]
+    apply RegOrMem.interpM_All labels address_size
+    cases hx : RegOrMem.interpM labels address_size dst p s with
+    | ok a t => mstep hx h; exact MachineData.setM_All labels address_size h
+    | error e t => mstep hx h; mdone e h
+  case sub dst src =>
+    simp only [Operation.interpM] at h
+    simp only [Operation.interp]
+    apply Operand.interpM_All labels address_size
+    cases hx : Operand.interpM labels address_size src p s with
+    | ok a t =>
+        mstep hx h
+        apply RegOrMem.interpM_All labels address_size
+        cases hy : RegOrMem.interpM labels address_size dst p t with
+        | ok b u => mstep hy h; exact MachineData.setM_All labels address_size h
+        | error e u => mstep hy h; mdone e h
+    | error e t => mstep hx h; mdone e h
+  case sbb dst src =>
+    simp only [Operation.interpM] at h
+    simp only [Operation.interp]
+    apply Operand.interpM_All labels address_size
+    cases hx : Operand.interpM labels address_size src p s with
+    | ok a t =>
+        mstep hx h
+        apply RegOrMem.interpM_All labels address_size
+        cases hy : RegOrMem.interpM labels address_size dst p t with
+        | ok b u => mstep hy h; exact MachineData.setM_All labels address_size h
+        | error e u => mstep hy h; mdone e h
+    | error e t => mstep hx h; mdone e h
+  case cmp a b =>
+    simp only [Operation.interpM] at h
+    simp only [Operation.interp]
+    apply RegOrMem.interpM_All labels address_size
+    cases hx : RegOrMem.interpM labels address_size a p s with
+    | ok av t =>
+        mstep hx h
+        apply Operand.interpM_All labels address_size
+        cases hy : Operand.interpM labels address_size b p t with
+        | ok bv u => mstep hy h; exact h
+        | error e u => mstep hy h; mdone e h
+    | error e t => mstep hx h; mdone e h
+  case mulx r_hi r_lo src1 =>
+    simp only [Operation.interpM] at h
+    simp only [Operation.interp]
+    apply RegOrMem.interpM_All labels address_size
+    cases hx : RegOrMem.interpM labels address_size src1 p s with
+    | ok a t => mstep hx h; exact h
+    | error e t => mstep hx h; mdone e h
+  case not dst =>
+    simp only [Operation.interpM] at h
+    simp only [Operation.interp]
+    apply RegOrMem.interpM_All labels address_size
+    cases hx : RegOrMem.interpM labels address_size dst p s with
+    | ok a t => mstep hx h; exact MachineData.setM_All labels address_size h
+    | error e t => mstep hx h; mdone e h
+  case bswap dst =>
+    cases w <;> simp only [Operation.interpM] at h <;> mrun h
+    case W32 => simpa only [Operation.interp] using h
+    case W64 => simpa only [Operation.interp] using h
+  case jcc cc l =>
+    simp only [Operation.interpM] at h; mrun h
+    simp only [Operation.interp]
+    cases hcc : cc.interp s.status <;> simp only [hcc, Bool.false_eq_true, if_false, if_true,
+      ite_true, ite_false, reduceIte] at h ⊢ <;> exact h
+  case jmp tgt =>
+    simp only [Operation.interpM] at h
+    simp only [Operation.interp]
+    apply RelRegOrMem.interpM_All labels address_size
+    cases hx : RelRegOrMem.interpM labels address_size tgt p s with
+    | ok a t => mstep hx h; exact h
+    | error e t => mstep hx h; mdone e h
+  case call tgt =>
+    simp only [Operation.interpM] at h
+    simp only [Operation.interp]
+    apply RelRegOrMem.interpM_All labels address_size
+    cases hx : RelRegOrMem.interpM labels address_size tgt p s with
+    | ok a t =>
+        mstep hx h
+        apply MachineData.storeM_All
+        cases hy : MachineData.storeM (t.regs.get64 .rsp - Width.W64.bytesv)
+            (w := .W64) p.upper.toBitVec
+            { t with regs := t.regs.set64 .rsp (t.regs.get64 .rsp - Width.W64.bytesv) } with
+        | ok u t' => mstep hy h; exact h
+        | error e t' => mstep hy h; mdone e h
+    | error e t => mstep hx h; mdone e h
+  case ret =>
+    simp only [Operation.interpM] at h
+    simp only [Operation.interp]
+    apply MachineData.loadM_All
+    cases hx : MachineData.loadM (s.regs.get64 .rsp) .W64 s with
+    | ok ra t => mstep hx h; exact h
+    | error e t => mstep hx h; mdone e h
+  case nop sz =>
+    simp only [Operation.interpM] at h; mrun h
+    simpa only [Operation.interp] using h
+  case nopalign a b =>
+    simp only [Operation.interpM] at h; mrun h
+    simpa only [Operation.interp] using h
+  all_goals simp only [Operation.interpM] at h <;> mrun h
+
+theorem Instr.interpM_All (labels : Labels) {i : Instr} {p : Std.Rco Int64} {s : MachineData}
+    {next : MachineData → Effects} {jmp : Int64 → MachineData → Effects}
+    (h : MachineM.Outcomes post (fun (_ : Unit) s' => next s') jmp (Instr.interpM labels i p s)) :
+    (@Instr.interp labels i s p next jmp).All post := by
+  unfold Instr.interp
+  simp only [Effects.All]
+  cases i with
+  | regular addr_sz op_sz op =>
+      simp only [Instr.interpM] at h
+      exact Operation.interpM_All labels (.mk addr_sz) h
+  | avx addr_sz op_sz op =>
+      simp only [Instr.interpM] at h
+      mrun h
+
+theorem Directive.interpM_All (labels : Labels) {d : Directive} {p : Std.Rco Int64}
+    {s : MachineData} {next : MachineData → Effects} {jmp : Int64 → MachineData → Effects}
+    (h : MachineM.Outcomes post (fun (_ : Unit) s' => next s') jmp (Directive.interpM labels d p s)) :
+    (@Directive.interp labels d s p next jmp).All post := by
+  cases d with
+  | label l =>
+      simp only [Directive.interpM] at h; mrun h
+      simpa only [Directive.interp] using h
+  | instr i =>
+      simp only [Directive.interpM] at h
+      simp only [Directive.interp]
+      exact Instr.interpM_All labels h
+  | byteArray bs =>
+      simp only [Directive.interpM] at h; mrun h
+
+/-- The fold: a directive list's run transports directive by directive. The
+baseline instantiates a directive's jump continuation with the list's return
+continuation, so a taken jump on either side exits the fold into `ret`. -/
+theorem Directives.interpM_All (labels : Labels) (ds : List (Directive × Nat))
+    (s : MachineData) (pc : Int64) {ret : Int64 → MachineData → Effects}
+    (h : MachineM.Outcomes post (fun pc' s' => ret pc' s') (fun pc' s' => ret pc' s')
+      (Directives.interpM labels ds pc s)) :
+    (@Directives.interp labels ds s pc ret).All post := by
+  revert h
+  fun_induction Directives.interp <;> intro h
+  case case1 =>
+    simp only [Directives.interpM] at h; mrun h; exact h
+  case case2 =>
+    rename_i s pc d sz ds ih
+    apply Directive.interpM_All labels
+    cases hx : Directive.interpM labels d (.mk pc (pc + .ofNat sz)) s with
+    | ok u t =>
+        simp only [Directives.interpM] at h
+        mstep hx h
+        exact ih t h
+    | error e t =>
+        simp only [Directives.interpM] at h
+        mstep hx h
+        mdone e h
+
+/-- Outcome of a monadic straightline run: fall-through and jump both name the
+next machine state; any other exit is not an outcome. -/
+def MachineM.step? : EStateM.Result X64Exit MachineData Int64 → Option MachineState
+  | .ok pc s => some (s, pc)
+  | .error (.jump pc) s => some (s, pc)
+  | _ => none
+
+/-- The monadic straightline run's outcome is a valid postcondition of the
+baseline's straightline judgment, stated as the body of `straightlineStep`:
+every baseline behavior from `(s, pc)` equals the outcome. -/
+theorem Executable.straightlineM_adequate (e : Executable) (s : MachineData) (pc : Int64)
+    {st : MachineState} (h : MachineM.step? (e.straightlineM pc s) = some st) :
+    (e.straightline (s, pc) .done).All (· = st) := by
+  unfold Executable.straightlineM at h
+  unfold Executable.straightline
+  apply Directives.interpM_All
+  cases hr : Directives.interpM e.labels (e.directivesFromAddress pc) pc s with
+  | ok pc' s' =>
+      simp only [MachineM.step?, hr] at h
+      cases h
+      simp only [MachineM.Outcomes, hr, Effects.All]
+  | error ex s' =>
+      cases ex <;> simp only [MachineM.step?, hr] at h <;> cases h <;>
+        simp only [MachineM.Outcomes, hr, Effects.All]
+
+/-- The single-step sibling of `straightlineM_adequate`, over the directives at
+one address. -/
+theorem Executable.stepM_adequate (e : Executable) (s : MachineData) (pc : Int64)
+    {st : MachineState} (h : MachineM.step? (e.stepM pc s) = some st) :
+    (e.step (s, pc) .done).All (· = st) := by
+  unfold Executable.stepM at h
+  unfold Executable.step
+  apply Directives.interpM_All
+  cases hr : Directives.interpM e.labels (e.directivesAtAddress pc) pc s with
+  | ok pc' s' =>
+      simp only [MachineM.step?, hr] at h
+      cases h
+      simp only [MachineM.Outcomes, hr, Effects.All]
+  | error ex s' =>
+      cases ex <;> simp only [MachineM.step?, hr] at h <;> cases h <;>
+        simp only [MachineM.Outcomes, hr, Effects.All]
+
+end OmniAdequacy
 
 end Kraken
