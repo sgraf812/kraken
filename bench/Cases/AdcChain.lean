@@ -14,7 +14,9 @@ namespace AdcChain
 
 def chain : Nat → X64M Unit Unit
   | 0 => pure ()
-  | n+1 => do Op.adc (.reg (.low .rax .W64)) (.regOrMem (.reg (.low .rbx .W64))); chain n
+  | n+1 => do
+    Op.adc (.reg (.low .rax .W64)) (.regOrMem (.reg (.low .rbx .W64)))
+    chain n
 
 def prog (n : Nat) : X64M Unit Unit := do
   Op.mov (.reg (.low .rax .W64)) (.imm (.int64 0))
@@ -23,7 +25,8 @@ def prog (n : Nat) : X64M Unit Unit := do
   chain n
 
 def Goal (n : Nat) : Prop :=
-  ⦃fun _ _ _ => True⦄ prog n
-    ⦃fun _ _ _ s => s.machine.regs.get64 .rax = BitVec.ofNat 64 (3*n); fun _ _ => True⦄
+  ⦃fun _ _ _ => True⦄
+  prog n
+  ⦃fun _ _ _ s => s.machine.regs.get64 .rax = BitVec.ofNat 64 (3*n)⦄
 
 end AdcChain
