@@ -162,7 +162,7 @@ private theorem p3_end_run (s : MachineData) (post : @Post MachineState)
     (h : ∀ pc, post (s, pc)) :
     Eventually (straightlineStep (layout p3)) post (s, (layout p3).labels.label "_end") := by
   apply step_cps
-  apply straightlineStep_of_wp (n := 0) (E := fun _ _ => True)
+  apply straightlineStep_of_wp
   rw [p3_end_segment, p3_dirs]
   simp only [List.drop_succ_cons, List.drop_zero]
   vcgen
@@ -176,7 +176,7 @@ private theorem p3_enter (d : MachineData) :
       (d.regs.rbx.toNat = 0 ∧ mid.2 = (layout p3).labels.label "_end"
         ∧ mid.1.regs.rdx.toNat = 2 ∧ mid.1.regs.rax = d.regs.rax)
       ∨ (d.regs.rbx.toNat ≠ 0 ∧ p3_inv d.regs.rbx.toNat (d.regs.rbx.toNat - 1) mid)) := by
-  apply straightlineStep_of_wp (n := 0) (E := fun _ _ => True)
+  apply straightlineStep_of_wp
   rw [p3_entry_segment, p3_dirs]
   have hb := d.regs.rbx.toNat_lt
   have hstart := p3_start_addr (layout := layout)
@@ -202,7 +202,7 @@ private theorem p3_loop_pass (rbx0 k : Nat) (s : MachineData) (hk : k ≠ 0)
     (hrbx : s.regs.rbx.toNat = k) (hle : k ≤ rbx0)
     (hrdx : s.regs.rdx.toNat = 2 ^ 2 ^ (rbx0 - k)) :
     straightlineStep (layout p3) (s, (layout p3).addrOf 2) (p3_inv rbx0 (k - 1)) := by
-  apply straightlineStep_of_wp (n := 0) (E := fun _ _ => True)
+  apply straightlineStep_of_wp
   rw [p3_loop_segment, p3_dirs]
   simp only [List.drop_succ_cons, List.drop_zero]
   have hb := s.regs.rbx.toNat_lt
@@ -231,7 +231,7 @@ private theorem p3_loop_exit (s : MachineData) (h0 : s.regs.rbx.toNat = 0) :
     straightlineStep (layout p3) (s, (layout p3).addrOf 2) (fun mid =>
       mid.2 = (layout p3).labels.label "_end"
         ∧ mid.1.regs.rdx = s.regs.rdx ∧ mid.1.regs.rax = s.regs.rax) := by
-  apply straightlineStep_of_wp (n := 0) (E := fun _ _ => True)
+  apply straightlineStep_of_wp
   rw [p3_loop_segment, p3_dirs]
   simp only [List.drop_succ_cons, List.drop_zero]
   vcgen with finish

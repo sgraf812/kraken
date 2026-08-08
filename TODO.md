@@ -7,15 +7,6 @@
   state the extraction lemmas against them, so every directive is written
   once.
 
-- The deep segment instance (Kraken/SegmentWP.lean) reads only `env.labels`:
-  respell its assertion language over `Labels` and drop the `⟨e.labels, n⟩`
-  reader argument from `straightlineStep_of_wp`. `Env.curSize` carries the
-  current instruction's extent for the shallow layer, which cannot read it off
-  the syntax: `execDir` sets it per instruction via `withCurSize`, and
-  `evalAddr`, the memory specs and `liftBaseline` build the position range
-  `.mk rip (rip + curSize)` from it. `Env` stays that layer's reader and
-  retires with it.
-
 - Whole-program adequacy against the baseline: chain
   `Executable.straightlineM_adequate` (Kraken/Adequacy.lean) through the
   baseline's `Eventually`, so a k-segment monadic run discharges into
