@@ -147,6 +147,15 @@ section Proof
 
 variable [layout : Layout] [hv : Executable.ValidLayout (layout p3)]
 
+/-- The loop invariant at the loop head, indexed by the remaining iteration
+count `i`: `rbx` holds `i` and `rdx` holds the `rbx₀ - i`-fold squaring. -/
+private abbrev p3_inv (rbx0 : Nat) (i : Nat) : @Post MachineState := fun s =>
+  s.2 = (layout p3).addrOf 2
+    ∧ s.1.regs.rbx.toNat = i
+    ∧ i ≤ rbx0
+    ∧ s.1.regs.rdx.toNat = 2 ^ 2 ^ (rbx0 - i)
+    ∧ s.1.regs.rax = 0
+
 /-- Running the exit segment: the label and the `nop` leave the machine
 unchanged, and the run falls off the end of the program text. -/
 private theorem p3_end_run (s : MachineData) (post : @Post MachineState)
@@ -159,14 +168,73 @@ private theorem p3_end_run (s : MachineData) (post : @Post MachineState)
   vcgen
   exact Eventually.done _ (h _)
 
-/-- The loop invariant at the loop head, indexed by the remaining iteration
-count `i`: `rbx` holds `i` and `rdx` holds the `rbx₀ - i`-fold squaring. -/
-private def p3_inv (rbx0 : Nat) (i : Nat) : @Post MachineState := fun s =>
-  s.2 = (layout p3).addrOf 2
-    ∧ (s.1.regs.get64 .rbx).toNat = i
-    ∧ i ≤ rbx0
-    ∧ (s.1.regs.get64 .rdx).toNat = 2 ^ 2 ^ (rbx0 - i)
-    ∧ s.1.regs.get64 .rax = 0#64
+/-- The entry segment: `rdx` is set to `2`, and the loop test either exits to
+`_end` at once or runs the first iteration and arrives at `start` with the
+invariant established at `rbx₀ - 1`. -/
+private theorem p3_enter (d : MachineData) :
+    straightlineStep (layout p3) (d, layout.start) (fun mid =>
+      (d.regs.rbx.toNat = 0 ∧ mid.2 = (layout p3).labels.label "_end"
+        ∧ mid.1.regs.rdx.toNat = 2 ∧ mid.1.regs.rax = d.regs.rax)
+      ∨ (d.regs.rbx.toNat ≠ 0 ∧ p3_inv d.regs.rbx.toNat (d.regs.rbx.toNat - 1) mid)) := by
+  apply straightlineStep_of_wp (n := 0) (E := fun _ _ => True)
+  rw [p3_entry_segment, p3_dirs]
+  have hb := d.regs.rbx.toNat_lt
+  have hstart := p3_start_addr (layout := layout)
+  have hbb : d.regs.rbx.toBitVec.toNat = d.regs.rbx.toNat := UInt64.toNat_toBitVec _
+  have hlo := ofInt_mul_lo (2#64) (2#64) (by decide)
+  have hhi := ofInt_mul_hi (2#64) (2#64) (by decide)
+  have hsub : d.regs.rbx.toNat ≠ 0 →
+      (d.regs.rbx.toBitVec - 1#64).toNat = d.regs.rbx.toNat - 1 := by
+    intro h0
+    rw [BitVec.toNat_sub]
+    simp [hbb]
+    omega
+  have hexp : d.regs.rbx.toNat ≠ 0 →
+      2 ^ 2 ^ (d.regs.rbx.toNat - (d.regs.rbx.toNat - 1)) = 4 := by
+    intro h0
+    rw [show d.regs.rbx.toNat - (d.regs.rbx.toNat - 1) = 1 from by omega]
+  vcgen with finish
+
+/-- One loop pass at nonzero `rbx`: the test falls through, `mulx` squares
+`rdx`, `rbx` decrements, and the back edge re-establishes the invariant. -/
+private theorem p3_loop_pass (rbx0 k : Nat) (s : MachineData) (hk : k ≠ 0)
+    (hbound : 2 ^ 2 ^ rbx0 < 2 ^ 64)
+    (hrbx : s.regs.rbx.toNat = k) (hle : k ≤ rbx0)
+    (hrdx : s.regs.rdx.toNat = 2 ^ 2 ^ (rbx0 - k)) :
+    straightlineStep (layout p3) (s, (layout p3).addrOf 2) (p3_inv rbx0 (k - 1)) := by
+  apply straightlineStep_of_wp (n := 0) (E := fun _ _ => True)
+  rw [p3_loop_segment, p3_dirs]
+  simp only [List.drop_succ_cons, List.drop_zero]
+  have hb := s.regs.rbx.toNat_lt
+  have hstart := p3_start_addr (layout := layout)
+  have hlt : s.regs.rdx.toNat * s.regs.rdx.toNat < 2 ^ 64 := by
+    rw [hrdx, pow_sq]
+    calc 2 ^ 2 ^ (rbx0 - k + 1)
+        ≤ 2 ^ 2 ^ rbx0 :=
+          Nat.pow_le_pow_right (by omega) (Nat.pow_le_pow_right (by omega) (by omega))
+      _ < 2 ^ 64 := hbound
+  have hb1 : s.regs.rdx.toBitVec.toNat = s.regs.rdx.toNat := UInt64.toNat_toBitVec _
+  have hb2 : s.regs.rbx.toBitVec.toNat = s.regs.rbx.toNat := UInt64.toNat_toBitVec _
+  have hlo := ofInt_mul_lo s.regs.rdx.toBitVec s.regs.rdx.toBitVec (by simpa using hlt)
+  have hhi := ofInt_mul_hi s.regs.rdx.toBitVec s.regs.rdx.toBitVec (by simpa using hlt)
+  have hsq : s.regs.rdx.toNat * s.regs.rdx.toNat = 2 ^ 2 ^ (rbx0 - (k - 1)) := by
+    rw [hrdx, pow_sq, show rbx0 - (k - 1) = rbx0 - k + 1 from by omega]
+  have hsub : (s.regs.rbx.toBitVec - 1#64).toNat = k - 1 := by
+    rw [BitVec.toNat_sub]
+    simp [hb2, hrbx]
+    omega
+  vcgen with finish
+
+/-- The final loop test at `rbx = 0`: the jump to `_end` is taken and the data
+registers pass through unchanged. -/
+private theorem p3_loop_exit (s : MachineData) (h0 : s.regs.rbx.toNat = 0) :
+    straightlineStep (layout p3) (s, (layout p3).addrOf 2) (fun mid =>
+      mid.2 = (layout p3).labels.label "_end"
+        ∧ mid.1.regs.rdx = s.regs.rdx ∧ mid.1.regs.rax = s.regs.rax) := by
+  apply straightlineStep_of_wp (n := 0) (E := fun _ _ => True)
+  rw [p3_loop_segment, p3_dirs]
+  simp only [List.drop_succ_cons, List.drop_zero]
+  vcgen with finish
 
 set_option maxHeartbeats 1000000 in
 theorem p3_correct (d : MachineData) (h_bounds : p3_spec d < 2 ^ 64)
@@ -174,97 +242,34 @@ theorem p3_correct (d : MachineData) (h_bounds : p3_spec d < 2 ^ 64)
     Eventually (straightlineStep (layout p3))
       (fun s => s.1.regs.rdx.toNat = p3_spec d ∧ s.1.regs.rax = 0)
       (d, layout.start) := by
-  apply step_cps
-  apply straightlineStep_of_wp (n := 0) (E := fun _ _ => True)
-  rw [p3_entry_segment, p3_dirs]
-  vcgen
-  case vc1 h =>
-    simp [CondCode.interp, StatusFlags.from_result] at h
+  have hbound : 2 ^ 2 ^ d.regs.rbx.toNat < 2 ^ 64 := by simpa [p3_spec] using h_bounds
+  apply Eventually.step _ _ (p3_enter d)
+  rintro ⟨m, pc⟩ (⟨h0, hpc, hrdx2, hraxd⟩ | ⟨hne, hinv⟩)
+  · simp only at hpc
+    subst hpc
     apply p3_end_run
-    intro pc
-    have h0 : d.regs.rbx.toNat = 0 := by
-      have := congrArg BitVec.toNat h
-      simpa [Reg64s.get64] using this
-    constructor
-    · simp [p3_spec, h0]
-      rfl
-    · simp [h_rax]
-  case vc2 h =>
-    simp [CondCode.interp, StatusFlags.from_result] at h
-    have hn0 : d.regs.rbx.toNat ≠ 0 := by
-      intro h0
-      apply h
-      simp only [Reg64s.get64, BitVec.toNat_eq]
-      simpa using h0
-    have hbound : 2 ^ 2 ^ d.regs.rbx.toNat < 2 ^ 64 := by simpa [p3_spec] using h_bounds
-    apply reg_dec_loop _ _ _ (p3_inv d.regs.rbx.toNat) (d.regs.rbx.toNat - 1)
-    refine ⟨?init, ?zero, ?step⟩
-    case init =>
-      have hb := d.regs.rbx.toNat_lt
-      refine ⟨p3_start_addr, ?_, by omega, ?_, ?_⟩
-      · simp [Reg64s.get64, BitVec.toNat_sub]
-        omega
-      · have h1 : d.regs.rbx.toNat - (d.regs.rbx.toNat - 1) = 1 := by omega
-        simp [Reg64s.get64, h1]
-      · simp
-        decide
+    intro pc'
+    exact ⟨by simp [p3_spec, h0, hrdx2], by rw [hraxd, h_rax]⟩
+  · apply reg_dec_loop _ _ _ (p3_inv d.regs.rbx.toNat) (d.regs.rbx.toNat - 1)
+    refine ⟨hinv, ?zero, ?step⟩
     case zero =>
       rintro ⟨s, pc⟩ ⟨hpc, hrbx, hle, hrdx, hrax⟩
-      simp only at hpc
+      simp only at hpc hrbx hle hrdx hrax
       subst hpc
-      apply step_cps
-      apply straightlineStep_of_wp (n := 0) (E := fun _ _ => True)
-      rw [p3_loop_segment, p3_dirs]
-      simp only [List.drop_succ_cons, List.drop_zero]
-      vcgen
-      case vc1 h' =>
-        apply p3_end_run
-        intro pc'
-        have hrdx' : s.regs.rdx.toNat = p3_spec d := by
-          have h1 := hrdx
-          simp only [Reg64s.get64, UInt64.toNat_toBitVec, Nat.sub_zero] at h1
-          simpa [p3_spec] using h1
-        have hrax' : s.regs.rax = 0 := by
-          have := congrArg UInt64.ofBitVec hrax
-          simpa [Reg64s.get64] using this
-        constructor
-        · simp [hrdx']
-        · simp [hrax']
-      case vc2 h' =>
-        exfalso
-        simp [CondCode.interp, StatusFlags.from_result] at h'
-        apply h'
-        have h0 : (s.regs.get64 Reg64.rbx) = 0#64 := by
-          rw [BitVec.toNat_eq]
-          simp [hrbx]
-        simp [h0]
+      apply Eventually.step _ _ (p3_loop_exit s hrbx)
+      rintro ⟨m', pc'⟩ ⟨hpc', hrdx', hrax'⟩
+      simp only at hpc' hrdx' hrax'
+      subst hpc'
+      apply p3_end_run
+      intro pc''
+      refine ⟨?_, by rw [hrax', hrax]⟩
+      rw [hrdx', hrdx]
+      simp [p3_spec]
     case step =>
       rintro ⟨s, pc⟩ k hk ⟨hpc, hrbx, hle, hrdx, hrax⟩
       simp only at hpc hrbx hle hrdx hrax
       subst hpc
-      apply step_cps
-      apply straightlineStep_of_wp (n := 0) (E := fun _ _ => True)
-      rw [p3_loop_segment, p3_dirs]
-      simp only [List.drop_succ_cons, List.drop_zero]
-      vcgen
-      case vc1 h' =>
-        exfalso
-        simp [CondCode.interp, StatusFlags.from_result] at h'
-        rw [h'] at hrbx
-        simp at hrbx
-        omega
-      case vc2 h' =>
-        apply Eventually.done
-        have hlt : (s.regs.get64 Reg64.rdx).toNat * (s.regs.get64 Reg64.rdx).toNat < 2 ^ 64 := by
-          rw [hrdx, pow_sq]
-          calc 2 ^ 2 ^ (d.regs.rbx.toNat - k + 1)
-              ≤ 2 ^ 2 ^ d.regs.rbx.toNat :=
-                Nat.pow_le_pow_right (by omega) (Nat.pow_le_pow_right (by omega) (by omega))
-            _ < 2 ^ 64 := hbound
-        refine ⟨p3_start_addr, ?_, by omega, ?_, ?_⟩ <;>
-          simp [BitVec.toNat_sub, ofInt_mul_lo _ _ hlt, ofInt_mul_hi _ _ hlt]
-        · omega
-        · rw [hrdx, pow_sq,
-            show d.regs.rbx.toNat - (k - 1) = d.regs.rbx.toNat - k + 1 from by omega]
+      exact Eventually.step _ _ (p3_loop_pass _ k s hk hbound hrbx hle hrdx)
+        (fun mid hm => Eventually.done _ hm)
 
 end Proof
