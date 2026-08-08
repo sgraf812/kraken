@@ -193,7 +193,7 @@ private theorem p3_enter (d : MachineData) :
       2 ^ 2 ^ (d.regs.rbx.toNat - (d.regs.rbx.toNat - 1)) = 4 := by
     intro h0
     rw [show d.regs.rbx.toNat - (d.regs.rbx.toNat - 1) = 1 from by omega]
-  vcgen with finish
+  vcgen simplifying_assumptions with finish
 
 /-- One loop pass at nonzero `rbx`: the test falls through, `mulx` squares
 `rdx`, `rbx` decrements, and the back edge re-establishes the invariant. -/
