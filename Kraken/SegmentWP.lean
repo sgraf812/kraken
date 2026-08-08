@@ -56,10 +56,15 @@ theorem straightlineStep_of_wp [Layout] {e : Executable} {s : MachineData} {pc :
   h
 
 /- `straightlineStep` is the API boundary: every proof enters through
-`straightlineStep_of_wp`. Sealing it stops the elaborator from partially
-evaluating the interpreter on a concrete executable whenever a goal or
-expected type is headed by it, which gets stuck only after seconds of
-symbolic `withAddresses`/`idxOf` reduction. -/
+`apply straightlineStep_of_wp`. Sealing it keeps that apply fast: whenever a
+goal or expected type is headed by `straightlineStep` of a concrete
+executable, the elaborator's whnf otherwise partially evaluates the
+interpreter, getting stuck only after seconds of symbolic
+`withAddresses`/`idxOf` reduction. An equality spelling
+`straightlineStep e (s, pc) post = wp …` (provable by
+`with_unfolding_all rfl`) applied with `rw` sidesteps the same reduction even
+without the seal, since `kabstract` matches at reducible transparency; keep it
+in mind for a use site the apply rule cannot serve. -/
 set_option allowUnsafeReducibility true in
 attribute [irreducible] straightlineStep
 
