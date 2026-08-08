@@ -86,6 +86,10 @@ local macro "wp_step" : tactic =>
       Operation.interp, Operand.interp, RegOrMem.interp, RelRegOrMem.interp, ConstExpr.interp,
       MachineData.set, MachineData.setReg, Reg64s.get_low64, Reg64s.set_low64, Effects.All])
 
+@[spec] theorem Directives.nil_spec :
+    ⦃ fun env rip s => Q () env rip s ⦄ (([] : List (Directive × Nat))) ⦃ Q; E ⦄ :=
+  Triple.intro fun _ _ _ h => h
+
 @[spec] theorem Directives.label_spec (l : Label) (sz : Nat) :
     ⦃ fun env rip s => wp ds Q E env (rip + .ofNat sz) s ⦄
       ((Directive.label l, sz) :: ds)
