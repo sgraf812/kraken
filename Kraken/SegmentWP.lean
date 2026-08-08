@@ -145,6 +145,42 @@ local macro "wp_step" : tactic =>
     ⦃ Q; E ⦄ :=
   Triple.intro fun _ _ h => by wp_step; exact h
 
+@[spec] theorem Directives.add_reg_imm_spec (asz : Width) (r : Reg64) (i : Int64) (sz : Nat) :
+    ⦃ fun labels st =>
+        let a := BitVec.setWidth 64 i.toBitVec
+        let b := st.1.regs.get64 r
+        let v := a + b
+        wp ds Q E labels
+          ({ st.1 with
+              regs := st.1.regs.set64 r v,
+              status := StatusFlags.from_result v
+                { cf := v.unsigned != a.unsigned + b.unsigned,
+                  af := (v.take 4).unsigned != (a.take 4).unsigned + (b.take 4).unsigned,
+                  of := v.signed != a.signed + b.signed } },
+            st.2 + .ofNat sz) ⦄
+      ((Directive.instr (.regular asz .W64 (.add (.reg (.low r .W64)) (.imm (.int64 i)))), sz) :: ds)
+    ⦃ Q; E ⦄ :=
+  Triple.intro fun _ _ h => by wp_step; exact h
+
+@[spec] theorem Directives.adc_reg_reg_spec (asz : Width) (rd rs : Reg64) (sz : Nat) :
+    ⦃ fun labels st =>
+        let a := st.1.regs.get64 rs
+        let b := st.1.regs.get64 rd
+        let c := st.1.status.cf
+        let v := a + b + BitVec.ofNat 64 c.toNat
+        wp ds Q E labels
+          ({ st.1 with
+              regs := st.1.regs.set64 rd v,
+              status := StatusFlags.from_result v
+                { cf := v.unsigned != a.unsigned + b.unsigned + c,
+                  af := (v.take 4).unsigned != (a.take 4).unsigned + (b.take 4).unsigned + c,
+                  of := v.signed != a.signed + b.signed + c } },
+            st.2 + .ofNat sz) ⦄
+      ((Directive.instr (.regular asz .W64
+          (.adc (.reg (.low rd .W64)) (.regOrMem (.reg (.low rs .W64))))), sz) :: ds)
+    ⦃ Q; E ⦄ :=
+  Triple.intro fun _ _ h => by wp_step; exact h
+
 @[spec] theorem Directives.mulx_reg_spec (asz : Width) (hi lo rs : Reg64) (sz : Nat) :
     ⦃ fun labels st =>
         let v := (st.1.regs.get64 rs).unsigned * (st.1.regs.get64 .rdx).unsigned

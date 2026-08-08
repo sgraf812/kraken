@@ -27,5 +27,5 @@ globs = ["Cases", "Cases.*"]
 # One openable benchmark per module; open a file to run its `#eval`.
 [[lean_lib]]
 name = "Bench"
-globs = ["add", "dec", "adc", "multireg", "mov", "letspec"]
+globs = ["add", "dec", "adc", "segadc", "multireg", "mov", "letspec"]
 moreLeanArgs = ["--tstack=102400"]

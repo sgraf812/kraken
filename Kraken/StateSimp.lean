@@ -31,6 +31,11 @@ to `evalGround`. -/
 theorem add_assoc_rev {w : Nat} (a b c : BitVec w) : a + (b + c) = a + b + c :=
   (BitVec.add_assoc a b c).symm
 
+/-- The state of the segment weakest precondition is a `MachineState` pair;
+its projections reduce like the record projections. -/
+theorem fst_mk {α β} (a : α) (b : β) : (Prod.mk a b).1 = a := rfl
+theorem snd_mk {α β} (a : α) (b : β) : (Prod.mk a b).2 = b := rfl
+
 /-- The rewrite lemmas the chain's values reduce with: literal normalization,
 register read-over-write, the record projections that turn a read of a state
 literal back into the component it was built from, and flag reduction. Ground
@@ -44,6 +49,7 @@ def lemmaNames : Array Name := #[
   ``Reg64s.r8_set64, ``Reg64s.r9_set64, ``Reg64s.r10_set64, ``Reg64s.r11_set64,
   ``Reg64s.r12_set64, ``Reg64s.r13_set64, ``Reg64s.r14_set64, ``Reg64s.r15_set64,
   ``MachineData.regs_mk, ``MachineData.zmms_mk, ``MachineData.status_mk, ``MachineData.dmem_mk,
+  ``fst_mk, ``snd_mk,
   ``Sys.machine_mk, ``Sys.device_mk,
   ``StatusFlags.cf_from_result, ``StatusFlags.from_result.Remaining.cf_mk,
   ``BitVec.add_zero, ``BitVec.unsigned_eq, ``BitVec.toNat_ofNat,
