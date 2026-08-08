@@ -7,6 +7,16 @@
   state the extraction lemmas against them, so every directive is written
   once.
 
+- Deep-pipeline goals duplicate machine states: each spec application splices
+  the successor state literal into the continuation, so a k-step segment goal
+  nests k states and the branch hypotheses carry copies. Extract each distinct
+  state into a local hypothesis: `kfold`'s pointer-keyed substitution
+  machinery (KrakenTactics/Fold.lean) walking the other direction, `define`-ing
+  one let per distinct state literal and rewriting its occurrences to the
+  variable. `define`d lets survive metavariable instantiation, and a
+  `let`-bound post-state in the spec statement itself is zeta-reduced away by
+  `Sym.preprocessType` before the rule is built.
+
 - Whole-program adequacy against the baseline: chain
   `Executable.straightlineM_adequate` (Kraken/Adequacy.lean) through the
   baseline's `Eventually`, so a k-segment monadic run discharges into

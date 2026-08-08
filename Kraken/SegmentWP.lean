@@ -7,7 +7,7 @@ over `Directives.interp` from `st`, so a postcondition is a predicate on the
 `MachineState` at the exit. The baseline delivers a jump out of
 the segment and running past its final directive to the same continuation, so
 every exit reaches the success postcondition and the exception row is
-`EPost.Nil`. `straightlineStep_of_wp` converts the transformer into the
+`EPost⟨⟩`. `straightlineStep_of_wp` converts the transformer into the
 judgment that `Eventually` composes.
 -/
 import Kraken.Specs
@@ -32,18 +32,18 @@ theorem Effects.All.mono {p q : MachineState → Prop} (h : ∀ st, p st → q s
 the baseline omni-semantics reaches an exit state satisfying the
 postcondition. -/
 def Directives.wpTrans (ds : List (Directive × Nat)) :
-    PredTrans (Labels → MachineState → Prop) EPost.Nil Unit :=
+    PredTrans (Labels → MachineState → Prop) EPost⟨⟩ Unit :=
   ⟨fun Q _E labels st =>
     (@Directives.interp labels ds st.1 st.2 (fun pc s' => .done (s', pc))).All (Q () labels)⟩
 
 instance instWPDirectives :
-    WP (List (Directive × Nat)) Unit (Labels → MachineState → Prop) EPost.Nil where
+    WP (List (Directive × Nat)) Unit (Labels → MachineState → Prop) EPost⟨⟩ where
   wpTrans := Directives.wpTrans
   wp_trans_monotone _ _ _ _ _ _ hQ := fun labels _ =>
     Effects.All.mono (hQ () labels) _
 
 @[simp] theorem Directives.wp_nil (Q : Unit → Labels → MachineState → Prop)
-    (E : EPost.Nil) (labels : Labels) (st : MachineState) :
+    (E : EPost⟨⟩) (labels : Labels) (st : MachineState) :
     wp ([] : List (Directive × Nat)) Q E labels st = Q () labels st := rfl
 
 /-- A segment triple establishes the omni-semantics straightline judgment: the
@@ -51,9 +51,24 @@ segment at `pc` is the wp's program, the judgment's postcondition is the wp's,
 read off the rip and machine slots at the exit. -/
 theorem straightlineStep_of_wp [Layout] {e : Executable} {s : MachineData} {pc : Int64}
     {post : MachineState → Prop}
-    (h : wp (e.directivesFromAddress pc) (fun _ _ => post) EPost.Nil.mk e.labels (s, pc)) :
+    (h : wp (e.directivesFromAddress pc) (fun _ _ => post) epost⟨⟩ e.labels (s, pc)) :
     straightlineStep e (s, pc) post :=
   h
+
+/- `straightlineStep` is the API boundary: every proof enters through
+`straightlineStep_of_wp`. Sealing it stops the elaborator from partially
+evaluating the interpreter on a concrete executable whenever a goal or
+expected type is headed by it, which gets stuck only after seconds of
+symbolic `withAddresses`/`idxOf` reduction. -/
+set_option allowUnsafeReducibility true in
+attribute [irreducible] straightlineStep
+
+/- Same seal for the segment computation: reducing `directivesFromAddress` on
+a concrete executable partially evaluates `withAddresses` and `idxOf` over a
+symbolic layout. Its API is the extraction equations
+(Kraken/SegmentExtract.lean), which rewrite syntactically. -/
+set_option allowUnsafeReducibility true in
+attribute [irreducible] Executable.directivesFromAddress
 
 /-! ## Per-instruction specs
 
@@ -64,7 +79,7 @@ rip advanced by the carried size. Each proof unfolds the one instruction of
 
 /-- Unfold a segment wp into the omni-semantics fold. -/
 theorem Directives.wp_eq (ds : List (Directive × Nat))
-    (Q : Unit → Labels → MachineState → Prop) (E : EPost.Nil)
+    (Q : Unit → Labels → MachineState → Prop) (E : EPost⟨⟩)
     (labels : Labels) (st : MachineState) :
     wp ds Q E labels st =
       (@Directives.interp labels ds st.1 st.2 (fun pc s' => .done (s', pc))).All
@@ -72,7 +87,7 @@ theorem Directives.wp_eq (ds : List (Directive × Nat))
 
 section Specs
 
-variable {Q : Unit → Labels → MachineState → Prop} {E : EPost.Nil}
+variable {Q : Unit → Labels → MachineState → Prop} {E : EPost⟨⟩}
   {ds : List (Directive × Nat)}
 
 /-- Unfold one instruction of the segment wp: the wp equation, the directive
