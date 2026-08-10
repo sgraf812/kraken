@@ -157,72 +157,23 @@ private abbrev p3_inv (rbx0 : Nat) (i : Nat) : @Post MachineState := fun s =>
     ∧ s.1.regs.rdx.toNat = 2 ^ 2 ^ (rbx0 - i)
     ∧ s.1.regs.rax = 0
 
-/-- The machine after the loop test `sub $0, %rbx`. -/
-@[local simp] private def p3_test (s : MachineData) : MachineData :=
-  let b := s.regs.get64 .rbx
-  let v := b - BitVec.setWidth 64 (Int64.toBitVec 0)
-  { s with
-    regs := s.regs.set64 .rbx v,
-    status := StatusFlags.from_result v
-      { cf := v.unsigned != b.unsigned - (BitVec.setWidth 64 (Int64.toBitVec 0)).unsigned,
-        af := (v.take 4).unsigned != (b.take 4).unsigned
-          - ((BitVec.setWidth 64 (Int64.toBitVec 0)).take 4).unsigned,
-        of := v.signed != b.signed - (BitVec.setWidth 64 (Int64.toBitVec 0)).signed } }
-
-/-- The machine after the loop body `mulx; sub $1, %rbx`, run from the test
-state. -/
-@[local simp] private def p3_body (s : MachineData) : MachineData :=
-  let t := p3_test s
-  let sq := (t.regs.get64 .rdx).unsigned * (t.regs.get64 .rdx).unsigned
-  let t' := { t with regs :=
-    (t.regs.set64 .rdx (BitVec.ofInt 64 sq)).set64 .rax (BitVec.ofInt 64 (sq >>> 64)) }
-  let b := t'.regs.get64 .rbx
-  let v := b - BitVec.setWidth 64 (Int64.toBitVec 1)
-  { t' with
-    regs := t'.regs.set64 .rbx v,
-    status := StatusFlags.from_result v
-      { cf := v.unsigned != b.unsigned - (BitVec.setWidth 64 (Int64.toBitVec 1)).unsigned,
-        af := (v.take 4).unsigned != (b.take 4).unsigned
-          - ((BitVec.setWidth 64 (Int64.toBitVec 1)).take 4).unsigned,
-        of := v.signed != b.signed - (BitVec.setWidth 64 (Int64.toBitVec 1)).signed } }
-
-/-! Field API of the two states: what `finish` reads off them. -/
-
-omit layout hv in
-@[local grind =] private theorem p3_test_rdx (s : MachineData) :
-    (p3_test s).regs.rdx = s.regs.rdx := by simp [p3_test]
-omit layout hv in
-@[local grind =] private theorem p3_test_rax (s : MachineData) :
-    (p3_test s).regs.rax = s.regs.rax := by simp [p3_test]
-omit layout hv in
-@[local grind =] private theorem p3_test_zf (s : MachineData) :
-    CondCode.z.interp (p3_test s).status = (s.regs.get64 .rbx == 0#64) := by
-  simp [p3_test]
-omit layout hv in
-@[local grind =] private theorem p3_body_rbx (s : MachineData) :
-    (p3_body s).regs.rbx = UInt64.ofBitVec (s.regs.get64 .rbx - 1#64) := by
-  simp [p3_body, p3_test]
-omit layout hv in
-@[local grind =] private theorem p3_body_rdx (s : MachineData) :
-    (p3_body s).regs.rdx = UInt64.ofBitVec (BitVec.ofInt 64
-      ((s.regs.get64 .rdx).unsigned * (s.regs.get64 .rdx).unsigned)) := by
-  simp [p3_body, p3_test]
-omit layout hv in
-@[local grind =] private theorem p3_body_rax (s : MachineData) :
-    (p3_body s).regs.rax = UInt64.ofBitVec (BitVec.ofInt 64
-      (((s.regs.get64 .rdx).unsigned * (s.regs.get64 .rdx).unsigned) >>> 64)) := by
-  simp [p3_body, p3_test]
-
 omit hv in
-/-- The loop segment as one rule: from `start`, the test either exits to
-`_end` in the test state or runs one body and exits back to `start`. The
-program is the loop suffix of `p3`, so `vcgen` applies this rule wherever
-that suffix appears, in particular inside the entry segment. -/
+/-- The loop segment as one rule, its exits described by observation: with the
+squaring in range, the test either exits to `_end` with the data registers
+unchanged, or one body runs and exits to `start` with `rbx` decremented,
+`rdx` squared and `rax` cleared. -/
 @[local spec high] private theorem p3_loop_wp {Q : Unit → Labels → MachineState → Prop}
     {E : MachineState → Prop} :
     ⦃ fun labels st =>
-        if CondCode.z.interp (p3_test st.1).status then E (p3_test st.1, labels.label "_end")
-        else E (p3_body st.1, labels.label "start") ⦄
+        (st.1.regs.rbx.toNat = 0 →
+          ∀ s', s'.regs.rdx = st.1.regs.rdx → s'.regs.rax = st.1.regs.rax →
+            E (s', labels.label "_end")) ∧
+        (st.1.regs.rbx.toNat ≠ 0 →
+          st.1.regs.rdx.toNat * st.1.regs.rdx.toNat < 2 ^ 64 ∧
+          ∀ s', s'.regs.rbx.toNat = st.1.regs.rbx.toNat - 1 →
+            s'.regs.rdx.toNat = st.1.regs.rdx.toNat * st.1.regs.rdx.toNat →
+            s'.regs.rax = 0 →
+            E (s', labels.label "start")) ⦄
       ((Directive.label "start", layout.size 2)
         :: (Directive.instr (.regular .W64 .W64
             (.sub (.reg (.low .rbx .W64)) (.imm (.int64 0)))), layout.size 3)
@@ -236,8 +187,26 @@ that suffix appears, in particular inside the entry segment. -/
         :: (Directive.label "_end", layout.size 8)
         :: (Directive.instr (.regular .W64 .W64 (.nop 1)), layout.size 9) :: [])
     ⦃ Q; E ⦄ := by
-  vcgen
-  all_goals simp_all [p3_test, p3_body]
+  refine Triple.intro fun labels st ⟨hend, hstart⟩ => ?_
+  have hb := st.1.regs.rbx.toNat_lt
+  have hb1 : st.1.regs.rdx.toBitVec.toNat = st.1.regs.rdx.toNat := UInt64.toNat_toBitVec _
+  have hb2 : st.1.regs.rbx.toBitVec.toNat = st.1.regs.rbx.toNat := UInt64.toNat_toBitVec _
+  have hlo : st.1.regs.rbx.toNat ≠ 0 →
+      (BitVec.ofInt 64 ((st.1.regs.rdx.toBitVec.toNat : Int)
+        * st.1.regs.rdx.toBitVec.toNat)).toNat
+      = st.1.regs.rdx.toBitVec.toNat * st.1.regs.rdx.toBitVec.toNat :=
+    fun h0 => ofInt_mul_lo _ _ (by simpa using (hstart h0).1)
+  have hhi : st.1.regs.rbx.toNat ≠ 0 →
+      BitVec.ofInt 64 (((st.1.regs.rdx.toBitVec.toNat : Int)
+        * st.1.regs.rdx.toBitVec.toNat) >>> 64) = 0#64 :=
+    fun h0 => ofInt_mul_hi _ _ (by simpa using (hstart h0).1)
+  have hsub : st.1.regs.rbx.toNat ≠ 0 →
+      (st.1.regs.rbx.toBitVec - 1#64).toNat = st.1.regs.rbx.toNat - 1 := by
+    intro h0
+    rw [BitVec.toNat_sub]
+    simp [hb2]
+    omega
+  vcgen simplifying_assumptions with finish
 
 /-- Running the exit segment: the label and the `nop` leave the machine
 unchanged, and the run falls off the end of the program text. -/
@@ -263,15 +232,6 @@ private theorem p3_enter (d : MachineData) :
   rw [p3_entry_segment, p3_dirs]
   have hb := d.regs.rbx.toNat_lt
   have hstart := p3_start_addr (layout := layout)
-  have hbb : d.regs.rbx.toBitVec.toNat = d.regs.rbx.toNat := UInt64.toNat_toBitVec _
-  have hlo := ofInt_mul_lo (2#64) (2#64) (by decide)
-  have hhi := ofInt_mul_hi (2#64) (2#64) (by decide)
-  have hsub : d.regs.rbx.toNat ≠ 0 →
-      (d.regs.rbx.toBitVec - 1#64).toNat = d.regs.rbx.toNat - 1 := by
-    intro h0
-    rw [BitVec.toNat_sub]
-    simp [hbb]
-    omega
   have hexp : d.regs.rbx.toNat ≠ 0 →
       2 ^ 2 ^ (d.regs.rbx.toNat - (d.regs.rbx.toNat - 1)) = 4 := by
     intro h0
@@ -296,16 +256,8 @@ private theorem p3_loop_pass (rbx0 k : Nat) (s : MachineData) (hk : k ≠ 0)
         ≤ 2 ^ 2 ^ rbx0 :=
           Nat.pow_le_pow_right (by omega) (Nat.pow_le_pow_right (by omega) (by omega))
       _ < 2 ^ 64 := hbound
-  have hb1 : s.regs.rdx.toBitVec.toNat = s.regs.rdx.toNat := UInt64.toNat_toBitVec _
-  have hb2 : s.regs.rbx.toBitVec.toNat = s.regs.rbx.toNat := UInt64.toNat_toBitVec _
-  have hlo := ofInt_mul_lo s.regs.rdx.toBitVec s.regs.rdx.toBitVec (by simpa using hlt)
-  have hhi := ofInt_mul_hi s.regs.rdx.toBitVec s.regs.rdx.toBitVec (by simpa using hlt)
   have hsq : s.regs.rdx.toNat * s.regs.rdx.toNat = 2 ^ 2 ^ (rbx0 - (k - 1)) := by
     rw [hrdx, pow_sq, show rbx0 - (k - 1) = rbx0 - k + 1 from by omega]
-  have hsub : (s.regs.rbx.toBitVec - 1#64).toNat = k - 1 := by
-    rw [BitVec.toNat_sub]
-    simp [hb2, hrbx]
-    omega
   vcgen simplifying_assumptions with finish
 
 /-- The final loop test at `rbx = 0`: the jump to `_end` is taken and the data
