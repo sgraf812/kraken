@@ -66,7 +66,7 @@ theorem Directives.wpE_mono [Labels] {Q₁ Q₂ E₁ E₂ : MachineState → Pro
     (hQ : ∀ st, Q₁ st → Q₂ st) (hE : ∀ st, E₁ st → E₂ st) :
     ∀ ds st, Directives.wpE ds Q₁ E₁ st → Directives.wpE ds Q₂ E₂ st
   | [], st => hQ st
-  | (d, sz) :: ds, st =>
+  | (_, sz) :: ds, st =>
     Directive.wp1_mono (fun s' => wpE_mono hQ hE ds (s', st.2 + .ofNat sz)) hE
 
 def Directives.wpTrans (ds : List (Directive × Nat)) :
@@ -93,15 +93,15 @@ theorem Directives.wp_eq (ds : List (Directive × Nat))
 exits the whole list. -/
 theorem Directives.wpE_append [Labels] (as bs : List (Directive × Nat))
     (Q E : MachineState → Prop) :
-    ∀ st, Directives.wpE (as ++ bs) Q E st = Directives.wpE as (Directives.wpE bs Q E) E st := by
+    Directives.wpE (as ++ bs) Q E = Directives.wpE as (Directives.wpE bs Q E) E := by
   induction as with
-  | nil => intro st; rfl
+  | nil => rfl
   | cons dsz ds ih =>
-    intro st
+    funext st
     obtain ⟨d, sz⟩ := dsz
     have hnext : (fun s' => Directives.wpE (ds ++ bs) Q E (s', st.2 + .ofNat sz))
         = fun s' => Directives.wpE ds (Directives.wpE bs Q E) E (s', st.2 + .ofNat sz) :=
-      funext fun s' => ih (s', st.2 + .ofNat sz)
+      funext fun s' => by simp [ih]
     simp only [List.cons_append, Directives.wpE, hnext]
 
 /-! ## Per-instruction specs
@@ -127,6 +127,14 @@ local macro "wp_step" : tactic =>
       Operation.interp, Operand.interp, RegOrMem.interp, RelRegOrMem.interp, ConstExpr.interp,
       MachineData.set, MachineData.setReg, Reg64s.get_low64, Reg64s.set_low64, Effects.All,
       or_false, false_or])
+
+/-- `wp_step`, applied to a hypothesis. -/
+local macro "wp_step_at" h:ident : tactic =>
+  `(tactic| simp only [Directives.wp_eq, Directives.wpE, Directive.wp1, Directive.stepFall,
+      Directive.stepJump, Directive.interp, Instr.interp,
+      Operation.interp, Operand.interp, RegOrMem.interp, RelRegOrMem.interp, ConstExpr.interp,
+      MachineData.set, MachineData.setReg, Reg64s.get_low64, Reg64s.set_low64, Effects.All,
+      or_false, false_or] at $h:ident)
 
 @[spec] theorem Directives.nil_spec :
     ⦃ fun labels st => Q () labels st ⦄ (([] : List (Directive × Nat))) ⦃ Q; E ⦄ :=
@@ -227,7 +235,7 @@ local macro "wp_step" : tactic =>
   Triple.intro fun labels st h => by
     wp_step
     cases hc : CondCode.interp cc st.1.status <;>
-      simp only [hc, Bool.false_eq_true, if_true, if_false, reduceIte,
+      simp only [hc, Bool.false_eq_true, if_true, if_false,
         Effects.All, or_false, false_or] at h ⊢ <;>
       exact h
 
@@ -244,6 +252,88 @@ local macro "wp_step" : tactic =>
       simp only [Int64.toBitVec_add, Int64.toBitVec_sub]
       rw [BitVec.add_comm, BitVec.sub_add_cancel]
     simp only [hcancel]
+    exact h
+
+/-! ## Equations
+
+For the fall-through instructions the spec preconditions are exact: the wp of
+the cons is equal to the tail's wp at the updated state, and a conditional or
+unconditional jump equals its exit dispatch. The equations rewrite a segment
+wp into the nested form a composite rule states in its precondition. -/
+
+theorem Directives.wp_cons_label (l : Label) (sz : Nat) (labels st) :
+    wp ((Directive.label l, sz) :: ds) Q E labels st
+      = wp ds Q E labels (st.1, st.2 + .ofNat sz) := by
+  refine propext ⟨fun h => ?_, fun h => ?_⟩ <;> (wp_step_at h; wp_step; exact h)
+
+theorem Directives.wp_cons_nop (asz osz : Width) (n sz : Nat) (labels st) :
+    wp ((Directive.instr (.regular asz osz (.nop n)), sz) :: ds) Q E labels st
+      = wp ds Q E labels (st.1, st.2 + .ofNat sz) := by
+  refine propext ⟨fun h => ?_, fun h => ?_⟩ <;> (wp_step_at h; wp_step; exact h)
+
+theorem Directives.wp_cons_sub_reg_imm (asz : Width) (r : Reg64) (i : Int64) (sz : Nat)
+    (labels st) :
+    wp ((Directive.instr (.regular asz .W64
+        (.sub (.reg (.low r .W64)) (.imm (.int64 i)))), sz) :: ds) Q E labels st
+      = (let b := st.1.regs.get64 r
+         let a := BitVec.setWidth 64 i.toBitVec
+         let v := b - a
+         wp ds Q E labels
+          ({ st.1 with
+              regs := st.1.regs.set64 r v,
+              status := StatusFlags.from_result v
+                { cf := v.unsigned != b.unsigned - a.unsigned,
+                  af := (v.take 4).unsigned != (b.take 4).unsigned - (a.take 4).unsigned,
+                  of := v.signed != b.signed - a.signed } },
+            st.2 + .ofNat sz)) := by
+  refine propext ⟨fun h => ?_, fun h => ?_⟩ <;> (wp_step_at h; wp_step; exact h)
+
+theorem Directives.wp_cons_mulx_reg (asz : Width) (hi lo rs : Reg64) (sz : Nat) (labels st) :
+    wp ((Directive.instr (.regular asz .W64
+        (.mulx (.low hi .W64) (.low lo .W64) (.reg (.low rs .W64)))), sz) :: ds) Q E labels st
+      = (let v := (st.1.regs.get64 rs).unsigned * (st.1.regs.get64 .rdx).unsigned
+         wp ds Q E labels
+          ({ st.1 with regs :=
+              (st.1.regs.set64 lo (BitVec.ofInt 64 v)).set64 hi (BitVec.ofInt 64 (v >>> 64)) },
+            st.2 + .ofNat sz)) := by
+  refine propext ⟨fun h => ?_, fun h => ?_⟩ <;> (wp_step_at h; wp_step; exact h)
+
+theorem Directives.wp_cons_jcc (asz osz : Width) (cc : CondCode) (l : Label) (sz : Nat)
+    (labels st) :
+    wp ((Directive.instr (.regular asz osz (.jcc cc l)), sz) :: ds) Q E labels st
+      = if cc.interp st.1.status then E (st.1, labels.label l)
+        else wp ds Q E labels (st.1, st.2 + .ofNat sz) := by
+  refine propext ⟨fun h => ?_, fun h => ?_⟩ <;>
+    ((try wp_step_at h) <;> (try wp_step) <;>
+      cases hc : CondCode.interp cc st.1.status <;>
+      simp only [hc, Bool.false_eq_true, if_true, if_false, Effects.All, or_false, false_or]
+        at h ⊢ <;>
+      exact h)
+
+theorem Directives.wp_cons_jmp_label (asz osz : Width) (l : Label) (sz : Nat) (labels st) :
+    wp ((Directive.instr (.regular asz osz
+        (.jmp (.rel (.sub (.label l) .after_current_instruction)))), sz) :: ds)
+        Q E labels st
+      = E (st.1, labels.label l) := by
+  have hcancel : st.2 + .ofNat sz + (labels.label l - (st.2 + .ofNat sz))
+      = labels.label l := by
+    apply Int64.toBitVec_inj.mp
+    simp only [Int64.toBitVec_add, Int64.toBitVec_sub]
+    rw [BitVec.add_comm, BitVec.sub_add_cancel]
+  refine propext ⟨fun h => ?_, fun h => ?_⟩ <;>
+    ((try wp_step_at h) <;> (try wp_step) <;>
+      (try simp only [hcancel, Int64.ofBitVec_toBitVec] at h ⊢) <;> exact h)
+
+/-- The sequential-composition rule, the analogue of the `Bind.bind` spec: the
+precondition is the wp of the first piece, continuing into the wp of the
+second, with the jump postcondition passed through. -/
+@[spec] theorem Directives.append_spec (as bs : List (Directive × Nat)) :
+    ⦃ fun labels st => wp as (fun _ labels' st' => wp bs Q E labels' st') E labels st ⦄
+      (as ++ bs)
+    ⦃ Q; E ⦄ :=
+  Triple.intro fun labels st h => by
+    show Directives.wpE (as ++ bs) (Q () labels) E st
+    rw [Directives.wpE_append]
     exact h
 
 end Specs

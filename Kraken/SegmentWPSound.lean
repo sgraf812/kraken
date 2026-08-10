@@ -129,7 +129,7 @@ theorem _root_.All_loadAvx {P : MachineState → Prop} {s : MachineData} {addr :
       ∃ i, Mem.loadInt s.dmem addr w.bytes = some i ∧ (r (.ofInt _ i) s).All P := by
   unfold MachineData.loadAvx
   simp only [Effects.All]
-  cases hm : Mem.loadInt s.dmem addr w.bytes <;> simp [hm, Effects.All]
+  cases hm : Mem.loadInt s.dmem addr w.bytes <;> simp_all [Effects.All]
 
 theorem _root_.All_storeAvx {P : MachineState → Prop} {s : MachineData} {addr : BitVec 64} {w : AvxWidth}
     {v : w.type} {r : MachineData → Effects} :
@@ -138,7 +138,7 @@ theorem _root_.All_storeAvx {P : MachineState → Prop} {s : MachineData} {addr 
         ∧ (r { s with dmem := Mem.storeInt s.dmem addr w.bytes v.toInt }).All P := by
   unfold MachineData.storeAvx
   simp only [Effects.All]
-  cases hm : Mem.loadInt s.dmem addr w.bytes <;> simp [hm, Effects.All]
+  cases hm : Mem.loadInt s.dmem addr w.bytes <;> simp_all [Effects.All]
 
 /-- The proposition "the AVX operand read delivers `v`, and `K v s`". -/
 def _root_.AvxRegOrMem.wpRead [Labels] [AddressSize] {w} (o : AvxRegOrMem w) (s : MachineData)
@@ -172,13 +172,12 @@ theorem _root_.All_setAvx [Labels] [AddressSize] {w} {d : AvxDst w} {v : w.type}
     {p : Std.Rco Int64} {r : MachineData → Effects} {P : MachineState → Prop} :
     (s.setAvx d v p r).All P ↔ d.wpWrite v s p false (fun s' => (r s').All P) := by
   cases d <;> simp only [MachineData.setAvx, AvxDst.wpWrite, All_storeAvx, if_false,
-    Bool.false_eq_true, reduceIte]
+    Bool.false_eq_true]
 
 theorem _root_.All_setAvxLegacy [Labels] [AddressSize] {w} {d : AvxDst w} {v : w.type} {s : MachineData}
     {p : Std.Rco Int64} {r : MachineData → Effects} {P : MachineState → Prop} :
     (s.setAvxLegacy d v p r).All P ↔ d.wpWrite v s p true (fun s' => (r s').All P) := by
-  cases d <;> simp only [MachineData.setAvxLegacy, AvxDst.wpWrite, All_storeAvx, if_true,
-    reduceIte]
+  cases d <;> simp only [MachineData.setAvxLegacy, AvxDst.wpWrite, All_storeAvx, if_true]
 
 theorem _root_.AvxDst.wpWrite_mono [Labels] [AddressSize] {w} {d : AvxDst w} {v : w.type}
     {s : MachineData} {p : Std.Rco Int64} {legacy : Bool} {K₁ K₂ : MachineData → Prop}
@@ -218,11 +217,11 @@ private theorem operation_sound {w} [Labels] [AddressSize] {P : MachineState →
       | refine undefined_sound (fun v h => ?_) h
       | refine fun v => ?_
       | (split <;> rename_i hcond <;>
-          simp only [hcond, Bool.false_eq_true, if_true, if_false, reduceIte] at h ⊢)
+          simp only [hcond, Bool.false_eq_true, if_true, if_false] at h ⊢)
       | (split <;> rename_i hcond <;>
-          simp only [hcond, Bool.false_eq_true, if_true, if_false, reduceIte] at h)
+          simp only [hcond, Bool.false_eq_true, if_true, if_false] at h)
       | (split at h <;> rename_i hcond <;>
-          simp only [hcond, Bool.false_eq_true, if_true, if_false, reduceIte])
+          simp only [hcond, Bool.false_eq_true, if_true, if_false])
       | simp only [Effects.All] at h ⊢
       | simp only [] at h ⊢
       | cases w
@@ -263,7 +262,7 @@ theorem Directive.wp1_sound [Labels] {P : MachineState → Prop}
       simp only [Instr.interp, Effects.All] at h ⊢
       generalize (AddressSize.mk asz : AddressSize) = A at h ⊢
       cases aop <;>
-        simp only [AvxOperation.interp, AvxOperand.interp, All_avxRegOrMem, All_setAvx,
+        simp only [AvxOperation.interp, All_avxRegOrMem, All_setAvx,
           All_setAvxLegacy, Effects.All] at h ⊢ <;>
         rcases h with h | h <;>
         repeat' first
