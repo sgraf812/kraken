@@ -1,14 +1,14 @@
 /-
-Weakest preconditions on the deep embedding. The program of a triple is the
-sized directive segment that `Executable.directivesFromAddress` yields, and
-its predicate transformer runs the baseline omni-semantics: the wp of a
-segment `ds` at `(labels, st)` demands `Effects.All` of the postcondition
-over `Directives.interp` from `st`, so a postcondition is a predicate on the
-`MachineState` at the exit. The baseline delivers a jump out of
-the segment and running past its final directive to the same continuation, so
-every exit reaches the success postcondition and the exception row is
-`EPost⟨⟩`. `straightlineStep_of_wp` converts the transformer into the
-judgment that `Eventually` composes.
+Weakest preconditions on the deep embedding. `Directive.wp1` is the
+transformer of a single directive, with a fall-through postcondition and a
+jump postcondition: each disjunct runs the baseline `Directive.interp` with
+one continuation poisoned by the `Effects.All = False` leaf, so the left
+disjunct states that every resolution falls through and the right that every
+resolution jumps, at the target the interpreter hands to the jump
+continuation. `Directives.wpE` folds `wp1` over a directive list, threading
+the fall-through continuation and passing the jump postcondition through, so
+`wpE (as ++ bs) Q E = wpE as (wpE bs Q E) E`. Kraken/SegmentWPSound.lean
+recovers the closed straightline judgment as the diagonal `Q := E`.
 -/
 import Kraken.Specs
 
@@ -28,80 +28,105 @@ theorem Effects.All.mono {p q : MachineState → Prop} (h : ∀ st, p st → q s
   | require_write_access _ _ _ ih => exact fun hp => ih () hp
   | require_exec_access _ _ ih => exact fun hp => ih () hp
 
-/-- The predicate transformer of a straightline segment: every resolution of
-the baseline omni-semantics reaches an exit state satisfying the
-postcondition. -/
+/-- Every resolution of `d` falls through, into `next`: the jump continuation
+is poisoned with the `All = False` leaf. -/
+def Directive.stepFall [Labels] (d : Directive) (p : Std.Rco Int64) (s : MachineData)
+    (next : MachineData → Prop) : Prop :=
+  (d.interp s p (fun s' => .done (s', 0)) (fun _ _ => .unimplemented "jump")).All
+    (fun st => next st.1)
+
+/-- Every resolution of `d` jumps, into `jmp` at the interpreter's target: the
+fall-through continuation is poisoned. -/
+def Directive.stepJump [Labels] (d : Directive) (p : Std.Rco Int64) (s : MachineData)
+    (jmp : MachineState → Prop) : Prop :=
+  (d.interp s p (fun _ => .unimplemented "fallthrough") (fun pc' s' => .done (s', pc'))).All jmp
+
+/-- The transformer of one directive. The disjunction is exact because
+`Operation.interp` decides jump-ness before any nondeterminism: each tree
+calls only one of its two continuations. -/
+def Directive.wp1 [Labels] (d : Directive) (p : Std.Rco Int64)
+    (next : MachineData → Prop) (jmp : MachineState → Prop) (s : MachineData) : Prop :=
+  d.stepFall p s next ∨ d.stepJump p s jmp
+
+/-- The transformer of a directive list: `Q` at fall-through past the final
+directive, `E` at a jump out of any directive. -/
+def Directives.wpE [Labels] :
+    List (Directive × Nat) → (Q E : MachineState → Prop) → MachineState → Prop
+  | [], Q, _, st => Q st
+  | (d, sz) :: ds, Q, E, st =>
+      d.wp1 ⟨st.2, st.2 + .ofNat sz⟩ (fun s' => wpE ds Q E (s', st.2 + .ofNat sz)) E st.1
+
+theorem Directive.wp1_mono [Labels] {d : Directive} {p : Std.Rco Int64} {s : MachineData}
+    {n₁ n₂ : MachineData → Prop} {j₁ j₂ : MachineState → Prop}
+    (hn : ∀ s', n₁ s' → n₂ s') (hj : ∀ st, j₁ st → j₂ st) :
+    d.wp1 p n₁ j₁ s → d.wp1 p n₂ j₂ s :=
+  Or.imp (Effects.All.mono (fun st => hn st.1) _) (Effects.All.mono hj _)
+
+theorem Directives.wpE_mono [Labels] {Q₁ Q₂ E₁ E₂ : MachineState → Prop}
+    (hQ : ∀ st, Q₁ st → Q₂ st) (hE : ∀ st, E₁ st → E₂ st) :
+    ∀ ds st, Directives.wpE ds Q₁ E₁ st → Directives.wpE ds Q₂ E₂ st
+  | [], st => hQ st
+  | (d, sz) :: ds, st =>
+    Directive.wp1_mono (fun s' => wpE_mono hQ hE ds (s', st.2 + .ofNat sz)) hE
+
 def Directives.wpTrans (ds : List (Directive × Nat)) :
-    PredTrans (Labels → MachineState → Prop) EPost⟨⟩ Unit :=
-  ⟨fun Q _E labels st =>
-    (@Directives.interp labels ds st.1 st.2 (fun pc s' => .done (s', pc))).All (Q () labels)⟩
+    PredTrans (Labels → MachineState → Prop) (MachineState → Prop) Unit :=
+  ⟨fun Q E labels st => @Directives.wpE labels ds (Q () labels) E st⟩
 
 instance instWPDirectives :
-    WP (List (Directive × Nat)) Unit (Labels → MachineState → Prop) EPost⟨⟩ where
+    WP (List (Directive × Nat)) Unit (Labels → MachineState → Prop) (MachineState → Prop) where
   wpTrans := Directives.wpTrans
-  wp_trans_monotone _ _ _ _ _ _ hQ := fun labels _ =>
-    Effects.All.mono (hQ () labels) _
+  wp_trans_monotone _ _ _ _ _ hE hQ := fun labels st =>
+    Directives.wpE_mono (fun st' => hQ () labels st') hE _ st
+
+/-- Unfold a segment wp into the transformer fold. -/
+theorem Directives.wp_eq (ds : List (Directive × Nat))
+    (Q : Unit → Labels → MachineState → Prop) (E : MachineState → Prop)
+    (labels : Labels) (st : MachineState) :
+    wp ds Q E labels st = @Directives.wpE labels ds (Q () labels) E st := rfl
 
 @[simp] theorem Directives.wp_nil (Q : Unit → Labels → MachineState → Prop)
-    (E : EPost⟨⟩) (labels : Labels) (st : MachineState) :
+    (E : MachineState → Prop) (labels : Labels) (st : MachineState) :
     wp ([] : List (Directive × Nat)) Q E labels st = Q () labels st := rfl
 
-/-- A segment triple establishes the omni-semantics straightline judgment: the
-segment at `pc` is the wp's program, the judgment's postcondition is the wp's,
-read off the rip and machine slots at the exit. -/
-theorem straightlineStep_of_wp [Layout] {e : Executable} {s : MachineData} {pc : Int64}
-    {post : MachineState → Prop}
-    (h : wp (e.directivesFromAddress pc) (fun _ _ => post) epost⟨⟩ e.labels (s, pc)) :
-    straightlineStep e (s, pc) post :=
-  h
-
-/- `straightlineStep` is the API boundary: every proof enters through
-`apply straightlineStep_of_wp`. Sealing it keeps that apply fast: whenever a
-goal or expected type is headed by `straightlineStep` of a concrete
-executable, the elaborator's whnf otherwise partially evaluates the
-interpreter, getting stuck only after seconds of symbolic
-`withAddresses`/`idxOf` reduction. An equality spelling
-`straightlineStep e (s, pc) post = wp …` (provable by
-`with_unfolding_all rfl`) applied with `rw` sidesteps the same reduction even
-without the seal, since `kabstract` matches at reducible transparency; keep it
-in mind for a use site the apply rule cannot serve. -/
-set_option allowUnsafeReducibility true in
-attribute [irreducible] straightlineStep
-
-/- Same seal for the segment computation: reducing `directivesFromAddress` on
-a concrete executable partially evaluates `withAddresses` and `idxOf` over a
-symbolic layout. Its API is the extraction equations
-(Kraken/SegmentExtract.lean), which rewrite syntactically. -/
-set_option allowUnsafeReducibility true in
-attribute [irreducible] Executable.directivesFromAddress
+/-- Sequential composition: a fall-through of `as` continues into `bs`, a jump
+exits the whole list. -/
+theorem Directives.wpE_append [Labels] (as bs : List (Directive × Nat))
+    (Q E : MachineState → Prop) :
+    ∀ st, Directives.wpE (as ++ bs) Q E st = Directives.wpE as (Directives.wpE bs Q E) E st := by
+  induction as with
+  | nil => intro st; rfl
+  | cons dsz ds ih =>
+    intro st
+    obtain ⟨d, sz⟩ := dsz
+    have hnext : (fun s' => Directives.wpE (ds ++ bs) Q E (s', st.2 + .ofNat sz))
+        = fun s' => Directives.wpE ds (Directives.wpE bs Q E) E (s', st.2 + .ofNat sz) :=
+      funext fun s' => ih (s', st.2 + .ofNat sz)
+    simp only [List.cons_append, Directives.wpE, hnext]
 
 /-! ## Per-instruction specs
 
-One triple per instruction shape, stated on the cons cell: the precondition is
-the wp of the tail applied to the record update the instruction performs, with
-rip advanced by the carried size. Each proof unfolds the one instruction of
-`Directives.interp` and lands on the tail's wp. -/
-
-/-- Unfold a segment wp into the omni-semantics fold. -/
-theorem Directives.wp_eq (ds : List (Directive × Nat))
-    (Q : Unit → Labels → MachineState → Prop) (E : EPost⟨⟩)
-    (labels : Labels) (st : MachineState) :
-    wp ds Q E labels st =
-      (@Directives.interp labels ds st.1 st.2 (fun pc s' => .done (s', pc))).All
-        (Q () labels) := rfl
+One triple per instruction shape, stated on the cons cell. A fall-through
+instruction's precondition is the tail's wp applied to the record update it
+performs, with rip advanced by the carried size; a jump's precondition sends
+`E` the target. Each proof picks the live `wp1` disjunct and unfolds the one
+instruction of `Directive.interp`. -/
 
 section Specs
 
-variable {Q : Unit → Labels → MachineState → Prop} {E : EPost⟨⟩}
+variable {Q : Unit → Labels → MachineState → Prop} {E : MachineState → Prop}
   {ds : List (Directive × Nat)}
 
-/-- Unfold one instruction of the segment wp: the wp equation, the directive
-and instruction interpreters, operand evaluation, and the `Effects.All`
-equations, normalizing register access to `get64`/`set64`. -/
+/-- Unfold one instruction of the segment wp down to its two disjuncts: the wp
+equation, the transformer, the directive and instruction interpreters, operand
+evaluation, and the `Effects.All` equations, normalizing register access to
+`get64`/`set64` and discarding the poisoned disjunct. -/
 local macro "wp_step" : tactic =>
-  `(tactic| simp only [Directives.wp_eq, Directives.interp, Directive.interp, Instr.interp,
+  `(tactic| simp only [Directives.wp_eq, Directives.wpE, Directive.wp1, Directive.stepFall,
+      Directive.stepJump, Directive.interp, Instr.interp,
       Operation.interp, Operand.interp, RegOrMem.interp, RelRegOrMem.interp, ConstExpr.interp,
-      MachineData.set, MachineData.setReg, Reg64s.get_low64, Reg64s.set_low64, Effects.All])
+      MachineData.set, MachineData.setReg, Reg64s.get_low64, Reg64s.set_low64, Effects.All,
+      or_false, false_or])
 
 @[spec] theorem Directives.nil_spec :
     ⦃ fun labels st => Q () labels st ⦄ (([] : List (Directive × Nat))) ⦃ Q; E ⦄ :=
@@ -195,16 +220,19 @@ local macro "wp_step" : tactic =>
 
 @[spec] theorem Directives.jcc_spec (asz osz : Width) (cc : CondCode) (l : Label) (sz : Nat) :
     ⦃ fun labels st =>
-        if cc.interp st.1.status then Q () labels (st.1, labels.label l)
+        if cc.interp st.1.status then E (st.1, labels.label l)
         else wp ds Q E labels (st.1, st.2 + .ofNat sz) ⦄
       ((Directive.instr (.regular asz osz (.jcc cc l)), sz) :: ds)
     ⦃ Q; E ⦄ :=
   Triple.intro fun labels st h => by
     wp_step
-    split <;> rename_i hc <;> simp only [hc, reduceIte] at h <;> exact h
+    cases hc : CondCode.interp cc st.1.status <;>
+      simp only [hc, Bool.false_eq_true, if_true, if_false, reduceIte,
+        Effects.All, or_false, false_or] at h ⊢ <;>
+      exact h
 
 @[spec] theorem Directives.jmp_label_spec (asz osz : Width) (l : Label) (sz : Nat) :
-    ⦃ fun labels st => Q () labels (st.1, labels.label l) ⦄
+    ⦃ fun labels st => E (st.1, labels.label l) ⦄
       ((Directive.instr (.regular asz osz
           (.jmp (.rel (.sub (.label l) .after_current_instruction)))), sz) :: ds)
     ⦃ Q; E ⦄ :=
@@ -215,7 +243,7 @@ local macro "wp_step" : tactic =>
       apply Int64.toBitVec_inj.mp
       simp only [Int64.toBitVec_add, Int64.toBitVec_sub]
       rw [BitVec.add_comm, BitVec.sub_add_cancel]
-    simp only [hcancel, Int64.ofBitVec_toBitVec]
+    simp only [hcancel]
     exact h
 
 end Specs

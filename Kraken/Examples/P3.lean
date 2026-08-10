@@ -10,6 +10,7 @@ at the loop head.
 import Kraken.Parser
 import Kraken.SegmentExtract
 import Kraken.SegmentWP
+import Kraken.SegmentWPSound
 
 open Kraken.Parser
 open Std.Internal.Do
