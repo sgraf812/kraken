@@ -148,65 +148,10 @@ section Proof
 
 variable [layout : Layout] [hv : Executable.ValidLayout (layout p3)]
 
-/-- The loop invariant at the loop head, indexed by the remaining iteration
-count `i`: `rbx` holds `i` and `rdx` holds the `rbx₀ - i`-fold squaring. -/
-private abbrev p3_inv (rbx0 : Nat) (i : Nat) : @Post MachineState := fun s =>
-  s.2 = (layout p3).addrOf 2
-    ∧ s.1.regs.rbx.toNat = i
-    ∧ i ≤ rbx0
-    ∧ s.1.regs.rdx.toNat = 2 ^ 2 ^ (rbx0 - i)
-    ∧ s.1.regs.rax = 0
-
-omit hv in
-/-- The loop segment as one rule, its exits described by observation: with the
-squaring in range, the test either exits to `_end` with the data registers
-unchanged, or one body runs and exits to `start` with `rbx` decremented,
-`rdx` squared and `rax` cleared. -/
-@[local spec high] private theorem p3_loop_wp {Q : Unit → Labels → MachineState → Prop}
-    {E : MachineState → Prop} :
-    ⦃ fun labels st =>
-        (st.1.regs.rbx.toNat = 0 →
-          ∀ s', s'.regs.rdx = st.1.regs.rdx → s'.regs.rax = st.1.regs.rax →
-            E (s', labels.label "_end")) ∧
-        (st.1.regs.rbx.toNat ≠ 0 →
-          st.1.regs.rdx.toNat * st.1.regs.rdx.toNat < 2 ^ 64 ∧
-          ∀ s', s'.regs.rbx.toNat = st.1.regs.rbx.toNat - 1 →
-            s'.regs.rdx.toNat = st.1.regs.rdx.toNat * st.1.regs.rdx.toNat →
-            s'.regs.rax = 0 →
-            E (s', labels.label "start")) ⦄
-      ((Directive.label "start", layout.size 2)
-        :: (Directive.instr (.regular .W64 .W64
-            (.sub (.reg (.low .rbx .W64)) (.imm (.int64 0)))), layout.size 3)
-        :: (Directive.instr (.regular .W64 .W64 (.jcc .z "_end")), layout.size 4)
-        :: (Directive.instr (.regular .W64 .W64
-            (.mulx (.low .rax .W64) (.low .rdx .W64) (.reg (.low .rdx .W64)))), layout.size 5)
-        :: (Directive.instr (.regular .W64 .W64
-            (.sub (.reg (.low .rbx .W64)) (.imm (.int64 1)))), layout.size 6)
-        :: (Directive.instr (.regular .W64 .W64
-            (.jmp (.rel (.sub (.label "start") .after_current_instruction)))), layout.size 7)
-        :: (Directive.label "_end", layout.size 8)
-        :: (Directive.instr (.regular .W64 .W64 (.nop 1)), layout.size 9) :: [])
-    ⦃ Q; E ⦄ := by
-  refine Triple.intro fun labels st ⟨hend, hstart⟩ => ?_
-  have hb := st.1.regs.rbx.toNat_lt
-  have hb1 : st.1.regs.rdx.toBitVec.toNat = st.1.regs.rdx.toNat := UInt64.toNat_toBitVec _
-  have hb2 : st.1.regs.rbx.toBitVec.toNat = st.1.regs.rbx.toNat := UInt64.toNat_toBitVec _
-  have hlo : st.1.regs.rbx.toNat ≠ 0 →
-      (BitVec.ofInt 64 ((st.1.regs.rdx.toBitVec.toNat : Int)
-        * st.1.regs.rdx.toBitVec.toNat)).toNat
-      = st.1.regs.rdx.toBitVec.toNat * st.1.regs.rdx.toBitVec.toNat :=
-    fun h0 => ofInt_mul_lo _ _ (by simpa using (hstart h0).1)
-  have hhi : st.1.regs.rbx.toNat ≠ 0 →
-      BitVec.ofInt 64 (((st.1.regs.rdx.toBitVec.toNat : Int)
-        * st.1.regs.rdx.toBitVec.toNat) >>> 64) = 0#64 :=
-    fun h0 => ofInt_mul_hi _ _ (by simpa using (hstart h0).1)
-  have hsub : st.1.regs.rbx.toNat ≠ 0 →
-      (st.1.regs.rbx.toBitVec - 1#64).toNat = st.1.regs.rbx.toNat - 1 := by
-    intro h0
-    rw [BitVec.toNat_sub]
-    simp [hb2]
-    omega
-  vcgen simplifying_assumptions with finish
+/-- The loop invariant at the header, indexed by the remaining iteration
+count `k`: `rbx` holds `k` and `rdx` holds the `rbx₀ - k`-fold squaring. -/
+private abbrev p3_inv (rbx0 k : Nat) (s : MachineData) : Prop :=
+  s.regs.rbx.toNat = k ∧ k ≤ rbx0 ∧ s.regs.rdx.toNat = 2 ^ 2 ^ (rbx0 - k) ∧ s.regs.rax = 0
 
 /-- Running the exit segment: the label and the `nop` leave the machine
 unchanged, and the run falls off the end of the program text. -/
@@ -227,49 +172,79 @@ private theorem p3_enter (d : MachineData) :
     straightlineStep (layout p3) (d, layout.start) (fun mid =>
       (d.regs.rbx.toNat = 0 ∧ mid.2 = (layout p3).labels.label "_end"
         ∧ mid.1.regs.rdx.toNat = 2 ∧ mid.1.regs.rax = d.regs.rax)
-      ∨ (d.regs.rbx.toNat ≠ 0 ∧ p3_inv d.regs.rbx.toNat (d.regs.rbx.toNat - 1) mid)) := by
+      ∨ (d.regs.rbx.toNat ≠ 0 ∧ mid.2 = (layout p3).labels.label "start"
+          ∧ p3_inv d.regs.rbx.toNat (d.regs.rbx.toNat - 1) mid.1)) := by
   apply straightlineStep_of_wp
   rw [p3_entry_segment, p3_dirs]
   have hb := d.regs.rbx.toNat_lt
   have hstart := p3_start_addr (layout := layout)
+  have hbb : d.regs.rbx.toBitVec.toNat = d.regs.rbx.toNat := UInt64.toNat_toBitVec _
+  have hlo := ofInt_mul_lo (2#64) (2#64) (by decide)
+  have hhi := ofInt_mul_hi (2#64) (2#64) (by decide)
+  have hsub : d.regs.rbx.toNat ≠ 0 →
+      (d.regs.rbx.toBitVec - 1#64).toNat = d.regs.rbx.toNat - 1 := by
+    intro h0
+    rw [BitVec.toNat_sub]
+    simp [hbb]
+    omega
   have hexp : d.regs.rbx.toNat ≠ 0 →
       2 ^ 2 ^ (d.regs.rbx.toNat - (d.regs.rbx.toNat - 1)) = 4 := by
     intro h0
     rw [show d.regs.rbx.toNat - (d.regs.rbx.toNat - 1) = 1 from by omega]
   vcgen simplifying_assumptions with finish
 
-/-- One loop pass at nonzero `rbx`: the test falls through, `mulx` squares
-`rdx`, `rbx` decrements, and the back edge re-establishes the invariant. -/
-private theorem p3_loop_pass (rbx0 k : Nat) (s : MachineData) (hk : k ≠ 0)
-    (hbound : 2 ^ 2 ^ rbx0 < 2 ^ 64)
-    (hrbx : s.regs.rbx.toNat = k) (hle : k ≤ rbx0)
-    (hrdx : s.regs.rdx.toNat = 2 ^ 2 ^ (rbx0 - k)) :
-    straightlineStep (layout p3) (s, (layout p3).addrOf 2) (p3_inv rbx0 (k - 1)) := by
-  apply straightlineStep_of_wp
-  rw [p3_loop_segment, p3_dirs]
-  simp only [List.drop_succ_cons, List.drop_zero]
-  have hb := s.regs.rbx.toNat_lt
-  have hstart := p3_start_addr (layout := layout)
-  have hlt : s.regs.rdx.toNat * s.regs.rdx.toNat < 2 ^ 64 := by
+omit hv in
+/-- The loop body: entered at the header with `k ≠ 0` iterations left, the
+traversal never falls off the program text and every jump exit lands back on
+the header with the invariant at `k - 1`. -/
+private theorem p3_body (rbx0 : Nat) (hbound : 2 ^ 2 ^ rbx0 < 2 ^ 64) (k : Nat) (hk : k ≠ 0) :
+    ⦃ fun labels st => labels = (layout p3).labels
+        ∧ st.2 = (layout p3).labels.label "start" ∧ p3_inv rbx0 k st.1 ⦄
+      ((layout p3).2.drop 2)
+    ⦃ fun _ _ _ => False;
+      fun st => st.2 = (layout p3).labels.label "start" ∧ p3_inv rbx0 (k - 1) st.1 ⦄ := by
+  refine Triple.intro fun labels st ⟨hlab, hpc, hrbx, hle, hrdx, hrax⟩ => ?_
+  subst hlab
+  have hb := st.1.regs.rbx.toNat_lt
+  have hlt : st.1.regs.rdx.toNat * st.1.regs.rdx.toNat < 2 ^ 64 := by
     rw [hrdx, pow_sq]
     calc 2 ^ 2 ^ (rbx0 - k + 1)
         ≤ 2 ^ 2 ^ rbx0 :=
           Nat.pow_le_pow_right (by omega) (Nat.pow_le_pow_right (by omega) (by omega))
       _ < 2 ^ 64 := hbound
-  have hsq : s.regs.rdx.toNat * s.regs.rdx.toNat = 2 ^ 2 ^ (rbx0 - (k - 1)) := by
+  have hsq : st.1.regs.rdx.toNat * st.1.regs.rdx.toNat = 2 ^ 2 ^ (rbx0 - (k - 1)) := by
     rw [hrdx, pow_sq, show rbx0 - (k - 1) = rbx0 - k + 1 from by omega]
-  vcgen simplifying_assumptions with finish
-
-/-- The final loop test at `rbx = 0`: the jump to `_end` is taken and the data
-registers pass through unchanged. -/
-private theorem p3_loop_exit (s : MachineData) (h0 : s.regs.rbx.toNat = 0) :
-    straightlineStep (layout p3) (s, (layout p3).addrOf 2) (fun mid =>
-      mid.2 = (layout p3).labels.label "_end"
-        ∧ mid.1.regs.rdx = s.regs.rdx ∧ mid.1.regs.rax = s.regs.rax) := by
-  apply straightlineStep_of_wp
-  rw [p3_loop_segment, p3_dirs]
+  have hb1 : st.1.regs.rdx.toBitVec.toNat = st.1.regs.rdx.toNat := UInt64.toNat_toBitVec _
+  have hb2 : st.1.regs.rbx.toBitVec.toNat = st.1.regs.rbx.toNat := UInt64.toNat_toBitVec _
+  have hlo := ofInt_mul_lo st.1.regs.rdx.toBitVec st.1.regs.rdx.toBitVec (by simpa using hlt)
+  have hhi := ofInt_mul_hi st.1.regs.rdx.toBitVec st.1.regs.rdx.toBitVec (by simpa using hlt)
+  have hsub : (st.1.regs.rbx.toBitVec - 1#64).toNat = k - 1 := by
+    rw [BitVec.toNat_sub]
+    simp [hb2, hrbx]
+    omega
+  rw [p3_dirs]
   simp only [List.drop_succ_cons, List.drop_zero]
   vcgen simplifying_assumptions with finish
+
+/-- The loop exit: entered at the header with the countdown at zero, the test
+takes the jump to `_end` and the run reaches the postcondition. -/
+private theorem p3_exit (rbx0 : Nat) (s : MachineData) (h : p3_inv rbx0 0 s) :
+    Eventually (straightlineStep (layout p3))
+      (fun st => st.1.regs.rdx.toNat = 2 ^ 2 ^ rbx0 ∧ st.1.regs.rax = 0)
+      (s, (layout p3).labels.label "start") := by
+  obtain ⟨hrbx, hle, hrdx, hrax⟩ := h
+  refine Eventually.step _ (fun st => st.2 = (layout p3).labels.label "_end"
+    ∧ st.1.regs.rdx = s.regs.rdx ∧ st.1.regs.rax = s.regs.rax) ?_ ?_
+  · apply straightlineStep_of_wp
+    rw [p3_start_segment, p3_dirs]
+    simp only [List.drop_succ_cons, List.drop_zero]
+    vcgen simplifying_assumptions with finish
+  · rintro ⟨m, pc⟩ ⟨hpc, hrdx', hrax'⟩
+    simp only at hpc hrdx' hrax'
+    subst hpc
+    apply p3_end_run
+    intro pc'
+    exact ⟨by rw [hrdx', hrdx]; simp, by rw [hrax', hrax]⟩
 
 set_option maxHeartbeats 1000000 in
 theorem p3_correct (d : MachineData) (h_bounds : p3_spec d < 2 ^ 64)
@@ -279,32 +254,16 @@ theorem p3_correct (d : MachineData) (h_bounds : p3_spec d < 2 ^ 64)
       (d, layout.start) := by
   have hbound : 2 ^ 2 ^ d.regs.rbx.toNat < 2 ^ 64 := by simpa [p3_spec] using h_bounds
   apply Eventually.step _ _ (p3_enter d)
-  rintro ⟨m, pc⟩ (⟨h0, hpc, hrdx2, hraxd⟩ | ⟨hne, hinv⟩)
+  rintro ⟨m, pc⟩ (⟨h0, hpc, hrdx2, hraxd⟩ | ⟨hne, hpc, hinv⟩)
   · simp only at hpc
     subst hpc
     apply p3_end_run
     intro pc'
     exact ⟨by simp [p3_spec, h0, hrdx2], by rw [hraxd, h_rax]⟩
-  · apply reg_dec_loop _ _ _ (p3_inv d.regs.rbx.toNat) (d.regs.rbx.toNat - 1)
-    refine ⟨hinv, ?zero, ?step⟩
-    case zero =>
-      rintro ⟨s, pc⟩ ⟨hpc, hrbx, hle, hrdx, hrax⟩
-      simp only at hpc hrbx hle hrdx hrax
-      subst hpc
-      apply Eventually.step _ _ (p3_loop_exit s hrbx)
-      rintro ⟨m', pc'⟩ ⟨hpc', hrdx', hrax'⟩
-      simp only at hpc' hrdx' hrax'
-      subst hpc'
-      apply p3_end_run
-      intro pc''
-      refine ⟨?_, by rw [hrax', hrax]⟩
-      rw [hrdx', hrdx]
-      simp [p3_spec]
-    case step =>
-      rintro ⟨s, pc⟩ k hk ⟨hpc, hrbx, hle, hrdx, hrax⟩
-      simp only at hpc hrbx hle hrdx hrax
-      subst hpc
-      exact Eventually.step _ _ (p3_loop_pass _ k s hk hbound hrbx hle hrdx)
-        (fun mid hm => Eventually.done _ hm)
+  · simp only at hpc hinv
+    subst hpc
+    exact Eventually.loop (l := "start") p3_start_segment
+      (fun k hk => p3_body d.regs.rbx.toNat hbound k hk)
+      (fun s hs => p3_exit d.regs.rbx.toNat s hs) _ m hinv
 
 end Proof

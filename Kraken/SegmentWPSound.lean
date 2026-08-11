@@ -317,3 +317,33 @@ symbolic layout. Its API is the extraction equations
 (Kraken/SegmentExtract.lean), which rewrite syntactically. -/
 set_option allowUnsafeReducibility true in
 attribute [irreducible] Executable.directivesFromAddress
+
+/-- A loop verified at its header address `e.labels.label l`: the body
+traversal re-enters the header with the invariant at the next index down, and
+the invariant at zero discharges the rest of the run. The back jump is not
+assumed anywhere; it is what the body's jump postcondition demands. -/
+theorem Eventually.loop [Layout] {e : Executable} {l : Label}
+    {seg : List (Directive × Nat)} {I : Nat → MachineData → Prop} {post : @Post MachineState}
+    (hseg : e.directivesFromAddress (e.labels.label l) = seg)
+    (hbody : ∀ k, k ≠ 0 →
+      ⦃ fun labels st => labels = e.labels ∧ st.2 = e.labels.label l ∧ I k st.1 ⦄
+        seg
+      ⦃ fun _ _ _ => False; fun st => st.2 = e.labels.label l ∧ I (k - 1) st.1 ⦄)
+    (hexit : ∀ s, I 0 s → Eventually (straightlineStep e) post (s, e.labels.label l)) :
+    ∀ k s, I k s → Eventually (straightlineStep e) post (s, e.labels.label l) := by
+  intro k
+  induction k with
+  | zero => exact hexit
+  | succ n ih =>
+    intro s hI
+    refine Eventually.step _ (fun st => st.2 = e.labels.label l ∧ I n st.1) ?_ ?_
+    · apply straightlineStep_of_wp
+      have hb := (hbody (n + 1) (by omega)).le_wp e.labels
+        (s, e.labels.label l) ⟨rfl, rfl, hI⟩
+      rw [hseg]
+      exact @Directives.wpE_mono e.labels _ _ _ _
+        (fun st h => h.elim) (fun st h => h) seg _ hb
+    · rintro ⟨m, pc⟩ ⟨hpc, hIm⟩
+      simp only at hpc hIm
+      subst hpc
+      exact ih m hIm
