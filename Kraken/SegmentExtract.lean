@@ -211,3 +211,64 @@ theorem addrOf_ne_of_valid (e : Executable) [hv : ValidLayout e] {k n : Nat}
   omega
 
 end Executable
+
+/-! ## Sizing
+
+A sizing says how many bytes a directive occupies at the address where it is
+placed. The address argument carries alignment, whose padding is a function of
+the current address. The directive argument carries the length of an
+instruction, which its operands determine. Laying a program out folds the
+sizing from a base address, so a subprogram laid out at its own base produces
+the directives and sizes it produces inside a larger program. -/
+
+/-- The bytes a directive occupies at the address where it is placed. -/
+abbrev Sizing := Directive → Int64 → Nat
+
+/-- A sizing gives a label no bytes and every other directive at least one. -/
+class LawfulSizing (sz : Sizing) : Prop where
+  label_zero : ∀ l a, sz (.label l) a = 0
+  instr_pos : ∀ d a, (∀ l, d ≠ Directive.label l) → 0 < sz d a
+
+namespace Program
+
+/-- Pair each directive of `prog` with the bytes it occupies, from `base` on. -/
+def layoutAt (sz : Sizing) (base : Int64) : Program → List (Directive × Nat)
+  | [] => []
+  | d :: ds => (d, sz d base) :: layoutAt sz (base + .ofNat (sz d base)) ds
+
+/-- The bytes `prog` occupies from `base` on. -/
+def byteLen (sz : Sizing) (base : Int64) (prog : Program) : Nat :=
+  ((layoutAt sz base prog).map (·.2)).sum
+
+@[simp] theorem layoutAt_nil (sz : Sizing) (base : Int64) :
+    layoutAt sz base [] = [] := rfl
+
+@[simp] theorem layoutAt_cons (sz : Sizing) (base : Int64) (d : Directive) (ds : Program) :
+    layoutAt sz base (d :: ds)
+      = (d, sz d base) :: layoutAt sz (base + .ofNat (sz d base)) ds := rfl
+
+@[simp] theorem byteLen_nil (sz : Sizing) (base : Int64) : byteLen sz base [] = 0 := rfl
+
+@[simp] theorem byteLen_cons (sz : Sizing) (base : Int64) (d : Directive) (ds : Program) :
+    byteLen sz base (d :: ds) = sz d base + byteLen sz (base + .ofNat (sz d base)) ds := by
+  simp [byteLen]
+
+/-- The directives of a laid-out program are the program. -/
+@[simp] theorem layoutAt_map_fst (sz : Sizing) :
+    ∀ (prog : Program) (base : Int64), (layoutAt sz base prog).map (·.1) = prog
+  | [], _ => rfl
+  | d :: ds, base => by simp [layoutAt_map_fst sz ds]
+
+/-- Laying out a concatenation lays out each part, the second one from the
+address that follows the first. -/
+theorem layoutAt_append (sz : Sizing) :
+    ∀ (as bs : Program) (base : Int64),
+      layoutAt sz base (as ++ bs)
+        = layoutAt sz base as ++ layoutAt sz (base + .ofNat (byteLen sz base as)) bs
+  | [], bs, base => by simp
+  | a :: as, bs, base => by
+    have ih := layoutAt_append sz as bs (base + .ofNat (sz a base))
+    simp only [List.cons_append, layoutAt_cons, byteLen_cons, ih, List.cons_append,
+      Executable.int64_ofNat_add, Int64.add_assoc]
+
+end Program
