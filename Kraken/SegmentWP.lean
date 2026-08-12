@@ -13,6 +13,7 @@ recovers the closed straightline judgment as the diagonal `Q := E`.
 import Kraken.Specs
 
 open Std.Internal.Do
+open Lean.Order
 
 /-- `Effects.All` is monotone in the postcondition. -/
 theorem Effects.All.mono {p q : MachineState → Prop} (h : ∀ st, p st → q st) :
@@ -228,16 +229,17 @@ local macro "wp_step_at" h:ident : tactic =>
 
 @[spec] theorem Directives.jcc_spec (asz osz : Width) (cc : CondCode) (l : Label) (sz : Nat) :
     ⦃ fun labels st =>
-        if cc.interp st.1.status then E (st.1, labels.label l)
-        else wp ds Q E labels (st.1, st.2 + .ofNat sz) ⦄
+        (cc.interp st.1.status = true → E (st.1, labels.label l))
+          ⊓ (cc.interp st.1.status = false → wp ds Q E labels (st.1, st.2 + .ofNat sz)) ⦄
       ((Directive.instr (.regular asz osz (.jcc cc l)), sz) :: ds)
     ⦃ Q; E ⦄ :=
   Triple.intro fun labels st h => by
     wp_step
     cases hc : CondCode.interp cc st.1.status <;>
-      simp only [hc, Bool.false_eq_true, if_true, if_false,
-        Effects.All, or_false, false_or] at h ⊢ <;>
-      exact h
+      simp only [hc, Bool.false_eq_true, if_true, if_false, meet_prop_eq_and,
+        Effects.All, or_false, false_or] at h ⊢
+    · exact h.2 trivial
+    · exact h.1 trivial
 
 @[spec] theorem Directives.jmp_label_spec (asz osz : Width) (l : Label) (sz : Nat) :
     ⦃ fun labels st => E (st.1, labels.label l) ⦄

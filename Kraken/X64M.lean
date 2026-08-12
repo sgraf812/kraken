@@ -619,7 +619,9 @@ variable {D : Type} (Q : Unit → Env → Int64 → Sys D → Prop)
 post otherwise. On a jump the exception post receives the whole state `s`, so the
 device component survives. -/
 @[spec] theorem Op.jcc_spec (cc : CondCode) (l : Int64) :
-    ⦃ fun env rip s => if cc.interp s.machine.status then E (X64Exit.jump l) s else Q () env rip s ⦄
+    ⦃ fun env rip s =>
+        (cc.interp s.machine.status = true → E (X64Exit.jump l) s)
+          ⊓ (cc.interp s.machine.status = false → Q () env rip s) ⦄
       Op.jcc cc l ⦃ Q; E ⦄ := by
   sym =>
     vcgen [Op.jcc, getMachine]
