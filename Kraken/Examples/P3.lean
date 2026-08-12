@@ -17,18 +17,27 @@ open Std.Internal.Do
 
 set_option mvcgen.warning false
 
-def p3 : Program := parse("
+def p3.entry : Program := parse("
 init:
   mov $2, %rdx
+")
+
+def p3.loop : Program := parse("
 start:
   sub $0, %rbx
   jz _end
   mulx %rdx, %rdx, %rax
   sub $1, %rbx
   jmp start
+")
+
+def p3.exit : Program := parse("
 _end:
   nop
 ")
+
+/-- The program a run of `p3` executes: the prologue, the loop, the tail. -/
+def p3 : Program := p3.entry ++ p3.loop ++ p3.exit
 
 def p3_spec (d : MachineData) : Nat := 2 ^ 2 ^ d.regs.rbx.toNat
 
@@ -66,24 +75,24 @@ private theorem p3_dirs [layout : Layout] :
           (.jmp (.rel (.sub (.label "start") .after_current_instruction)))), layout.size 7),
        (Directive.label "_end", layout.size 8),
        (Directive.instr (.regular .W64 .W64 (.nop 1)), layout.size 9)] := by
-  simp [p3, Layout.apply, List.mapIdx_cons, List.mapIdx_nil]
+  simp [p3, p3.entry, p3.loop, p3.exit, Layout.apply, List.mapIdx_cons, List.mapIdx_nil]
 
 variable [layout : Layout] [hv : Executable.ValidLayout (layout p3)]
 
 theorem p3_start_addr :
     (layout p3).labels.label "start" = (layout p3).addrOf 2 := by
   have h2 : (layout p3).2[2]? = some (.label "start", layout.size 2) := by
-    simp [p3, Layout.apply]
+    simp [p3, p3.entry, p3.loop, p3.exit, Layout.apply]
   apply Executable.label_addrOf
   · rw [h2, hv.label_size 2 "start" _ h2]
-  · simp [p3, Layout.apply]
+  · simp [p3, p3.entry, p3.loop, p3.exit, Layout.apply]
 
 theorem p3_loop_segment :
     (layout p3).directivesFromAddress ((layout p3).addrOf 2) = (layout p3).2.drop 2 := by
   apply Executable.directivesFromAddress_addrOf
-  · simp [p3, Layout.apply]
+  · simp [p3, p3.entry, p3.loop, p3.exit, Layout.apply]
   · intro k hk
-    apply Executable.addrOf_ne_of_valid (layout p3) hk <;> simp [p3, Layout.apply]
+    apply Executable.addrOf_ne_of_valid (layout p3) hk <;> simp [p3, p3.entry, p3.loop, p3.exit, Layout.apply]
 
 theorem p3_start_segment :
     (layout p3).directivesFromAddress ((layout p3).labels.label "start")
@@ -94,19 +103,19 @@ theorem p3_start_segment :
 theorem p3_end_addr :
     (layout p3).labels.label "_end" = (layout p3).addrOf 8 := by
   have h8 : (layout p3).2[8]? = some (.label "_end", layout.size 8) := by
-    simp [p3, Layout.apply]
+    simp [p3, p3.entry, p3.loop, p3.exit, Layout.apply]
   apply Executable.label_addrOf
   · rw [h8, hv.label_size 8 "_end" _ h8]
-  · simp [p3, Layout.apply]
+  · simp [p3, p3.entry, p3.loop, p3.exit, Layout.apply]
 
 theorem p3_end_segment :
     (layout p3).directivesFromAddress ((layout p3).labels.label "_end")
       = (layout p3).2.drop 8 := by
   rw [p3_end_addr]
   apply Executable.directivesFromAddress_addrOf
-  · simp [p3, Layout.apply]
+  · simp [p3, p3.entry, p3.loop, p3.exit, Layout.apply]
   · intro k hk
-    apply Executable.addrOf_ne_of_valid (layout p3) hk <;> simp [p3, Layout.apply]
+    apply Executable.addrOf_ne_of_valid (layout p3) hk <;> simp [p3, p3.entry, p3.loop, p3.exit, Layout.apply]
 
 end Extraction
 
