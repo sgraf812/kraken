@@ -75,8 +75,9 @@ private theorem idxOf_eq_of {α} [BEq α] [LawfulBEq α] {l : List α} {a : α} 
         have h0 := hlt 0 (Nat.succ_pos m)
         simp only [List.getElem?_cons_zero, ne_eq, Option.some.injEq] at h0
         simpa using h0
-      rw [List.idxOf_cons, hx, cond_false,
-        ih (by simpa using hn) (fun k hk => by simpa using hlt (k + 1) (by omega))]
+      simp only [List.idxOf_cons, hx]
+      rw [ih (by simpa using hn) (fun k hk => by simpa using hlt (k + 1) (by omega))]
+      simp
 
 /-- Cutting the directive list at an index whose address is fresh: the
 segment at the address of directive `n` is the directive list from `n` on. -/
