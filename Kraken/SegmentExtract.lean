@@ -186,6 +186,12 @@ private theorem sizeBefore_succ (e : Executable) {n : Nat} {d : Directive} {z : 
   rw [List.take_add_one, hd]
   simp
 
+/-- Stepping one directive advances the address by that directive's size. -/
+theorem addrOf_succ (e : Executable) {n : Nat} {d : Directive} {z : Nat}
+    (hd : e.2[n]? = some (d, z)) : e.addrOf (n + 1) = e.addrOf n + .ofNat z := by
+  unfold addrOf
+  rw [sizeBefore_succ e hd, int64_ofNat_add, Int64.add_assoc]
+
 /-- Distinct addresses at a cut point that follows a non-label directive. -/
 theorem addrOf_ne_of_valid (e : Executable) [hv : ValidLayout e] {k n : Nat}
     (hk : k < n) (hsome : (e.2[n - 1]?).isSome)

@@ -39,6 +39,12 @@ _end:
 /-- The program a run of `p3` executes: the prologue, the loop, the tail. -/
 def p3 : Program := p3.entry ++ p3.loop ++ p3.exit
 
+/-- The split at the loop header. -/
+theorem p3_eq_entry_append : p3 = p3.entry ++ (p3.loop ++ p3.exit) := by simp [p3]
+
+/-- The split at the exit label. -/
+theorem p3_eq_loop_append : p3 = (p3.entry ++ p3.loop) ++ p3.exit := by simp [p3]
+
 def p3_spec (d : MachineData) : Nat := 2 ^ 2 ^ d.regs.rbx.toNat
 
 private theorem pow_sq (e : Nat) : 2 ^ 2 ^ e * 2 ^ 2 ^ e = 2 ^ 2 ^ (e + 1) := by
@@ -68,7 +74,7 @@ theorem p3_start_addr :
     (layout p3).labels.label "start" = (layout p3).addrOf p3.entry.length := by
   have h2 : (layout p3).2[p3.entry.length]? = some (.label "start", layout.size p3.entry.length) := by
     simp [p3, p3.entry, p3.loop, p3.exit, Layout.apply]
-  apply Executable.label_addrOf
+  with_reducible apply Executable.label_addrOf
   · rw [h2, hv.label_size _ "start" _ h2]
   · simp [p3, p3.entry, p3.loop, p3.exit, Layout.apply]
 
@@ -78,10 +84,11 @@ theorem p3_start_segment :
     (layout p3).directivesFromAddress ((layout p3).labels.label "start")
       = (p3.loop ++ p3.exit).mapIdx (fun i d => (d, layout.size (p3.entry.length + i))) := by
   rw [p3_start_addr, Executable.directivesFromAddress_addrOf]
-  · exact Layout.apply_drop p3.entry (p3.loop ++ p3.exit)
+  · rw [p3_eq_entry_append]
+    with_reducible exact Layout.apply_drop p3.entry (p3.loop ++ p3.exit)
   · simp [p3, p3.entry, p3.loop, p3.exit, Layout.apply]
   · intro k hk
-    apply Executable.addrOf_ne_of_valid (layout p3) hk <;>
+    with_reducible apply Executable.addrOf_ne_of_valid (layout p3) hk <;>
       simp [p3, p3.entry, p3.loop, p3.exit, Layout.apply]
 
 theorem p3_end_addr :
@@ -89,7 +96,7 @@ theorem p3_end_addr :
   have h8 : (layout p3).2[(p3.entry ++ p3.loop).length]?
       = some (.label "_end", layout.size (p3.entry ++ p3.loop).length) := by
     simp [p3, p3.entry, p3.loop, p3.exit, Layout.apply]
-  apply Executable.label_addrOf
+  with_reducible apply Executable.label_addrOf
   · rw [h8, hv.label_size _ "_end" _ h8]
   · simp [p3, p3.entry, p3.loop, p3.exit, Layout.apply]
 
@@ -98,10 +105,11 @@ theorem p3_end_segment :
     (layout p3).directivesFromAddress ((layout p3).labels.label "_end")
       = p3.exit.mapIdx (fun i d => (d, layout.size ((p3.entry ++ p3.loop).length + i))) := by
   rw [p3_end_addr, Executable.directivesFromAddress_addrOf]
-  · exact Layout.apply_drop (p3.entry ++ p3.loop) p3.exit
+  · rw [p3_eq_loop_append]
+    with_reducible exact Layout.apply_drop (p3.entry ++ p3.loop) p3.exit
   · simp [p3, p3.entry, p3.loop, p3.exit, Layout.apply]
   · intro k hk
-    apply Executable.addrOf_ne_of_valid (layout p3) hk <;>
+    with_reducible apply Executable.addrOf_ne_of_valid (layout p3) hk <;>
       simp [p3, p3.entry, p3.loop, p3.exit, Layout.apply]
 
 end Extraction
@@ -117,17 +125,36 @@ count `k`: `rbx` holds `k` and `rdx` holds the `rbx₀ - k`-fold squaring. -/
 private abbrev p3_inv (rbx0 k : Nat) (s : MachineData) : Prop :=
   s.regs.rbx.toNat = k ∧ k ≤ rbx0 ∧ s.regs.rdx.toNat = 2 ^ 2 ^ (rbx0 - k) ∧ s.regs.rax = 0
 
+/-- Traversing the tail fragment ends just past the program text. -/
+private theorem p3_end_pc :
+    (layout p3).labels.label "_end"
+        + .ofNat (layout.size (p3.entry ++ p3.loop).length)
+        + .ofNat (layout.size ((p3.entry ++ p3.loop).length + 1))
+      = (layout p3).addrOf p3.length := by
+  have h8 : (layout p3).2[(p3.entry ++ p3.loop).length]?
+      = some (.label "_end", layout.size (p3.entry ++ p3.loop).length) := by
+    simp [p3, p3.entry, p3.loop, p3.exit, Layout.apply]
+  have h9 : (layout p3).2[(p3.entry ++ p3.loop).length + 1]?
+      = some (.instr (.regular .W64 .W64 (.nop 1)),
+          layout.size ((p3.entry ++ p3.loop).length + 1)) := by
+    simp [p3, p3.entry, p3.loop, p3.exit, Layout.apply]
+  rw [p3_end_addr, ← Executable.addrOf_succ (layout p3) h8,
+    ← Executable.addrOf_succ (layout p3) h9]
+  simp [p3, p3.entry, p3.loop, p3.exit]
+
 /-- Running the exit segment: the label and the `nop` leave the machine
-unchanged, and the run falls off the end of the program text. -/
+unchanged, and the run stops just past the program text. -/
 private theorem p3_end_run (s : MachineData) (post : @Post MachineState)
-    (h : ∀ pc, post (s, pc)) :
+    (h : post (s, (layout p3).addrOf p3.length)) :
     Eventually (straightlineStep (layout p3)) post (s, (layout p3).labels.label "_end") := by
-  apply step_cps
-  apply straightlineStep_of_wp
+  with_reducible apply step_cps
+  with_reducible apply straightlineStep_of_wp
   rw [p3_end_segment]
   simp only [p3.exit, List.mapIdx_cons, List.mapIdx_nil]
-  vcgen
-  exact Eventually.done _ (h _)
+  vcgen simplifying_assumptions
+  simp only [Nat.add_zero]
+  rw [p3_end_pc]
+  with_reducible exact Eventually.done _ h
 
 /-- The entry segment: `rdx` is set to `2`, and the loop test either exits to
 `_end` at once or runs the first iteration and arrives at `start` with the
@@ -138,7 +165,7 @@ private theorem p3_enter (d : MachineData) :
         ∧ mid.1.regs.rdx.toNat = 2 ∧ mid.1.regs.rax = d.regs.rax)
       ∨ (d.regs.rbx.toNat ≠ 0 ∧ mid.2 = (layout p3).labels.label "start"
           ∧ p3_inv d.regs.rbx.toNat (d.regs.rbx.toNat - 1) mid.1)) := by
-  apply straightlineStep_of_wp
+  with_reducible apply straightlineStep_of_wp
   rw [p3_entry_segment]
   simp only [p3.entry, p3.loop, p3.exit, List.cons_append, List.nil_append,
     List.mapIdx_cons, List.mapIdx_nil]
@@ -160,7 +187,7 @@ private theorem p3_body (rbx0 : Nat) (hbound : 2 ^ 2 ^ rbx0 < 2 ^ 64) (k : Nat) 
       ((p3.loop ++ p3.exit).mapIdx (fun i d => (d, layout.size (p3.entry.length + i))))
     ⦃ fun _ _ _ => False;
       fun st => st.2 = (layout p3).labels.label "start" ∧ p3_inv rbx0 (k - 1) st.1 ⦄ := by
-  refine Triple.intro fun labels st ⟨hlab, hpc, hrbx, hle, hrdx, hrax⟩ => ?_
+  with_reducible refine Triple.intro fun labels st ⟨hlab, hpc, hrbx, hle, hrdx, hrax⟩ => ?_
   subst hlab
   have hlt : st.1.regs.rdx.toNat * st.1.regs.rdx.toNat < 2 ^ 64 := by
     rw [hrdx, pow_sq]
@@ -181,9 +208,9 @@ private theorem p3_exit (rbx0 : Nat) (s : MachineData) (h : p3_inv rbx0 0 s) :
       (fun st => st.1.regs.rdx.toNat = 2 ^ 2 ^ rbx0 ∧ st.1.regs.rax = 0)
       (s, (layout p3).labels.label "start") := by
   obtain ⟨hrbx, hle, hrdx, hrax⟩ := h
-  refine Eventually.step _ (fun st => st.2 = (layout p3).labels.label "_end"
+  with_reducible refine Eventually.step _ (fun st => st.2 = (layout p3).labels.label "_end"
     ∧ st.1.regs.rdx = s.regs.rdx ∧ st.1.regs.rax = s.regs.rax) ?_ ?_
-  · apply straightlineStep_of_wp
+  · with_reducible apply straightlineStep_of_wp
     rw [p3_start_segment]
     simp only [p3.loop, p3.exit, List.cons_append, List.nil_append,
       List.mapIdx_cons, List.mapIdx_nil]
@@ -191,9 +218,8 @@ private theorem p3_exit (rbx0 : Nat) (s : MachineData) (h : p3_inv rbx0 0 s) :
   · rintro ⟨m, pc⟩ ⟨hpc, hrdx', hrax'⟩
     simp only at hpc hrdx' hrax'
     subst hpc
-    apply p3_end_run
-    intro pc'
-    exact ⟨by rw [hrdx', hrdx]; simp, by rw [hrax', hrax]⟩
+    with_reducible apply p3_end_run
+    with_reducible exact ⟨by rw [hrdx', hrdx]; simp, by rw [hrax', hrax]⟩
 
 set_option maxHeartbeats 1000000 in
 theorem p3_correct (d : MachineData) (h_bounds : p3_spec d < 2 ^ 64)
@@ -201,18 +227,18 @@ theorem p3_correct (d : MachineData) (h_bounds : p3_spec d < 2 ^ 64)
     Eventually (straightlineStep (layout p3))
       (fun s => s.1.regs.rdx.toNat = p3_spec d ∧ s.1.regs.rax = 0)
       (d, layout.start) := by
-  have hbound : 2 ^ 2 ^ d.regs.rbx.toNat < 2 ^ 64 := by simpa [p3_spec] using h_bounds
-  apply Eventually.step _ _ (p3_enter d)
+  simp only [p3_spec] at h_bounds ⊢
+  with_reducible apply Eventually.step _ _ (p3_enter d)
   rintro ⟨m, pc⟩ (⟨h0, hpc, hrdx2, hraxd⟩ | ⟨hne, hpc, hinv⟩)
   · simp only at hpc
     subst hpc
-    apply p3_end_run
-    intro pc'
-    exact ⟨by simp [p3_spec, h0, hrdx2], by rw [hraxd, h_rax]⟩
+    with_reducible apply p3_end_run
+    with_reducible exact ⟨by simp [h0, hrdx2], by rw [hraxd, h_rax]⟩
   · simp only at hpc hinv
     subst hpc
-    exact Eventually.loop (l := "start") p3_start_segment
-      (fun k hk => p3_body d.regs.rbx.toNat hbound k hk)
-      (fun s hs => p3_exit d.regs.rbx.toNat s hs) _ m hinv
+    with_reducible
+      exact Eventually.loop (l := "start") p3_start_segment
+        (fun k hk => p3_body d.regs.rbx.toNat h_bounds k hk)
+        (fun s hs => p3_exit d.regs.rbx.toNat s hs) _ m hinv
 
 end Proof
