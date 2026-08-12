@@ -1,11 +1,34 @@
 # TODO
 
-- The p3 extraction layer restates the program: `p3_dirs`
+- Fragments. The p3 extraction layer restates the program: `p3_dirs`
   (Kraken/Examples/P3.lean) spells the laid-out directive list a second time,
   and the loop and exit segments exist only as `List.drop` computations inside
-  proofs. Give each subprogram its own def, build `p3` from those defs, and
-  state the extraction lemmas against them, so every directive is written
-  once.
+  proofs. Writing each directive once needs subprograms that carry their own
+  sizes, which `Layout.size : Nat → Nat` cannot give: a position is a
+  coordinate the enclosing list imposes, so it changes when a subprogram is
+  embedded. Key the sizes on the directive and the address instead, both of
+  which are stable under embedding:
+
+      abbrev Sizes := Directive → Int64 → Nat
+      class LawfulSizes (sz : Sizes) : Prop where
+        label_zero : ∀ l a, sz (.label l) a = 0
+        instr_pos  : ∀ d a, (∀ l, d ≠ .label l) → 0 < sz d a
+      def Program.layoutAt (sz : Sizes) (base : Int64) : Program → List (Directive × Nat)
+
+  The directive argument carries its weight twice over: an instruction's length
+  depends on its content, and `sz d a` reads as "if `d` were placed at `a` it
+  occupies this many bytes", so the function is total without junk values. The
+  address argument keeps alignment expressible, since `nopalign`'s padding is a
+  function of the current address. `Directive.fakeSize` and, later,
+  `ToBytes`'s byte length are instances.
+
+  Then: the composition equation
+  `(as ++ bs).layoutAt sz base = as.layoutAt sz base ++ bs.layoutAt sz (base + as.byteLen sz base)`;
+  a bridge giving `ValidLayout` for a lawful layout under the no-wrap bound; and
+  the label congruence `wpE` reads the label table only at the labels a segment
+  mentions, which a fragment lemma needs as soon as the fragment jumps.
+  `ValidLayout` stays for whole-program statements, where quantifying over
+  placements no policy produces gives the stronger theorem.
 
 - Deep-pipeline goals duplicate machine states: each spec application splices
   the successor state literal into the continuation, so a k-step segment goal
