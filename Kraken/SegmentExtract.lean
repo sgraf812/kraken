@@ -112,8 +112,17 @@ private theorem findSome?_eq_of {α β} {f : α → Option β} {l : List α} :
 occurrence, provided the label occupies no bytes there. -/
 theorem label_addrOf (e : Executable) (l : Label) (n : Nat)
     (hn : e.2[n]? = some (.label l, 0))
-    (hfirst : ∀ k, k < n → e.2[k]?.map (·.1) ≠ some (Directive.label l)) :
+    (hfirst : ∀ dz ∈ e.2.take n, dz.1 ≠ Directive.label l) :
     e.labels.label l = e.addrOf n := by
+  replace hfirst : ∀ k, k < n → e.2[k]?.map (·.1) ≠ some (Directive.label l) := by
+    intro k hk hcontra
+    obtain ⟨dz, hdz⟩ : ∃ dz, e.2[k]? = some dz := by
+      rcases h : e.2[k]? with _ | dz
+      · rw [h] at hcontra; simp at hcontra
+      · exact ⟨dz, rfl⟩
+    rw [hdz] at hcontra
+    refine hfirst dz (List.mem_iff_getElem?.mpr ⟨k, ?_⟩) (by simpa using hcontra)
+    rw [List.getElem?_take_of_lt hk, hdz]
   have hstep : e.1 + .ofNat ((e.2.take (n + 1)).map (·.2)).sum = e.addrOf n := by
     unfold addrOf sizeBefore
     rw [List.take_add_one, hn]
@@ -179,13 +188,15 @@ private theorem sizeBefore_succ (e : Executable) {n : Nat} {d : Directive} {z : 
 
 /-- Distinct addresses at a cut point that follows a non-label directive. -/
 theorem addrOf_ne_of_valid (e : Executable) [hv : ValidLayout e] {k n : Nat}
-    (hk : k < n) {d : Directive} {z : Nat}
-    (hd : e.2[n - 1]? = some (d, z)) (hdl : ∀ l, d ≠ Directive.label l) :
+    (hk : k < n) (hsome : (e.2[n - 1]?).isSome)
+    (hd : ∀ l z, e.2[n - 1]? ≠ some (Directive.label l, z)) :
     e.addrOf k ≠ e.addrOf n := by
-  have hz : 0 < z := hv.instr_size _ _ _ hd hdl
+  obtain ⟨⟨d, z⟩, hdz⟩ := Option.isSome_iff_exists.mp hsome
+  have hz : 0 < z := hv.instr_size _ _ _ hdz (fun l hl => hd l z (by rw [hdz, hl]))
+  replace hd := hdz
   have h1 : e.sizeBefore k ≤ e.sizeBefore (n - 1) := sizeBefore_mono e (by omega)
   have h2 : e.sizeBefore n = e.sizeBefore (n - 1) + z := by
-    have hs := sizeBefore_succ e hd
+    have hs := sizeBefore_succ e hdz
     rw [show n - 1 + 1 = n by omega] at hs
     exact hs
   have hbn : e.sizeBefore n < 2 ^ 64 :=

@@ -76,21 +76,14 @@ theorem p3_start_addr :
     simp [p3, Layout.apply]
   apply Executable.label_addrOf
   · rw [h2, hv.label_size 2 "start" _ h2]
-  · intro k hk
-    match k, hk with
-    | 0, _ => simp [p3, Layout.apply]
-    | 1, _ => simp [p3, Layout.apply]
+  · simp [p3, Layout.apply]
 
 theorem p3_loop_segment :
     (layout p3).directivesFromAddress ((layout p3).addrOf 2) = (layout p3).2.drop 2 := by
   apply Executable.directivesFromAddress_addrOf
   · simp [p3, Layout.apply]
   · intro k hk
-    apply Executable.addrOf_ne_of_valid (layout p3) hk
-      (d := .instr (.regular .W64 .W64 (.mov (.reg (.low .rdx .W64)) (.imm (.int64 2)))))
-      (z := layout.size 1)
-    · simp [p3, Layout.apply]
-    · intro l; simp
+    apply Executable.addrOf_ne_of_valid (layout p3) hk <;> simp [p3, Layout.apply]
 
 theorem p3_start_segment :
     (layout p3).directivesFromAddress ((layout p3).labels.label "start")
@@ -104,16 +97,7 @@ theorem p3_end_addr :
     simp [p3, Layout.apply]
   apply Executable.label_addrOf
   · rw [h8, hv.label_size 8 "_end" _ h8]
-  · intro k hk
-    match k, hk with
-    | 0, _ => simp [p3, Layout.apply]
-    | 1, _ => simp [p3, Layout.apply]
-    | 2, _ => simp [p3, Layout.apply]
-    | 3, _ => simp [p3, Layout.apply]
-    | 4, _ => simp [p3, Layout.apply]
-    | 5, _ => simp [p3, Layout.apply]
-    | 6, _ => simp [p3, Layout.apply]
-    | 7, _ => simp [p3, Layout.apply]
+  · simp [p3, Layout.apply]
 
 theorem p3_end_segment :
     (layout p3).directivesFromAddress ((layout p3).labels.label "_end")
@@ -122,12 +106,7 @@ theorem p3_end_segment :
   apply Executable.directivesFromAddress_addrOf
   · simp [p3, Layout.apply]
   · intro k hk
-    apply Executable.addrOf_ne_of_valid (layout p3) hk
-      (d := .instr (.regular .W64 .W64
-        (.jmp (.rel (.sub (.label "start") .after_current_instruction)))))
-      (z := layout.size 7)
-    · simp [p3, Layout.apply]
-    · intro l; simp
+    apply Executable.addrOf_ne_of_valid (layout p3) hk <;> simp [p3, Layout.apply]
 
 end Extraction
 
