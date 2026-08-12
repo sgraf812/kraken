@@ -218,10 +218,19 @@ theorem addrOf_ne_of_valid (e : Executable) [hv : ValidLayout e] {k n : Nat}
 
 end Executable
 
+/-- The start address a layout gives a program. -/
+theorem _root_.Layout.apply_fst [layout : Layout] (p : Program) :
+    (layout p).1 = layout.start := rfl
+
+/-- The directive list a layout gives a program: each directive paired with the
+size the layout assigns to its position. -/
+theorem _root_.Layout.apply_snd [layout : Layout] (p : Program) :
+    (layout p).2 = p.mapIdx (fun i d => (d, layout.size i)) := rfl
+
 /-- Dropping a leading subprogram leaves the rest laid out, with the size table
 shifted past it. -/
 theorem _root_.Layout.apply_drop [layout : Layout] (as bs : Program) :
     ((layout (as ++ bs)).2).drop as.length
       = bs.mapIdx (fun i d => (d, layout.size (as.length + i))) := by
-  simp [Layout.apply, List.mapIdx_append, Nat.add_comm]
+  simp [Layout.apply_snd, List.mapIdx_append, Nat.add_comm]
 
