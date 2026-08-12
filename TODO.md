@@ -9,8 +9,8 @@
   embedded. Key the sizes on the directive and the address instead, both of
   which are stable under embedding:
 
-      abbrev Sizes := Directive → Int64 → Nat
-      class LawfulSizes (sz : Sizes) : Prop where
+      abbrev Sizing := Directive → Int64 → Nat
+      class LawfulSizing (sz : Sizing) : Prop where
         label_zero : ∀ l a, sz (.label l) a = 0
         instr_pos  : ∀ d a, (∀ l, d ≠ .label l) → 0 < sz d a
       def Program.layoutAt (sz : Sizes) (base : Int64) : Program → List (Directive × Nat)
@@ -19,8 +19,10 @@
   depends on its content, and `sz d a` reads as "if `d` were placed at `a` it
   occupies this many bytes", so the function is total without junk values. The
   address argument keeps alignment expressible, since `nopalign`'s padding is a
-  function of the current address. `Directive.fakeSize` and, later,
-  `ToBytes`'s byte length are instances.
+  function of the current address. `Directive.fakeSize` is a sizing, and
+  `ToBytes`'s byte length will be another. The word "layout" stays with the
+  operation and its result, so that the rule and the placed program keep
+  separate names.
 
   Then: the composition equation
   `(as ++ bs).layoutAt sz base = as.layoutAt sz base ++ bs.layoutAt sz (base + as.byteLen sz base)`;
