@@ -17,6 +17,21 @@
   `let`-bound post-state in the spec statement itself is zeta-reduced away by
   `Sym.preprocessType` before the rule is built.
 
+- Toolchain: the `lean4-hom` pin cannot move to a stock nightly yet. Nightly
+  2026-08-12 ships the `[grind hom]` attribute and its rule store
+  (`Lean/Meta/Tactic/Grind/Homo.lean`, `Init/Grind/Homo/*`) but not the solver
+  extension `Lean/Meta/Tactic/Grind/Homomorphism.lean`, and `Grind.Config` has no
+  `homo` field, so the attribute is accepted and inert. `Kraken/Specs.lean`'s
+  `@[grind hom] BitVec.unsigned_hom` then buys nothing and `grind` can no longer
+  cross `UInt64.toNat`/`BitVec.toNat`, which fails `p3_enter`, `p3_body` and
+  `p3_exit`. One line shows it:
+  `example (x : UInt64) (h : x = ⟨2#64⟩) : x.toNat = 2 := by grind`, which the
+  pinned toolchain closes and the nightly does not; `grind -homo` on the pinned
+  toolchain reproduces the nightly's failures with identical case names. `vcgen`
+  itself is not implicated: the verification conditions are byte-identical under
+  both toolchains. Everything else needed for the bump is already done, so once
+  the hom solver lands upstream the pin can move.
+
 - Engine (vcgen, parked): PR #14746 (draft, branch `sg/vcgen-split-conditional-pre`,
   head bf6a55ec03) splits a case analysis on the right-hand side of an entailment,
   so a spec whose precondition branches on a decidable state condition applies and
