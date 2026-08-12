@@ -17,6 +17,32 @@
   `let`-bound post-state in the spec statement itself is zeta-reduced away by
   `Sym.preprocessType` before the rule is built.
 
+- Engine (vcgen, parked): PR #14746 (draft, branch `sg/vcgen-split-conditional-pre`,
+  head bf6a55ec03) splits a case analysis on the right-hand side of an entailment,
+  so a spec whose precondition branches on a decidable state condition applies and
+  each branch steps on. `mkBackwardRuleForTopLevelSplit` mirrors the program-level
+  `mkBackwardRuleForSplit` (discriminant abstraction, eta-reduced matcher alts,
+  `useSplitter := true`, excess-argument binders, congruence proof, per-shape cache);
+  the strategy `splitRhsCase?` replaces the earlier `splitTarget?` call, so no MetaM
+  tactic remains in the pipeline. Verified: ite, dite, matcher, and a non-empty state
+  telescope, each failing before and silent after; `tests/elab/vcgenImp.lean` gains a
+  branch VC per arm. Left to do before review: rebase onto master (it predates #14747,
+  which also touches Solve.lean) and add a `@[frameproc]`-monad test, since the
+  `isConjunctiveIn` arm is currently unexercised (`defaultFrameInferenceProc` frames
+  only under a `frames` clause) and `isConjunctiveIn` has no matcher arm at all.
+
+- Engine (lean4/vcgen): a spec whose exception postcondition is `epost⟨E⟩` with `E`
+  schematic is applied at `E := ⊥`. `mkSpecBackwardProof`'s guard
+  (`RuleConstruction.lean:228`) runs `isDefEqGuarded epostSpec ⊥`, which assigns the
+  metavariable instead of rejecting, and `wp_econs_bot_le` then weakens the goal's
+  exception postcondition away. Completeness bug, not soundness: the VC becomes the
+  strictly stronger `⊥`. Reproducer: spec `⦃E "boom"⦄ boom ⦃post; epost⟨E⟩⦄` for
+  `def boom : ExceptT String (StateM Nat) Unit := throw "boom"` applied to a goal with
+  `epost⟨fun msg s => msg = "boom" ∧ s = 0⟩` yields `⊢ ⊥`; stating the whole `EPost`
+  schematic yields the correct `⊢ s = 0`. The throw must sit behind a named `def` or the
+  builtin `Spec.throw_MonadExcept` wins. The `tests/bench/vcgen` specs use the
+  `epost⟨epost⟩` spelling and escape it only because their goals already carry `⊥`.
+
 - Whole-program adequacy against the baseline: chain
   `Executable.straightlineM_adequate` (Kraken/Adequacy.lean) through the
   baseline's `Eventually`, so a k-segment monadic run discharges into
