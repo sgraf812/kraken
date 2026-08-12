@@ -3,9 +3,9 @@ The squaring loop `p3`: starting from `rdx = 2`, each iteration squares `rdx`
 by `mulx` and counts `rbx` down to zero, so the loop computes
 `rdx = 2 ^ 2 ^ rbx`. `p3_correct` proves it against the omni-semantics
 judgments: each straightline segment is discharged by `vcgen` through the
-segment weakest-precondition specs, the segments chain by `step_cps`, and the
-loop closes by `reg_dec_loop` with the invariant `rdx = 2 ^ 2 ^ (rbx₀ - i)`
-at the loop head.
+segment weakest-precondition specs, the segments chain by `Eventually.step`,
+and the loop closes by `Eventually.loop` with the invariant
+`rbx = k ∧ rdx = 2 ^ 2 ^ (rbx₀ - k)` at the header.
 -/
 import Kraken.Parser
 import Kraken.SegmentExtract
