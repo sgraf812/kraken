@@ -156,6 +156,7 @@ private theorem p3_end_run (s : MachineData) (post : @Post MachineState)
   rw [p3_end_pc]
   with_reducible exact Eventually.done _ h
 
+omit hv in
 /-- The entry segment: `rdx` is set to `2`, and the loop test either exits to
 `_end` at once or runs the first iteration and arrives at `start` with the
 invariant established at `rbx₀ - 1`. -/
@@ -169,12 +170,6 @@ private theorem p3_enter (d : MachineData) :
   rw [p3_entry_segment]
   simp only [p3.entry, p3.loop, p3.exit, List.cons_append, List.nil_append,
     List.mapIdx_cons, List.mapIdx_nil]
-  have hstart : (layout p3).labels.label "start" = (layout p3).addrOf p3.entry.length :=
-    p3_start_addr (layout := layout)
-  have hexp : d.regs.rbx.toNat ≠ 0 →
-      2 ^ 2 ^ (d.regs.rbx.toNat - (d.regs.rbx.toNat - 1)) = 4 := by
-    intro h0
-    rw [show d.regs.rbx.toNat - (d.regs.rbx.toNat - 1) = 1 from by omega]
   vcgen simplifying_assumptions with finish
 
 omit hv in
