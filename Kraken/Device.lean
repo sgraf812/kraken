@@ -57,12 +57,12 @@ reply, the device reply otherwise. `vcgen` splits on the address being mapped an
 on the device accepting it. -/
 @[spec] theorem Op.devLoad_spec (dev : Device D) (addr : BitVec 64) :
     ⦃ fun env rip s =>
-        match Mem.loadInt s.machine.dmem addr 8 with
-        | some i => Q i env rip s
-        | none =>
-          match dev.readStep addr s.machine.dmem s.device with
-          | some (v, dmem', d') => Q v env rip { machine := { s.machine with dmem := dmem' }, device := d' }
-          | none => E (.nonmemLoad s.machine.dmem addr .W64) s ⦄
+        (∀ i, Mem.loadInt s.machine.dmem addr 8 = some i → Q i env rip s)
+          ⊓ (Mem.loadInt s.machine.dmem addr 8 = none →
+              (∀ v dmem' d', dev.readStep addr s.machine.dmem s.device = some (v, dmem', d') →
+                  Q v env rip { machine := { s.machine with dmem := dmem' }, device := d' })
+                ⊓ (dev.readStep addr s.machine.dmem s.device = none →
+                    E (.nonmemLoad s.machine.dmem addr .W64) s)) ⦄
       Op.devLoad dev addr ⦃ Q; E ⦄ := by
   sym =>
     vcgen [Op.devLoad, putMemDev]
@@ -72,12 +72,14 @@ on the device accepting it. -/
 the device transition otherwise. -/
 @[spec] theorem Op.devStore_spec (dev : Device D) (addr : BitVec 64) (v : Int) :
     ⦃ fun env rip s =>
-        match Mem.loadInt s.machine.dmem addr 8 with
-        | some _ => R () env rip { s with machine := { s.machine with dmem := Mem.storeInt s.machine.dmem addr 8 v } }
-        | none =>
-          match dev.writeStep addr v s.machine.dmem s.device with
-          | some (dmem', d') => R () env rip { machine := { s.machine with dmem := dmem' }, device := d' }
-          | none => E (.nonmemStore s.machine.dmem addr .W64) s ⦄
+        (∀ i, Mem.loadInt s.machine.dmem addr 8 = some i →
+            R () env rip { s with machine := { s.machine with
+              dmem := Mem.storeInt s.machine.dmem addr 8 v } })
+          ⊓ (Mem.loadInt s.machine.dmem addr 8 = none →
+              (∀ dmem' d', dev.writeStep addr v s.machine.dmem s.device = some (dmem', d') →
+                  R () env rip { machine := { s.machine with dmem := dmem' }, device := d' })
+                ⊓ (dev.writeStep addr v s.machine.dmem s.device = none →
+                    E (.nonmemStore s.machine.dmem addr .W64) s)) ⦄
       Op.devStore dev addr v ⦃ R; E ⦄ := by
   sym =>
     vcgen [Op.devStore, putMemDev, modifyMachine]
