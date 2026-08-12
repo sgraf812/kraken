@@ -211,3 +211,11 @@ theorem addrOf_ne_of_valid (e : Executable) [hv : ValidLayout e] {k n : Nat}
   omega
 
 end Executable
+
+/-- Dropping a leading subprogram leaves the rest laid out, with the size table
+shifted past it. -/
+theorem _root_.Layout.apply_drop [layout : Layout] (as bs : Program) :
+    ((layout (as ++ bs)).2).drop as.length
+      = bs.mapIdx (fun i d => (d, layout.size (as.length + i))) := by
+  simp [Layout.apply, List.mapIdx_append, Nat.add_comm]
+
