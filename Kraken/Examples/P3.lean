@@ -57,25 +57,9 @@ theorem p3_entry_segment [layout : Layout] :
     (fun k hk => absurd hk (Nat.not_lt_zero k))
   simpa [Layout.apply] using h
 
-/-- The laid-out directive list of `p3`. -/
+/-- The laid-out program, as its three fragments. -/
 private theorem p3_dirs [layout : Layout] :
-    (layout p3).2 =
-      [(Directive.label "init", layout.size 0),
-       (Directive.instr (.regular .W64 .W64
-          (.mov (.reg (.low .rdx .W64)) (.imm (.int64 2)))), layout.size 1),
-       (Directive.label "start", layout.size 2),
-       (Directive.instr (.regular .W64 .W64
-          (.sub (.reg (.low .rbx .W64)) (.imm (.int64 0)))), layout.size 3),
-       (Directive.instr (.regular .W64 .W64 (.jcc .z "_end")), layout.size 4),
-       (Directive.instr (.regular .W64 .W64
-          (.mulx (.low .rax .W64) (.low .rdx .W64) (.reg (.low .rdx .W64)))), layout.size 5),
-       (Directive.instr (.regular .W64 .W64
-          (.sub (.reg (.low .rbx .W64)) (.imm (.int64 1)))), layout.size 6),
-       (Directive.instr (.regular .W64 .W64
-          (.jmp (.rel (.sub (.label "start") .after_current_instruction)))), layout.size 7),
-       (Directive.label "_end", layout.size 8),
-       (Directive.instr (.regular .W64 .W64 (.nop 1)), layout.size 9)] := by
-  simp [p3, p3.entry, p3.loop, p3.exit, Layout.apply, List.mapIdx_cons, List.mapIdx_nil]
+    (layout p3).2 = (p3.entry ++ p3.loop ++ p3.exit).mapIdx (fun i d => (d, layout.size i)) := rfl
 
 variable [layout : Layout] [hv : Executable.ValidLayout (layout p3)]
 
@@ -138,7 +122,8 @@ private theorem p3_end_run (s : MachineData) (post : @Post MachineState)
   apply step_cps
   apply straightlineStep_of_wp
   rw [p3_end_segment, p3_dirs]
-  simp only [List.drop_succ_cons, List.drop_zero]
+  simp only [p3.entry, p3.loop, p3.exit, List.cons_append, List.nil_append,
+    List.mapIdx_cons, List.mapIdx_nil, List.drop_succ_cons, List.drop_zero]
   vcgen
   exact Eventually.done _ (h _)
 
@@ -153,6 +138,8 @@ private theorem p3_enter (d : MachineData) :
           ∧ p3_inv d.regs.rbx.toNat (d.regs.rbx.toNat - 1) mid.1)) := by
   apply straightlineStep_of_wp
   rw [p3_entry_segment, p3_dirs]
+  simp only [p3.entry, p3.loop, p3.exit, List.cons_append, List.nil_append,
+    List.mapIdx_cons, List.mapIdx_nil]
   have hstart : (layout p3).labels.label "start" = (layout p3).addrOf 2 :=
     p3_start_addr (layout := layout)
   have hexp : d.regs.rbx.toNat ≠ 0 →
@@ -182,7 +169,8 @@ private theorem p3_body (rbx0 : Nat) (hbound : 2 ^ 2 ^ rbx0 < 2 ^ 64) (k : Nat) 
   have hsq : st.1.regs.rdx.toNat * st.1.regs.rdx.toNat = 2 ^ 2 ^ (rbx0 - (k - 1)) := by
     rw [hrdx, pow_sq, show rbx0 - (k - 1) = rbx0 - k + 1 from by omega]
   rw [p3_dirs]
-  simp only [List.drop_succ_cons, List.drop_zero]
+  simp only [p3.entry, p3.loop, p3.exit, List.cons_append, List.nil_append,
+    List.mapIdx_cons, List.mapIdx_nil, List.drop_succ_cons, List.drop_zero]
   vcgen simplifying_assumptions with finish
 
 /-- The loop exit: entered at the header with the countdown at zero, the test
@@ -196,7 +184,8 @@ private theorem p3_exit (rbx0 : Nat) (s : MachineData) (h : p3_inv rbx0 0 s) :
     ∧ st.1.regs.rdx = s.regs.rdx ∧ st.1.regs.rax = s.regs.rax) ?_ ?_
   · apply straightlineStep_of_wp
     rw [p3_start_segment, p3_dirs]
-    simp only [List.drop_succ_cons, List.drop_zero]
+    simp only [p3.entry, p3.loop, p3.exit, List.cons_append, List.nil_append,
+      List.mapIdx_cons, List.mapIdx_nil, List.drop_succ_cons, List.drop_zero]
     vcgen simplifying_assumptions with finish
   · rintro ⟨m, pc⟩ ⟨hpc, hrdx', hrax'⟩
     simp only at hpc hrdx' hrax'
