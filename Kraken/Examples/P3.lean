@@ -35,17 +35,6 @@ def p3_spec (d : MachineData) : Nat := 2 ^ 2 ^ d.regs.rbx.toNat
 private theorem pow_sq (e : Nat) : 2 ^ 2 ^ e * 2 ^ 2 ^ e = 2 ^ 2 ^ (e + 1) := by
   rw [← Nat.pow_add, Nat.pow_succ, Nat.mul_two]
 
-private theorem ofInt_mul_lo (a b : BitVec 64) (h : a.toNat * b.toNat < 2 ^ 64) :
-    (BitVec.ofInt 64 ((a.toNat : Int) * (b.toNat : Int))).toNat = a.toNat * b.toNat := by
-  rw [← Int.natCast_mul, BitVec.ofInt_natCast]
-  simp [Nat.mod_eq_of_lt h]
-
-private theorem ofInt_mul_hi (a b : BitVec 64) (h : a.toNat * b.toNat < 2 ^ 64) :
-    BitVec.ofInt 64 (((a.toNat : Int) * (b.toNat : Int)) >>> 64) = 0#64 := by
-  rw [← Int.natCast_mul, ← Int.natCast_shiftRight, Nat.shiftRight_eq_div_pow,
-    Nat.div_eq_of_lt h]
-  simp
-
 /-! ## Segment extraction
 
 The three cut points a run of `p3` visits: the entry, the loop head `start`,
@@ -176,17 +165,8 @@ private theorem p3_enter (d : MachineData) :
           ∧ p3_inv d.regs.rbx.toNat (d.regs.rbx.toNat - 1) mid.1)) := by
   apply straightlineStep_of_wp
   rw [p3_entry_segment, p3_dirs]
-  have hb := d.regs.rbx.toNat_lt
-  have hstart := p3_start_addr (layout := layout)
-  have hbb : d.regs.rbx.toBitVec.toNat = d.regs.rbx.toNat := UInt64.toNat_toBitVec _
-  have hlo := ofInt_mul_lo (2#64) (2#64) (by decide)
-  have hhi := ofInt_mul_hi (2#64) (2#64) (by decide)
-  have hsub : d.regs.rbx.toNat ≠ 0 →
-      (d.regs.rbx.toBitVec - 1#64).toNat = d.regs.rbx.toNat - 1 := by
-    intro h0
-    rw [BitVec.toNat_sub]
-    simp [hbb]
-    omega
+  have hstart : (layout p3).labels.label "start" = (layout p3).addrOf 2 :=
+    p3_start_addr (layout := layout)
   have hexp : d.regs.rbx.toNat ≠ 0 →
       2 ^ 2 ^ (d.regs.rbx.toNat - (d.regs.rbx.toNat - 1)) = 4 := by
     intro h0
@@ -205,7 +185,6 @@ private theorem p3_body (rbx0 : Nat) (hbound : 2 ^ 2 ^ rbx0 < 2 ^ 64) (k : Nat) 
       fun st => st.2 = (layout p3).labels.label "start" ∧ p3_inv rbx0 (k - 1) st.1 ⦄ := by
   refine Triple.intro fun labels st ⟨hlab, hpc, hrbx, hle, hrdx, hrax⟩ => ?_
   subst hlab
-  have hb := st.1.regs.rbx.toNat_lt
   have hlt : st.1.regs.rdx.toNat * st.1.regs.rdx.toNat < 2 ^ 64 := by
     rw [hrdx, pow_sq]
     calc 2 ^ 2 ^ (rbx0 - k + 1)
@@ -214,14 +193,6 @@ private theorem p3_body (rbx0 : Nat) (hbound : 2 ^ 2 ^ rbx0 < 2 ^ 64) (k : Nat) 
       _ < 2 ^ 64 := hbound
   have hsq : st.1.regs.rdx.toNat * st.1.regs.rdx.toNat = 2 ^ 2 ^ (rbx0 - (k - 1)) := by
     rw [hrdx, pow_sq, show rbx0 - (k - 1) = rbx0 - k + 1 from by omega]
-  have hb1 : st.1.regs.rdx.toBitVec.toNat = st.1.regs.rdx.toNat := UInt64.toNat_toBitVec _
-  have hb2 : st.1.regs.rbx.toBitVec.toNat = st.1.regs.rbx.toNat := UInt64.toNat_toBitVec _
-  have hlo := ofInt_mul_lo st.1.regs.rdx.toBitVec st.1.regs.rdx.toBitVec (by simpa using hlt)
-  have hhi := ofInt_mul_hi st.1.regs.rdx.toBitVec st.1.regs.rdx.toBitVec (by simpa using hlt)
-  have hsub : (st.1.regs.rbx.toBitVec - 1#64).toNat = k - 1 := by
-    rw [BitVec.toNat_sub]
-    simp [hb2, hrbx]
-    omega
   rw [p3_dirs]
   simp only [List.drop_succ_cons, List.drop_zero]
   vcgen simplifying_assumptions with finish

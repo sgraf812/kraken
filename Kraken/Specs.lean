@@ -139,6 +139,35 @@ never unfolded. -/
 @[simp] theorem MachineData.status_mk (r z st d) : (MachineData.mk r z st d).status = st := rfl
 @[simp] theorem MachineData.zmms_mk (r z st d) : (MachineData.mk r z st d).zmms = z := rfl
 
+/-! ## Machine words in `grind`'s arithmetic
+
+A register holds a `UInt64` whose payload is a `BitVec 64`, and the instruction
+semantics moves between the two spellings and back through `Nat`. Each equation
+below is one crossing that `grind` cannot take on its own: the payload bridge,
+the range fact every word carries, and the three reductions a wrapping
+subtraction and a double-width product need once the result is known to fit. -/
+
+@[grind =] theorem UInt64.toNat_payload (x : UInt64) : x.toBitVec.toNat = x.toNat := rfl
+
+@[grind .] theorem UInt64.lt_size (x : UInt64) : x.toNat < 2 ^ 64 := x.toNat_lt
+
+@[grind =] theorem BitVec.toNat_sub_le {a b : BitVec 64} (h : b.toNat ≤ a.toNat) :
+    (a - b).toNat = a.toNat - b.toNat :=
+  BitVec.toNat_sub_of_le (BitVec.le_def.mpr h)
+
+@[grind =] theorem BitVec.toNat_ofInt_mul {a b : BitVec 64}
+    (h : a.toNat * b.toNat < 2 ^ 64) :
+    (BitVec.ofInt 64 ((a.toNat : Int) * (b.toNat : Int))).toNat = a.toNat * b.toNat := by
+  rw [← Int.natCast_mul, BitVec.ofInt_natCast]
+  simp [Nat.mod_eq_of_lt h]
+
+@[grind =] theorem BitVec.ofInt_mul_shiftRight {a b : BitVec 64}
+    (h : a.toNat * b.toNat < 2 ^ 64) :
+    BitVec.ofInt 64 (((a.toNat : Int) * (b.toNat : Int)) >>> 64) = 0#64 := by
+  rw [← Int.natCast_mul, ← Int.natCast_shiftRight, Nat.shiftRight_eq_div_pow,
+    Nat.div_eq_of_lt h]
+  simp
+
 @[grind =] theorem Int64.ofNat_lit (n : Nat) : (OfNat.ofNat n : Int64) = Int64.ofNat n := rfl
 @[grind =] theorem Int64.toBitVec_lit (n : Nat) :
     (OfNat.ofNat n : Int64).toBitVec = BitVec.ofNat 64 n := rfl
