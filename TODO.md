@@ -25,12 +25,27 @@
   separate names.
 
   Then: the composition equation
-  `(as ++ bs).layoutAt sz base = as.layoutAt sz base ++ bs.layoutAt sz (base + as.byteLen sz base)`;
-  a bridge giving `ValidLayout` for a lawful layout under the no-wrap bound; and
-  the label congruence `wpE` reads the label table only at the labels a segment
-  mentions, which a fragment lemma needs as soon as the fragment jumps.
-  `ValidLayout` stays for whole-program statements, where quantifying over
-  placements no policy produces gives the stronger theorem.
+  `(as ++ bs).layoutAt sz base = as.layoutAt sz base ++ bs.layoutAt sz (base + as.byteLen sz base)`,
+  and the label congruence `wpE` reads the label table only at the labels a
+  segment mentions, which a fragment lemma needs as soon as the fragment jumps.
+
+  `ValidLayout` can then say that the executable is what a lawful sizing
+  produced:
+
+      class ValidLayout (e : Executable) : Prop where
+        laid_out : ∃ sz, LawfulSizing sz ∧ e.2 = e.program.layoutAt sz e.1
+        no_wrap  : (e.2.map (·.2)).sum < 2 ^ 64
+
+  The two readings accept the same executables. A lawful sizing gives labels
+  size zero and every other directive a positive size. In the other direction,
+  `sz d a` is the recorded size when `d` sits at `a`, and one elsewhere, which
+  is well defined because addresses increase past every non-label directive.
+  The current three fields survive as lemmas, so call sites keep their names,
+  and a suffix inherits validity from the same witness:
+  `ValidLayout (e.addrOf n, e.2.drop n)`.
+
+  When `ToBytes` provides a total `Directive → Int64 → List UInt8`, a sizing
+  arrives as its length: `fun d a => (enc d a).length`.
 
 - Deep-pipeline goals duplicate machine states: each spec application splices
   the successor state literal into the continuation, so a k-step segment goal
