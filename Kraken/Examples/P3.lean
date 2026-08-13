@@ -9,15 +9,18 @@ lays a fragment out at its position in the program, and the segment a cut point
 reaches is the fragments from there on, joined by `++`. `Directives.frag_append_spec`
 and `Directives.append_spec` decompose that join and `Directives.frag_cons_spec`
 walks into a fragment, so `vcgen` steps each directive once, in the one proof
-that specifies its fragment: the prologue in `p3_enter`, the loop in
+that specifies its fragment: the prologue in `p3_enter_spec`, the loop in
 `p3_body_spec`, the tail in `p3_end_spec`. `Eventually.loop` takes that one body
 specification for every `k`, so nothing traverses the loop a second time.
 
-Every result here is a `Triple`, `p3_correct` included: a run of an executable
-is a predicate transformer too, and `wp p3 Q ⊥` is the omni-semantics judgment
-that a run of the laid-out program reaches `Q`, or leaves the program text at
-`E`. `Program.runStep_of_seg` carries a fragment's triple into that run, and
-`Program.wp_sound` reads the result back as the omni-semantics judgment.
+A fragment is specified as a `Triple` over its directive list. The `wp` of a
+`Program` quantifies over every sizing a layout can give the list, so
+`p3_loop_spec` mentions no layout and no position. Its parameter `L` is the
+label footprint: the assertions name the addresses of `start` and `_end`,
+nothing else. The run of the laid-out program is the judgment
+`Eventually (Program.runStep p3 E)`; `Program.runStep_of_seg` carries a
+fragment's triple into that run, and `Program.run_sound` reads the result back
+against the baseline `straightlineStep`.
 
 Each cut point gets an address (`p3_start_addr`, `p3_end_addr`) and the segment
 reached from it (`p3_start_segment`, `p3_end_segment`). The segments chain by
@@ -218,17 +221,17 @@ private theorem p3_exits_inText (rbx0 k : Nat) (st : MachineState)
   · rw [p3_end_segment]
     simp [p3.exit]
 
-omit hv in
-/-- The loop body, relocatable: the triple holds for any layout, any position
-`n` of the fragment in its program, and any label table `L`. The fragment
-observes the layout only through the addresses `L` gives its two jump targets,
-so nothing else is assumed. Placing the fragment in a concrete program is the
-use site's obligation, discharged by its extraction lemmas. -/
-private theorem p3_loop_spec (L : Labels) (n rbx0 k : Nat)
+omit layout hv in
+/-- The loop, as a fragment: the triple mentions no layout and no position.
+`L` is the label footprint, the addresses of the two targets the fragment's
+jumps name. Placing the fragment in a concrete program is the use site's
+obligation, discharged by its extraction lemmas. -/
+private theorem p3_loop_spec (L : Labels) (rbx0 k : Nat)
     (hbound : 2 ^ 2 ^ rbx0 < 2 ^ 64) (Q : Unit → Labels → MachineState → Prop) :
     ⦃ fun labels st => labels = L ∧ st.2 = L.label "start" ∧ p3_inv rbx0 k st.1 ⦄
-      (Layout.frag n (p3.loop ++ p3.exit))
+      (p3.loop ++ p3.exit)
     ⦃ Q; p3_exits L rbx0 k ⦄ := by
+  refine Program.triple_of_frag fun layout n => ?_
   with_reducible refine Triple.intro fun labels st ⟨hlab, hpc, hrbx, hle, hrdx, hrax⟩ => ?_
   subst hlab
   have hlt : k ≠ 0 → st.1.regs.rdx.toNat * st.1.regs.rdx.toNat < 2 ^ 64 := by
@@ -252,7 +255,7 @@ private theorem p3_body_spec (rbx0 k : Nat) (hbound : 2 ^ 2 ^ rbx0 < 2 ^ 64)
         ∧ st.2 = (layout p3).labels.label "start" ∧ p3_inv rbx0 k st.1 ⦄
       p3.body
     ⦃ Q; p3_exits (layout p3).labels rbx0 k ⦄ :=
-  p3_loop_spec (layout p3).labels p3.entry.length rbx0 k hbound Q
+  Program.triple_frag (p3_loop_spec (layout p3).labels rbx0 k hbound Q) p3.entry.length
 
 /-- The prologue sets `rdx` to `2`, which is the invariant at the full count,
 and falls into the loop; the segment's exits are the loop's. -/
@@ -289,17 +292,13 @@ private theorem p3_finish (rbx0 : Nat) (E : MachineState → Prop) (st : Machine
   exact (p3_end_spec _).le_wp _ _ ⟨rfl, Eventually.done _ ⟨hrdx, hrax⟩⟩
 
 /-- A run of `p3` from a machine whose `rax` is clear reaches a state where
-`rdx` holds `2 ^ 2 ^ rbx` and `rax` is clear again. The triple names no
-exceptional postcondition: the run never leaves the program text. -/
+`rdx` holds `2 ^ 2 ^ rbx` and `rax` is clear again. `E` is arbitrary because
+the run never leaves the program text. -/
 theorem p3_correct (d : MachineData) (h_bounds : p3_spec d < 2 ^ 64)
-    (h_rax : d.regs.rax = 0) :
-    ⦃ fun labels st => labels = (layout p3).labels ∧ st = (d, layout.start) ⦄
-      p3
-    ⦃ fun _ _ st => st.1.regs.rdx.toNat = p3_spec d ∧ st.1.regs.rax = 0 ⦄ := by
-  with_reducible refine Triple.intro fun labels st ⟨hlab, hst⟩ => ?_
-  subst hlab
-  subst hst
-  rw [Program.wp_eq]
+    (h_rax : d.regs.rax = 0) (E : MachineState → Prop) :
+    Eventually (Program.runStep p3 E)
+      (fun st => st.1.regs.rdx.toNat = p3_spec d ∧ st.1.regs.rax = 0)
+      (d, layout.start) := by
   simp only [p3_spec] at h_bounds ⊢
   refine Eventually.step _ (p3_exits (layout p3).labels d.regs.rbx.toNat d.regs.rbx.toNat) ?_ ?_
   · refine Program.runStep_of_seg p3_entry_segment ?_
@@ -318,14 +317,13 @@ theorem p3_correct (d : MachineData) (h_bounds : p3_spec d < 2 ^ 64)
 /-- `p3_correct` read as the omni-semantics judgment of `Kraken.OmniSemantics`:
 a run of the laid-out program from `(d, layout.start)` reaches a state where
 `rdx` holds `2 ^ 2 ^ rbx` and `rax` is clear. The run never leaves the program
-text, so the exceptional postcondition is `False` and drops out. -/
+text, so its exits land in `False` and drop out. -/
 theorem p3_correct_run (d : MachineData) (h_bounds : p3_spec d < 2 ^ 64)
     (h_rax : d.regs.rax = 0) :
     Eventually (straightlineStep (layout p3))
       (fun s => s.1.regs.rdx.toNat = p3_spec d ∧ s.1.regs.rax = 0)
       (d, layout.start) :=
-  (Program.wp_sound
-      ((p3_correct d h_bounds h_rax).le_wp _ _ ⟨rfl, rfl⟩)).mono
-    (fun _ _ hst => hst) (fun _ hs => hs.elim id Assertion.bot_elim)
+  (Program.run_sound (p3_correct d h_bounds h_rax (fun _ => False))).mono
+    (fun _ _ hst => hst) (fun _ hs => hs.elim id False.elim)
 
 end Proof

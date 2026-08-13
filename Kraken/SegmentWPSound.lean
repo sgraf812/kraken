@@ -337,10 +337,9 @@ attribute [irreducible] Executable.directivesFromAddress
 
 /-! ## Runs
 
-A run of an executable is a predicate transformer in its own right: `wp e Q ⊥`
-is the omni-semantics judgment that the run reaches `Q`. Registering it as a
-`WP` instance lets a whole program carry a `Triple`, so a result about a run and
-a result about a segment are stated in one language. -/
+A run of a program is the omni-semantics judgment over `Program.runStep`:
+`Eventually (Program.runStep prog E) Q st` says the run reaches `Q`, or leaves
+the program text at a state in `E`. -/
 
 /-- The omni-semantics judgment is monotone in its transition relation and in
 its postcondition. -/
@@ -369,26 +368,6 @@ theorem Program.runStep_mono [Layout] {prog : Program} {E₁ E₂ : MachineState
   Directives.wp_mono _ _ _ (fun _ h => h)
     (fun st' h => ⟨fun hnil => hE st' (h.1 hnil), h.2⟩) h
 
-/-- The run of a program, as the transformer its `Triple`s are about. Laying
-the program out is part of running it, so a `Triple` names the program as
-written. `Eventually` closes the recursion over jumps that stay inside the
-program; `E` collects the jumps that leave it. -/
-def Program.wpTrans [Layout] (prog : Program) :
-    PredTrans (Labels → MachineState → Prop) (MachineState → Prop) Unit :=
-  ⟨fun Q E labels st => Eventually (Program.runStep prog E) (Q () labels) st⟩
-
-instance instWPProgram [Layout] :
-    WP Program Unit (Labels → MachineState → Prop) (MachineState → Prop) where
-  wpTrans := Program.wpTrans
-  wp_trans_monotone _ _ _ _ _ hE hQ := fun labels _ h =>
-    h.mono (fun _ _ hst => Program.runStep_mono hE hst) (fun st' => hQ () labels st')
-
-/-- A run's weakest precondition is the omni-semantics judgment. -/
-theorem Program.wp_eq [Layout] (prog : Program)
-    (Q : Unit → Labels → MachineState → Prop) (E : MachineState → Prop)
-    (labels : Labels) (st : MachineState) :
-    wp prog Q E labels st = Eventually (Program.runStep prog E) (Q () labels) st := rfl
-
 /-- A segment whose jumps all land in the program text is a step of the run. -/
 theorem Program.runStep_of_seg [layout : Layout] {prog : Program} {E : MachineState → Prop}
     {st : MachineState} {seg : List (Directive × Nat)} {post : @Post MachineState}
@@ -407,16 +386,14 @@ theorem Assertion.bot_elim {x : MachineState} {C : Prop}
     (h : (Lean.Order.bot : MachineState → Prop) x) : C :=
   ((Lean.Order.bot_le (α := MachineState → Prop) (fun _ => False)) x h).elim
 
-/-- What a run triple says about the machine: the omni-semantics judgment that
-the run reaches the normal postcondition, or leaves the program text at the
-exceptional one. This is the only reading of `wp prog Q E` that the baseline
-gives, and every rule above is answerable to it. -/
-theorem Program.wp_sound [layout : Layout] {prog : Program}
-    {Q : Unit → Labels → MachineState → Prop} {E : MachineState → Prop}
-    {st : MachineState} (h : wp prog Q E (layout prog).labels st) :
-    Eventually (straightlineStep (layout prog))
-      (fun mid => Q () (layout prog).labels mid ∨ E mid) st := by
-  rw [Program.wp_eq] at h
+/-- What a run says about the machine: the baseline judgment that the run
+reaches the normal postcondition, or leaves the program text at the
+exceptional one. Every rule about `Program.runStep` is answerable to this
+reading. -/
+theorem Program.run_sound [layout : Layout] {prog : Program}
+    {Q : @Post MachineState} {E : MachineState → Prop} {st : MachineState}
+    (h : Eventually (Program.runStep prog E) Q st) :
+    Eventually (straightlineStep (layout prog)) (fun mid => Q mid ∨ E mid) st := by
   induction h with
   | done st hq => exact Eventually.done st (Or.inl hq)
   | step st mid_p hstep _ ih =>

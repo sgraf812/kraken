@@ -402,3 +402,66 @@ example :
     ⦃ fun _ _ st => st.1.regs.get64 .rax = 1#64 ⦄ := by
   vcgen
   all_goals simp
+
+/-! ### Programs
+
+A `Program` is a directive list with no sizes. Its transformer quantifies over
+every sizing a layout can give the list, so sizing invariance is the meaning of
+`wp`, and a fragment's triple mentions no layout and no position. `Labels`
+stays in the assertion language as the label footprint: the addresses a
+fragment's jumps name are its whole interface to the host program. -/
+
+@[simp] theorem Layout.frag_map_fst [Layout] (n : Nat) (p : Program) :
+    (Layout.frag n p).map Prod.fst = p := by
+  induction p generalizing n with
+  | nil => rfl
+  | cons d ds ih => simp [ih]
+
+def Program.wpTrans (p : Program) :
+    PredTrans (Labels → MachineState → Prop) (MachineState → Prop) Unit :=
+  ⟨fun Q E labels st => ∀ ds : List (Directive × Nat),
+      ds.map Prod.fst = p → @Directives.wpE labels ds (Q () labels) E st⟩
+
+instance instWPProgram :
+    WP Program Unit (Labels → MachineState → Prop) (MachineState → Prop) where
+  wpTrans := Program.wpTrans
+  wp_trans_monotone _ _ _ _ _ hE hQ := fun labels st h ds hds =>
+    Directives.wpE_mono (fun st' => hQ () labels st') hE ds st (h ds hds)
+
+/-- A sized list is the fragment it projects to, laid out by the sizes it
+carries. -/
+private theorem mapIdx_fst_eq_self {α β : Type _} :
+    ∀ (f : Nat → β) (ds : List (α × β)), (∀ i (h : i < ds.length), f i = ds[i].2) →
+      (ds.map Prod.fst).mapIdx (fun i a => (a, f i)) = ds
+  | _, [], _ => rfl
+  | f, (a, b) :: tl, h => by
+    have h0 : f 0 = b := h 0 (by simp)
+    simp only [List.map_cons, List.mapIdx_cons, h0]
+    exact congrArg _ (mapIdx_fst_eq_self (fun i => f (i + 1)) tl fun i hi => by
+      have := h (i + 1) (by simpa using Nat.succ_lt_succ hi)
+      simpa using this)
+
+/-- A triple proved for the fragment at every layout and position is a triple
+for the fragment itself. This is the proof vehicle: `vcgen` walks the concrete
+`Layout.frag` list, and the conversion happens once. -/
+theorem Program.triple_of_frag {P : Labels → MachineState → Prop} {p : Program}
+    {Q : Unit → Labels → MachineState → Prop} {E : MachineState → Prop}
+    (h : ∀ (layout : Layout) (n : Nat), ⦃P⦄ Layout.frag n p ⦃Q; E⦄) :
+    ⦃P⦄ p ⦃Q; E⦄ := by
+  refine Triple.intro fun labels st hp => ?_
+  intro ds hds
+  have hfrag : @Layout.frag ⟨0, fun i => ((ds[i]?).map Prod.snd).getD 0⟩ 0 p = ds := by
+    subst hds
+    simp only [Layout.frag, Nat.zero_add]
+    exact mapIdx_fst_eq_self _ ds fun i hi => by simp [List.getElem?_eq_getElem hi]
+  have hw := (h ⟨0, fun i => ((ds[i]?).map Prod.snd).getD 0⟩ 0).le_wp labels st hp
+  rw [hfrag] at hw
+  exact hw
+
+/-- A fragment's triple, placed: the fragment at position `n` under `layout`. -/
+theorem Program.triple_frag [layout : Layout] {P : Labels → MachineState → Prop}
+    {p : Program} {Q : Unit → Labels → MachineState → Prop} {E : MachineState → Prop}
+    (h : ⦃P⦄ p ⦃Q; E⦄) (n : Nat) : ⦃P⦄ Layout.frag n p ⦃Q; E⦄ :=
+  Triple.intro fun labels st hp =>
+    h.le_wp labels st hp (Layout.frag n p) (Layout.frag_map_fst n p)
+
