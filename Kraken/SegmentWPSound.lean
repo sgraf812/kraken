@@ -186,7 +186,6 @@ theorem _root_.AvxDst.wpWrite_mono [Labels] [AddressSize] {w} {d : AvxDst w} {v 
   | avx r => exact hK _
   | mem a => exact fun ⟨i, hi, hk⟩ => ⟨i, hi, hK _ hk⟩
 
-set_option maxHeartbeats 4000000 in
 private theorem operation_sound {w} [Labels] [AddressSize] {P : MachineState → Prop}
     {op : Operation w} {p : Std.Rco Int64} {s : MachineData}
     {next : MachineData → Prop} {jmp : MachineState → Prop}
@@ -201,6 +200,9 @@ private theorem operation_sound {w} [Labels] [AddressSize] {P : MachineState →
   cases op <;>
     simp only [Operation.interp, Reg.interp, Effects.All] at h ⊢ <;>
     rcases h with h | h <;>
+    -- Resolving a `match` or `if` scrutinee comes before the transport lemmas:
+    -- against an unresolved scrutinee their unification reduces the interpreter
+    -- to find a head symbol, and that reduction is the cost.
     repeat' first
       | exact hnext _ h
       | exact hjmp _ h
@@ -208,6 +210,12 @@ private theorem operation_sound {w} [Labels] [AddressSize] {P : MachineState →
       | exact hnext _ (h v)
       | exact (h v).elim
       | exact Width.noConfusion hcond
+      | (split <;> rename_i hcond <;>
+          simp only [hcond, Bool.false_eq_true, if_true, if_false] at h ⊢)
+      | (split <;> rename_i hcond <;>
+          simp only [hcond, Bool.false_eq_true, if_true, if_false] at h)
+      | (split at h <;> rename_i hcond <;>
+          simp only [hcond, Bool.false_eq_true, if_true, if_false])
       | refine operand_sound (fun v s' h => ?_) h
       | refine regOrMem_sound (fun v s' h => ?_) h
       | refine relRegOrMem_sound (fun v s' h => ?_) h
@@ -216,12 +224,6 @@ private theorem operation_sound {w} [Labels] [AddressSize] {P : MachineState →
       | refine store_sound (fun s' h => ?_) h
       | refine undefined_sound (fun v h => ?_) h
       | refine fun v => ?_
-      | (split <;> rename_i hcond <;>
-          simp only [hcond, Bool.false_eq_true, if_true, if_false] at h ⊢)
-      | (split <;> rename_i hcond <;>
-          simp only [hcond, Bool.false_eq_true, if_true, if_false] at h)
-      | (split at h <;> rename_i hcond <;>
-          simp only [hcond, Bool.false_eq_true, if_true, if_false])
       | simp only [Effects.All] at h ⊢
       | simp only [] at h ⊢
       | cases w
@@ -231,7 +233,6 @@ end SegmentWPSound
 section WP1Sound
 
 open SegmentWPSound
-set_option maxHeartbeats 4000000
 
 /-- Transport one directive's `wp1` into the baseline interpreter with real
 continuations. -/
@@ -274,7 +275,6 @@ theorem Directive.wp1_sound [Labels] {P : MachineState → Prop}
 
 end WP1Sound
 
-set_option maxHeartbeats 1000000 in
 /-- Transport the segment wp into the baseline fold: `Q` and `E` both entail
 the merged exit predicate. -/
 theorem Directives.wpE_sound [Labels] {P : MachineState → Prop} {Q E : MachineState → Prop}
@@ -307,6 +307,27 @@ theorem straightlineStep_of_seg [Layout] {e : Executable} {s : MachineData} {pc 
     (h : wp seg (fun _ _ => post) post e.labels (s, pc)) :
     straightlineStep e (s, pc) post :=
   straightlineStep_of_wp (hseg ▸ h)
+
+/-- A segment that never falls through takes the run to its jump postcondition. -/
+theorem straightlineStep_of_triple [Layout] {e : Executable} {s : MachineData} {pc : Int64}
+    {seg : List (Directive × Nat)} {P : Labels → MachineState → Prop}
+    {E : MachineState → Prop} (hseg : e.directivesFromAddress pc = seg)
+    (h : ⦃P⦄ seg ⦃fun _ _ _ => False; E⦄) (hp : P e.labels (s, pc)) :
+    straightlineStep e (s, pc) E :=
+  straightlineStep_of_seg hseg
+    (@Directives.wpE_mono e.labels _ _ _ _ (fun _ h => h.elim) (fun _ h => h) seg _
+      (h.le_wp e.labels (s, pc) hp))
+
+/-- A segment whose two postconditions are the run's continuation: whatever the
+segment does, the run goes on from there. -/
+theorem Eventually.of_triple [Layout] {e : Executable} {s : MachineData} {pc : Int64}
+    {seg : List (Directive × Nat)} {P : Labels → MachineState → Prop}
+    {post : @Post MachineState} (hseg : e.directivesFromAddress pc = seg)
+    (h : ⦃P⦄ seg ⦃fun _ _ st => Eventually (straightlineStep e) post st;
+                  fun st => Eventually (straightlineStep e) post st⦄)
+    (hp : P e.labels (s, pc)) :
+    Eventually (straightlineStep e) post (s, pc) :=
+  step_cps _ post _ (straightlineStep_of_seg hseg (h.le_wp e.labels (s, pc) hp))
 
 /- `straightlineStep` is the API boundary: every proof enters through
 `apply straightlineStep_of_wp`. Sealing it keeps that apply fast: whenever a

@@ -10,8 +10,12 @@ reaches is the fragments from there on, joined by `++`. `Directives.frag_append_
 and `Directives.append_spec` decompose that join and `Directives.frag_cons_spec`
 walks into a fragment, so `vcgen` steps each directive once, in the one proof
 that specifies its fragment: the prologue in `p3_enter`, the loop in
-`p3_body_spec`, the tail in `p3_end_run`. `Eventually.loop` takes that one body
+`p3_body_spec`, the tail in `p3_end_spec`. `Eventually.loop` takes that one body
 specification for every `k`, so nothing traverses the loop a second time.
+
+Every intermediate result is a `Triple` about a fragment. `Eventually` appears
+only in `p3_correct` and `p3_finish`, where `straightlineStep_of_triple` and
+`Eventually.of_triple` carry a fragment's triple into the omni-semantics.
 
 Each cut point gets an address (`p3_start_addr`, `p3_end_addr`) and the segment
 reached from it (`p3_start_segment`, `p3_end_segment`). The segments chain by
@@ -178,16 +182,21 @@ count `k`: `rbx` holds `k` and `rdx` holds the `rbx₀ - k`-fold squaring. -/
 private abbrev p3_inv (rbx0 k : Nat) (s : MachineData) : Prop :=
   s.regs.rbx.toNat = k ∧ k ≤ rbx0 ∧ s.regs.rdx.toNat = 2 ^ 2 ^ (rbx0 - k) ∧ s.regs.rax = 0
 
-/-- Running the exit segment: the label and the `nop` leave the machine
-unchanged, and the run stops just past the program text. -/
-private theorem p3_end_run (s : MachineData) (post : @Post MachineState)
-    (h : post (s, (layout p3).addrOf p3.length)) :
-    Eventually (straightlineStep (layout p3)) post (s, (layout p3).labels.label "_end") := by
-  with_reducible apply step_cps
-  with_reducible apply straightlineStep_of_seg p3_end_segment
+/-- The tail: the label and the `nop` leave the machine unchanged, and the run
+falls off the end of the program text. -/
+private theorem p3_end_spec (Q : Unit → Labels → MachineState → Prop)
+    (E : MachineState → Prop) :
+    ⦃ fun labels st => st.2 = (layout p3).labels.label "_end"
+        ∧ Q () labels (st.1, (layout p3).addrOf p3.length) ⦄
+      (Layout.frag (p3.entry ++ p3.loop).length p3.exit)
+    ⦃ Q; E ⦄ := by
+  with_reducible refine Triple.intro fun labels st ⟨hpc, hq⟩ => ?_
+  obtain ⟨m, pc⟩ := st
+  simp only at hpc hq
+  subst hpc
   vcgen simplifying_assumptions
   rw [p3_end_pc]
-  with_reducible exact Eventually.done _ h
+  with_reducible exact hq
 
 /-- Where a traversal from the loop header leaves the segment: back at the
 header with one iteration accounted for, or at `_end` with the answer. -/
@@ -222,13 +231,19 @@ private theorem p3_body_spec (rbx0 k : Nat) (hbound : 2 ^ 2 ^ rbx0 < 2 ^ 64)
 
 /-- The prologue sets `rdx` to `2`, which is the invariant at the full count,
 and falls into the loop; the segment's exits are the loop's. -/
-private theorem p3_enter (d : MachineData) (hrax : d.regs.rax = 0)
-    (hbound : 2 ^ 2 ^ d.regs.rbx.toNat < 2 ^ 64) :
-    straightlineStep (layout p3) (d, layout.start)
-      (p3_exits d.regs.rbx.toNat d.regs.rbx.toNat) := by
-  with_reducible apply straightlineStep_of_seg p3_entry_segment
-  have hpc := p3_start_pc (layout := layout)
-  vcgen [p3_body_spec d.regs.rbx.toNat d.regs.rbx.toNat hbound] simplifying_assumptions with finish
+private theorem p3_enter_spec (rbx0 : Nat) (hbound : 2 ^ 2 ^ rbx0 < 2 ^ 64)
+    (Q : Unit → Labels → MachineState → Prop) :
+    ⦃ fun labels st => labels = (layout p3).labels ∧ st.2 = layout.start
+        ∧ st.1.regs.rbx.toNat = rbx0 ∧ st.1.regs.rax = 0 ⦄
+      (Layout.frag 0 p3.entry ++ p3.body)
+    ⦃ Q; p3_exits rbx0 rbx0 ⦄ := by
+  with_reducible refine Triple.intro fun labels st ⟨hlab, hpc, hrbx, hrax⟩ => ?_
+  subst hlab
+  obtain ⟨m, pc⟩ := st
+  simp only at hpc hrbx hrax
+  subst hpc
+  have hstart := p3_start_pc (layout := layout)
+  vcgen [p3_body_spec rbx0 rbx0 hbound] simplifying_assumptions with finish
 
 /-- From the exit label the tail carries the answer to the end of the text. -/
 private theorem p3_finish (rbx0 : Nat) (st : MachineState)
@@ -238,9 +253,11 @@ private theorem p3_finish (rbx0 : Nat) (st : MachineState)
       (fun s => s.1.regs.rdx.toNat = 2 ^ 2 ^ rbx0 ∧ s.1.regs.rax = 0) st := by
   obtain ⟨m, pc⟩ := st
   obtain ⟨hpc, hrdx, hrax⟩ := h
+  simp only at hpc hrdx hrax
   subst hpc
-  with_reducible apply p3_end_run
-  with_reducible exact ⟨hrdx, hrax⟩
+  with_reducible
+    exact Eventually.of_triple p3_end_segment (p3_end_spec _ _)
+      ⟨rfl, Eventually.done _ ⟨hrdx, hrax⟩⟩
 
 theorem p3_correct (d : MachineData) (h_bounds : p3_spec d < 2 ^ 64)
     (h_rax : d.regs.rax = 0) :
@@ -248,7 +265,9 @@ theorem p3_correct (d : MachineData) (h_bounds : p3_spec d < 2 ^ 64)
       (fun s => s.1.regs.rdx.toNat = p3_spec d ∧ s.1.regs.rax = 0)
       (d, layout.start) := by
   simp only [p3_spec] at h_bounds ⊢
-  with_reducible apply Eventually.step _ _ (p3_enter d h_rax h_bounds)
+  with_reducible
+    apply Eventually.step _ _ (straightlineStep_of_triple p3_entry_segment
+      (p3_enter_spec d.regs.rbx.toNat h_bounds _) ⟨rfl, rfl, rfl, h_rax⟩)
   rintro ⟨m, pc⟩ (⟨hne, hpc, hinv⟩ | hexit)
   · subst hpc
     with_reducible
