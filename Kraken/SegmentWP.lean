@@ -86,6 +86,22 @@ theorem Directives.wp_eq (ds : List (Directive × Nat))
     (labels : Labels) (st : MachineState) :
     wp ds Q E labels st = @Directives.wpE labels ds (Q () labels) E st := rfl
 
+/-- Use a segment triple: from its precondition at a state, the segment's
+weakest precondition holds there. -/
+theorem Directives.of_triple {P : Labels → MachineState → Prop}
+    {Q : Unit → Labels → MachineState → Prop} {E : MachineState → Prop}
+    {ds : List (Directive × Nat)} (h : ⦃P⦄ ds ⦃Q; E⦄)
+    (labels : Labels) (st : MachineState) (hp : P labels st) : wp ds Q E labels st :=
+  h.le_wp labels st hp
+
+/-- Weakening a segment: strengthen what a fall-through and a jump may conclude. -/
+theorem Directives.wp_mono {Q₁ Q₂ : Unit → Labels → MachineState → Prop}
+    {E₁ E₂ : MachineState → Prop} (ds : List (Directive × Nat))
+    (labels : Labels) (st : MachineState)
+    (hQ : ∀ st', Q₁ () labels st' → Q₂ () labels st') (hE : ∀ st', E₁ st' → E₂ st')
+    (h : wp ds Q₁ E₁ labels st) : wp ds Q₂ E₂ labels st :=
+  @Directives.wpE_mono labels _ _ _ _ hQ hE ds st h
+
 @[simp] theorem Directives.wp_nil (Q : Unit → Labels → MachineState → Prop)
     (E : MachineState → Prop) (labels : Labels) (st : MachineState) :
     wp ([] : List (Directive × Nat)) Q E labels st = Q () labels st := rfl

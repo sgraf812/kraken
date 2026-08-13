@@ -192,6 +192,17 @@ theorem addrOf_succ (e : Executable) {n : Nat} {d : Directive} {z : Nat}
   unfold addrOf
   rw [sizeBefore_succ e hd, int64_ofNat_add, Int64.add_assoc]
 
+/-- Stepping one directive, given only the size it occupies. -/
+theorem addrOf_succ' (e : Executable) {n z : Nat} (h : (e.2[n]?).map (·.2) = some z) :
+    e.addrOf (n + 1) = e.addrOf n + .ofNat z := by
+  match hd : e.2[n]? with
+  | some (d, z') =>
+    rw [hd] at h
+    simp only [Option.map_some, Option.some.injEq] at h
+    subst h
+    exact addrOf_succ e hd
+  | none => rw [hd] at h; simp at h
+
 /-- Distinct addresses at a cut point that follows a non-label directive. -/
 theorem addrOf_ne_of_valid (e : Executable) [hv : ValidLayout e] {k n : Nat}
     (hk : k < n) (hsome : (e.2[n - 1]?).isSome)
@@ -218,19 +229,39 @@ theorem addrOf_ne_of_valid (e : Executable) [hv : ValidLayout e] {k n : Nat}
 
 end Executable
 
+/-- The fragment `p` as it is laid out from position `n` of the program that
+contains it: each directive paired with the size the layout assigns to its
+position. -/
+def _root_.Layout.frag [layout : Layout] (n : Nat) (p : Program) : List (Directive × Nat) :=
+  p.mapIdx (fun i d => (d, layout.size (n + i)))
+
+@[simp] theorem _root_.Layout.frag_nil [Layout] (n : Nat) :
+    Layout.frag n [] = [] := rfl
+
+@[simp] theorem _root_.Layout.frag_length [Layout] (n : Nat) (p : Program) :
+    (Layout.frag n p).length = p.length := by simp [Layout.frag]
+
+@[simp] theorem _root_.Layout.frag_cons [layout : Layout] (n : Nat) (d : Directive) (ds : Program) :
+    Layout.frag n (d :: ds) = (d, layout.size n) :: Layout.frag (n + 1) ds := by
+  simp [Layout.frag, List.mapIdx_cons, Nat.add_assoc, Nat.add_comm 1]
+
+/-- A fragment splits where the program it lays out splits. -/
+theorem _root_.Layout.frag_append [layout : Layout] (n : Nat) (as bs : Program) :
+    Layout.frag n (as ++ bs) = Layout.frag n as ++ Layout.frag (n + as.length) bs := by
+  simp [Layout.frag, List.mapIdx_append, Nat.add_left_comm, Nat.add_comm]
+
 /-- The start address a layout gives a program. -/
 theorem _root_.Layout.apply_fst [layout : Layout] (p : Program) :
     (layout p).1 = layout.start := rfl
 
-/-- The directive list a layout gives a program: each directive paired with the
-size the layout assigns to its position. -/
+/-- The directive list a layout gives a program is that program laid out from
+position zero. -/
 theorem _root_.Layout.apply_snd [layout : Layout] (p : Program) :
-    (layout p).2 = p.mapIdx (fun i d => (d, layout.size i)) := rfl
+    (layout p).2 = Layout.frag 0 p := by simp [Layout.frag, Layout.apply]
 
-/-- Dropping a leading subprogram leaves the rest laid out, with the size table
-shifted past it. -/
+/-- Dropping a leading subprogram leaves the rest laid out from where it starts. -/
 theorem _root_.Layout.apply_drop [layout : Layout] (as bs : Program) :
-    ((layout (as ++ bs)).2).drop as.length
-      = bs.mapIdx (fun i d => (d, layout.size (as.length + i))) := by
-  simp [Layout.apply_snd, List.mapIdx_append, Nat.add_comm]
+    ((layout (as ++ bs)).2).drop as.length = Layout.frag as.length bs := by
+  rw [Layout.apply_snd, Layout.frag_append]
+  simp
 
