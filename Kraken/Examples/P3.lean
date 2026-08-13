@@ -299,4 +299,17 @@ theorem p3_correct (d : MachineData) (h_bounds : p3_spec d < 2 ^ 64)
         (p3_finish d.regs.rbx.toNat E) _ m hinv
     · exact p3_finish d.regs.rbx.toNat E _ hexit.2
 
+/-- `p3_correct` read as the omni-semantics judgment of `Kraken.OmniSemantics`:
+a run of the laid-out program from `(d, layout.start)` reaches a state where
+`rdx` holds `2 ^ 2 ^ rbx` and `rax` is clear. The run never leaves the program
+text, so the exceptional postcondition is `False` and drops out. -/
+theorem p3_correct_run (d : MachineData) (h_bounds : p3_spec d < 2 ^ 64)
+    (h_rax : d.regs.rax = 0) :
+    Eventually (straightlineStep (layout p3))
+      (fun s => s.1.regs.rdx.toNat = p3_spec d ∧ s.1.regs.rax = 0)
+      (d, layout.start) :=
+  (Program.wp_sound
+      ((p3_correct d h_bounds h_rax (fun _ => False)).le_wp _ _ ⟨rfl, rfl⟩)).mono
+    (fun _ _ hst => hst) (fun _ hs => hs.elim id False.elim)
+
 end Proof
