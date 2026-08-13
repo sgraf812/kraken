@@ -14,8 +14,8 @@ that specifies its fragment: the prologue in `p3_enter`, the loop in
 specification for every `k`, so nothing traverses the loop a second time.
 
 Every result here is a `Triple`, `p3_correct` included: a run of an executable
-is a predicate transformer too, and `wp (layout p3) Q ⊥` is the omni-semantics
-judgment that the run reaches `Q`. `straightlineStep_of_triple` and
+is a predicate transformer too, and `wp p3 Q ⊥` is the omni-semantics judgment
+that a run of the laid-out program reaches `Q`. `straightlineStep_of_triple` and
 `Eventually.of_triple` carry a fragment's triple into that run.
 
 Each cut point gets an address (`p3_start_addr`, `p3_end_addr`) and the segment
@@ -265,13 +265,13 @@ private theorem p3_finish (rbx0 : Nat) (st : MachineState)
 theorem p3_correct (d : MachineData) (h_bounds : p3_spec d < 2 ^ 64)
     (h_rax : d.regs.rax = 0) :
     ⦃ fun labels st => labels = (layout p3).labels ∧ st = (d, layout.start) ⦄
-      (layout p3)
+      p3
     ⦃ fun _ _ st => st.1.regs.rdx.toNat = p3_spec d ∧ st.1.regs.rax = 0;
       fun _ => False ⦄ := by
   with_reducible refine Triple.intro fun labels st ⟨hlab, hst⟩ => ?_
   subst hlab
   subst hst
-  rw [Executable.wp_eq]
+  rw [Program.wp_eq]
   simp only [p3_spec] at h_bounds ⊢
   with_reducible
     apply Eventually.step _ _ (straightlineStep_of_triple p3_entry_segment

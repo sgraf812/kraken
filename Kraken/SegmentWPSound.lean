@@ -371,33 +371,24 @@ theorem Eventually.mono {State : Type} {trans : State → Post → Prop} {P Q : 
   | done st hp => exact Eventually.done st (hPQ st hp)
   | step st mid_p htrans _ ih => exact Eventually.step st mid_p htrans (fun mid hmid => ih mid hmid)
 
-/-- The run of an executable, as the transformer its `Triple`s are about. -/
-def Executable.wpTrans [Layout] (e : Executable) :
+/-- The run of a program, as the transformer its `Triple`s are about. Laying
+the program out is part of running it, so a `Triple` names the program as
+written. -/
+def Program.wpTrans [layout : Layout] (prog : Program) :
     PredTrans (Labels → MachineState → Prop) (MachineState → Prop) Unit :=
-  ⟨fun Q _ labels st => Eventually (straightlineStep e) (Q () labels) st⟩
+  ⟨fun Q _ labels st => Eventually (straightlineStep (layout prog)) (Q () labels) st⟩
 
-instance instWPExecutable [Layout] :
-    WP Executable Unit (Labels → MachineState → Prop) (MachineState → Prop) where
-  wpTrans := Executable.wpTrans
+instance instWPProgram [Layout] :
+    WP Program Unit (Labels → MachineState → Prop) (MachineState → Prop) where
+  wpTrans := Program.wpTrans
   wp_trans_monotone _ _ _ _ _ _ hQ := fun labels _ h => h.mono (fun st' => hQ () labels st')
 
 /-- A run's weakest precondition is the omni-semantics judgment. -/
-theorem Executable.wp_eq [Layout] (e : Executable)
+theorem Program.wp_eq [layout : Layout] (prog : Program)
     (Q : Unit → Labels → MachineState → Prop) (E : MachineState → Prop)
     (labels : Labels) (st : MachineState) :
-    wp e Q E labels st = Eventually (straightlineStep e) (Q () labels) st := rfl
-
-/-- Entering a run: traverse the segment at `pc`, then go on from wherever it
-leaves off. This is the composition rule between a segment and the run it is
-part of. -/
-theorem Executable.run_of_seg [Layout] {e : Executable} {s : MachineData} {pc : Int64}
-    {seg : List (Directive × Nat)} {P : Labels → MachineState → Prop}
-    {Q : Unit → Labels → MachineState → Prop} {E E' : MachineState → Prop}
-    (hseg : e.directivesFromAddress pc = seg)
-    (h : ⦃P⦄ seg ⦃fun _ labels st => wp e Q E labels st; fun st => wp e Q E e.labels st⦄)
-    (hp : P e.labels (s, pc)) :
-    wp e Q E' e.labels (s, pc) :=
-  step_cps _ _ _ (straightlineStep_of_seg hseg (h.le_wp e.labels (s, pc) hp))
+    wp prog Q E labels st
+      = Eventually (straightlineStep (layout prog)) (Q () labels) st := rfl
 
 /-- A loop verified at its header address `e.labels.label l`: a run that reaches
 the header with `k` iterations left reaches `post`. The back jump is not assumed
