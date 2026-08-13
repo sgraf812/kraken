@@ -201,9 +201,9 @@ private theorem p3_end_spec (Q : Unit → Labels → MachineState → Prop) :
 
 /-- Where a traversal from the loop header leaves the segment: back at the
 header with one iteration accounted for, or at `_end` with the answer. -/
-private abbrev p3_exits (rbx0 k : Nat) (st : MachineState) : Prop :=
-  (k ≠ 0 ∧ st.2 = (layout p3).labels.label "start" ∧ p3_inv rbx0 (k - 1) st.1)
-  ∨ (k = 0 ∧ st.2 = (layout p3).labels.label "_end"
+private abbrev p3_exits (L : Labels) (rbx0 k : Nat) (st : MachineState) : Prop :=
+  (k ≠ 0 ∧ st.2 = L.label "start" ∧ p3_inv rbx0 (k - 1) st.1)
+  ∨ (k = 0 ∧ st.2 = L.label "_end"
       ∧ st.1.regs.rdx.toNat = 2 ^ 2 ^ rbx0 ∧ st.1.regs.rax = 0)
 
 /-- Both cut points a jump of `p3` targets are directives of `p3`. -/
@@ -219,14 +219,16 @@ private theorem p3_exits_inText (rbx0 k : Nat) (st : MachineState)
     simp [p3.exit]
 
 omit hv in
-/-- The loop body: entered at the header with `k` iterations left, the run never
-falls off its segment, and every jump exit is one of `p3_exits`. -/
-private theorem p3_body_spec (rbx0 k : Nat) (hbound : 2 ^ 2 ^ rbx0 < 2 ^ 64)
-    (Q : Unit → Labels → MachineState → Prop) :
-    ⦃ fun labels st => labels = (layout p3).labels
-        ∧ st.2 = (layout p3).labels.label "start" ∧ p3_inv rbx0 k st.1 ⦄
-      p3.body
-    ⦃ Q; p3_exits rbx0 k ⦄ := by
+/-- The loop body, relocatable: the triple holds for any layout, any position
+`n` of the fragment in its program, and any label table `L`. The fragment
+observes the layout only through the addresses `L` gives its two jump targets,
+so nothing else is assumed. Placing the fragment in a concrete program is the
+use site's obligation, discharged by its extraction lemmas. -/
+private theorem p3_loop_spec (L : Labels) (n rbx0 k : Nat)
+    (hbound : 2 ^ 2 ^ rbx0 < 2 ^ 64) (Q : Unit → Labels → MachineState → Prop) :
+    ⦃ fun labels st => labels = L ∧ st.2 = L.label "start" ∧ p3_inv rbx0 k st.1 ⦄
+      (Layout.frag n (p3.loop ++ p3.exit))
+    ⦃ Q; p3_exits L rbx0 k ⦄ := by
   with_reducible refine Triple.intro fun labels st ⟨hlab, hpc, hrbx, hle, hrdx, hrax⟩ => ?_
   subst hlab
   have hlt : k ≠ 0 → st.1.regs.rdx.toNat * st.1.regs.rdx.toNat < 2 ^ 64 := by
@@ -239,8 +241,18 @@ private theorem p3_body_spec (rbx0 k : Nat) (hbound : 2 ^ 2 ^ rbx0 < 2 ^ 64)
   have hsq : k ≠ 0 → st.1.regs.rdx.toNat * st.1.regs.rdx.toNat = 2 ^ 2 ^ (rbx0 - (k - 1)) := by
     intro hk
     rw [hrdx, pow_sq, show rbx0 - (k - 1) = rbx0 - k + 1 from by omega]
-  simp only [p3.body]
   vcgen simplifying_assumptions with finish
+
+omit hv in
+/-- `p3_loop_spec`, placed: the fragment as it sits in `p3`, past the prologue,
+under `p3`'s label table. -/
+private theorem p3_body_spec (rbx0 k : Nat) (hbound : 2 ^ 2 ^ rbx0 < 2 ^ 64)
+    (Q : Unit → Labels → MachineState → Prop) :
+    ⦃ fun labels st => labels = (layout p3).labels
+        ∧ st.2 = (layout p3).labels.label "start" ∧ p3_inv rbx0 k st.1 ⦄
+      p3.body
+    ⦃ Q; p3_exits (layout p3).labels rbx0 k ⦄ :=
+  p3_loop_spec (layout p3).labels p3.entry.length rbx0 k hbound Q
 
 /-- The prologue sets `rdx` to `2`, which is the invariant at the full count,
 and falls into the loop; the segment's exits are the loop's. -/
@@ -249,7 +261,7 @@ private theorem p3_enter_spec (rbx0 : Nat) (hbound : 2 ^ 2 ^ rbx0 < 2 ^ 64)
     ⦃ fun labels st => labels = (layout p3).labels ∧ st.2 = layout.start
         ∧ st.1.regs.rbx.toNat = rbx0 ∧ st.1.regs.rax = 0 ⦄
       (Layout.frag 0 p3.entry ++ p3.body)
-    ⦃ Q; p3_exits rbx0 rbx0 ⦄ := by
+    ⦃ Q; p3_exits (layout p3).labels rbx0 rbx0 ⦄ := by
   with_reducible refine Triple.intro fun labels st ⟨hlab, hpc, hrbx, hrax⟩ => ?_
   subst hlab
   obtain ⟨m, pc⟩ := st
@@ -289,7 +301,7 @@ theorem p3_correct (d : MachineData) (h_bounds : p3_spec d < 2 ^ 64)
   subst hst
   rw [Program.wp_eq]
   simp only [p3_spec] at h_bounds ⊢
-  refine Eventually.step _ (p3_exits d.regs.rbx.toNat d.regs.rbx.toNat) ?_ ?_
+  refine Eventually.step _ (p3_exits (layout p3).labels d.regs.rbx.toNat d.regs.rbx.toNat) ?_ ?_
   · refine Program.runStep_of_seg p3_entry_segment ?_
     refine Directives.wp_mono (Q₁ := fun _ _ _ => False) _ _ _ (fun _ h => h.elim)
       (fun st h => ⟨p3_exits_inText d.regs.rbx.toNat d.regs.rbx.toNat st
