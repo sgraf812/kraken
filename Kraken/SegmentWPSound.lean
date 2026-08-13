@@ -186,6 +186,17 @@ theorem _root_.AvxDst.wpWrite_mono [Labels] [AddressSize] {w} {d : AvxDst w} {v 
   | avx r => exact hK _
   | mem a => exact fun ⟨i, hi, hk⟩ => ⟨i, hi, hK _ hk⟩
 
+/- The transport lemmas below are applied by search: at each goal the tactic
+tries them in turn. An attempt that does not apply must still unify the lemma's
+conclusion with the goal, and with the interpreter unfolding that unification
+reduces a machine step looking for a head symbol to compare. Sealing the
+definitions the lemmas are keyed on makes a mismatch a comparison of two head
+symbols instead. -/
+set_option allowUnsafeReducibility true in
+attribute [local irreducible] RegOrMem.interp Operand.interp RelRegOrMem.interp
+  AvxRegOrMem.interp MachineData.set MachineData.setAvx MachineData.setAvxLegacy
+  MachineData.load MachineData.store MachineData.loadAvx MachineData.storeAvx
+
 private theorem operation_sound {w} [Labels] [AddressSize] {P : MachineState → Prop}
     {op : Operation w} {p : Std.Rco Int64} {s : MachineData}
     {next : MachineData → Prop} {jmp : MachineState → Prop}
@@ -200,9 +211,6 @@ private theorem operation_sound {w} [Labels] [AddressSize] {P : MachineState →
   cases op <;>
     simp only [Operation.interp, Reg.interp, Effects.All] at h ⊢ <;>
     rcases h with h | h <;>
-    -- Resolving a `match` or `if` scrutinee comes before the transport lemmas:
-    -- against an unresolved scrutinee their unification reduces the interpreter
-    -- to find a head symbol, and that reduction is the cost.
     repeat' first
       | exact hnext _ h
       | exact hjmp _ h
@@ -210,12 +218,6 @@ private theorem operation_sound {w} [Labels] [AddressSize] {P : MachineState →
       | exact hnext _ (h v)
       | exact (h v).elim
       | exact Width.noConfusion hcond
-      | (split <;> rename_i hcond <;>
-          simp only [hcond, Bool.false_eq_true, if_true, if_false] at h ⊢)
-      | (split <;> rename_i hcond <;>
-          simp only [hcond, Bool.false_eq_true, if_true, if_false] at h)
-      | (split at h <;> rename_i hcond <;>
-          simp only [hcond, Bool.false_eq_true, if_true, if_false])
       | refine operand_sound (fun v s' h => ?_) h
       | refine regOrMem_sound (fun v s' h => ?_) h
       | refine relRegOrMem_sound (fun v s' h => ?_) h
@@ -224,6 +226,12 @@ private theorem operation_sound {w} [Labels] [AddressSize] {P : MachineState →
       | refine store_sound (fun s' h => ?_) h
       | refine undefined_sound (fun v h => ?_) h
       | refine fun v => ?_
+      | (split <;> rename_i hcond <;>
+          simp only [hcond, Bool.false_eq_true, if_true, if_false] at h ⊢)
+      | (split <;> rename_i hcond <;>
+          simp only [hcond, Bool.false_eq_true, if_true, if_false] at h)
+      | (split at h <;> rename_i hcond <;>
+          simp only [hcond, Bool.false_eq_true, if_true, if_false])
       | simp only [Effects.All] at h ⊢
       | simp only [] at h ⊢
       | cases w
