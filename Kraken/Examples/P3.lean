@@ -186,12 +186,11 @@ private abbrev p3_inv (rbx0 k : Nat) (s : MachineData) : Prop :=
 
 /-- The tail: the label and the `nop` leave the machine unchanged, and the run
 falls off the end of the program text. -/
-private theorem p3_end_spec (Q : Unit → Labels → MachineState → Prop)
-    (E : MachineState → Prop) :
+private theorem p3_end_spec (Q : Unit → Labels → MachineState → Prop) :
     ⦃ fun labels st => st.2 = (layout p3).labels.label "_end"
         ∧ Q () labels (st.1, (layout p3).addrOf p3.length) ⦄
       (Layout.frag (p3.entry ++ p3.loop).length p3.exit)
-    ⦃ Q; E ⦄ := by
+    ⦃ Q ⦄ := by
   with_reducible refine Triple.intro fun labels st ⟨hpc, hq⟩ => ?_
   obtain ⟨m, pc⟩ := st
   simp only at hpc hq
@@ -270,16 +269,21 @@ private theorem p3_finish (rbx0 : Nat) (E : MachineState → Prop) (st : Machine
   simp only at hpc hrdx hrax
   subst hpc
   refine step_cps _ _ _ (Program.runStep_of_seg p3_end_segment ?_)
-  exact (p3_end_spec _ _).le_wp _ _ ⟨rfl, Eventually.done _ ⟨hrdx, hrax⟩⟩
+  refine Directives.wp_mono
+    (Q₁ := fun _ _ mid => Eventually (Program.runStep p3 E)
+      (fun s => s.1.regs.rdx.toNat = 2 ^ 2 ^ rbx0 ∧ s.1.regs.rax = 0) mid)
+    (E₁ := (Lean.Order.bot : MachineState → Prop))
+    _ _ _ (fun _ h => h) (fun _ h => Assertion.bot_elim h) ?_
+  exact (p3_end_spec _).le_wp _ _ ⟨rfl, Eventually.done _ ⟨hrdx, hrax⟩⟩
 
 /-- A run of `p3` from a machine whose `rax` is clear reaches a state where
-`rdx` holds `2 ^ 2 ^ rbx` and `rax` is clear again. The run never leaves the
-program text, so its exceptional postcondition is arbitrary. -/
+`rdx` holds `2 ^ 2 ^ rbx` and `rax` is clear again. The triple names no
+exceptional postcondition: the run never leaves the program text. -/
 theorem p3_correct (d : MachineData) (h_bounds : p3_spec d < 2 ^ 64)
-    (h_rax : d.regs.rax = 0) (E : MachineState → Prop) :
+    (h_rax : d.regs.rax = 0) :
     ⦃ fun labels st => labels = (layout p3).labels ∧ st = (d, layout.start) ⦄
       p3
-    ⦃ fun _ _ st => st.1.regs.rdx.toNat = p3_spec d ∧ st.1.regs.rax = 0; E ⦄ := by
+    ⦃ fun _ _ st => st.1.regs.rdx.toNat = p3_spec d ∧ st.1.regs.rax = 0 ⦄ := by
   with_reducible refine Triple.intro fun labels st ⟨hlab, hst⟩ => ?_
   subst hlab
   subst hst
@@ -296,8 +300,8 @@ theorem p3_correct (d : MachineData) (h_bounds : p3_spec d < 2 ^ 64)
       exact Eventually.loop p3_start_segment
         (fun k => p3_body_spec d.regs.rbx.toNat k h_bounds _)
         (fun st h => p3_exits_inText d.regs.rbx.toNat 0 st h)
-        (p3_finish d.regs.rbx.toNat E) _ m hinv
-    · exact p3_finish d.regs.rbx.toNat E _ hexit.2
+        (p3_finish d.regs.rbx.toNat _) _ m hinv
+    · exact p3_finish d.regs.rbx.toNat _ _ hexit.2
 
 /-- `p3_correct` read as the omni-semantics judgment of `Kraken.OmniSemantics`:
 a run of the laid-out program from `(d, layout.start)` reaches a state where
@@ -309,7 +313,7 @@ theorem p3_correct_run (d : MachineData) (h_bounds : p3_spec d < 2 ^ 64)
       (fun s => s.1.regs.rdx.toNat = p3_spec d ∧ s.1.regs.rax = 0)
       (d, layout.start) :=
   (Program.wp_sound
-      ((p3_correct d h_bounds h_rax (fun _ => False)).le_wp _ _ ⟨rfl, rfl⟩)).mono
-    (fun _ _ hst => hst) (fun _ hs => hs.elim id False.elim)
+      ((p3_correct d h_bounds h_rax).le_wp _ _ ⟨rfl, rfl⟩)).mono
+    (fun _ _ hst => hst) (fun _ hs => hs.elim id Assertion.bot_elim)
 
 end Proof

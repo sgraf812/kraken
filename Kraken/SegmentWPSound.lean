@@ -401,6 +401,12 @@ theorem Program.runStep_of_seg [layout : Layout] {prog : Program} {E : MachineSt
   exact Directives.wp_mono seg _ _ (fun _ h => h)
     (fun _ h => ⟨fun hnil => absurd hnil h.1, fun _ => h.2⟩) h
 
+/-- A triple that names no exceptional postcondition rules its jumps out: the
+bottom assertion entails everything. -/
+theorem Assertion.bot_elim {x : MachineState} {C : Prop}
+    (h : (Lean.Order.bot : MachineState → Prop) x) : C :=
+  ((Lean.Order.bot_le (α := MachineState → Prop) (fun _ => False)) x h).elim
+
 /-- What a run triple says about the machine: the omni-semantics judgment that
 the run reaches the normal postcondition, or leaves the program text at the
 exceptional one. This is the only reading of `wp prog Q E` that the baseline
