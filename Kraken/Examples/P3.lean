@@ -13,9 +13,10 @@ that specifies its fragment: the prologue in `p3_enter`, the loop in
 `p3_body_spec`, the tail in `p3_end_spec`. `Eventually.loop` takes that one body
 specification for every `k`, so nothing traverses the loop a second time.
 
-Every intermediate result is a `Triple` about a fragment. `Eventually` appears
-only in `p3_correct` and `p3_finish`, where `straightlineStep_of_triple` and
-`Eventually.of_triple` carry a fragment's triple into the omni-semantics.
+Every result here is a `Triple`, `p3_correct` included: a run of an executable
+is a predicate transformer too, and `wp (layout p3) Q ⊥` is the omni-semantics
+judgment that the run reaches `Q`. `straightlineStep_of_triple` and
+`Eventually.of_triple` carry a fragment's triple into that run.
 
 Each cut point gets an address (`p3_start_addr`, `p3_end_addr`) and the segment
 reached from it (`p3_start_segment`, `p3_end_segment`). The segments chain by
@@ -259,11 +260,18 @@ private theorem p3_finish (rbx0 : Nat) (st : MachineState)
     exact Eventually.of_triple p3_end_segment (p3_end_spec _ _)
       ⟨rfl, Eventually.done _ ⟨hrdx, hrax⟩⟩
 
+/-- A run of `p3` from a machine whose `rax` is clear reaches a state where
+`rdx` holds `2 ^ 2 ^ rbx` and `rax` is clear again. -/
 theorem p3_correct (d : MachineData) (h_bounds : p3_spec d < 2 ^ 64)
     (h_rax : d.regs.rax = 0) :
-    Eventually (straightlineStep (layout p3))
-      (fun s => s.1.regs.rdx.toNat = p3_spec d ∧ s.1.regs.rax = 0)
-      (d, layout.start) := by
+    ⦃ fun labels st => labels = (layout p3).labels ∧ st = (d, layout.start) ⦄
+      (layout p3)
+    ⦃ fun _ _ st => st.1.regs.rdx.toNat = p3_spec d ∧ st.1.regs.rax = 0;
+      fun _ => False ⦄ := by
+  with_reducible refine Triple.intro fun labels st ⟨hlab, hst⟩ => ?_
+  subst hlab
+  subst hst
+  rw [Executable.wp_eq]
   simp only [p3_spec] at h_bounds ⊢
   with_reducible
     apply Eventually.step _ _ (straightlineStep_of_triple p3_entry_segment
