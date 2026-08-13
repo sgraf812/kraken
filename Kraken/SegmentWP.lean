@@ -639,6 +639,20 @@ local macro "wpF_step" : tactic =>
     ⦃ fun s => Q () s ⦄ ([] : Program) ⦃ Q; E ⦄ :=
   Triple.intro fun _ h => h
 
+/-- The append cases are spelling: `vcgen` walks a `++` of fragments by
+rewriting it to the cons cell on top. -/
+@[spec] theorem Program.nil_append_spec (bs : Program) :
+    ⦃ fun s => wp bs Q E s ⦄ (([] : Program) ++ bs) ⦃ Q; E ⦄ :=
+  Triple.intro fun s h => by rw [List.nil_append]; exact h
+
+@[spec] theorem Program.cons_append_spec (a : Directive) (as bs : Program) :
+    ⦃ fun s => wp (a :: (as ++ bs)) Q E s ⦄ ((a :: as) ++ bs) ⦃ Q; E ⦄ :=
+  Triple.intro fun s h => by rw [List.cons_append]; exact h
+
+@[spec] theorem Program.append_assoc_spec (as bs cs : Program) :
+    ⦃ fun s => wp (as ++ (bs ++ cs)) Q E s ⦄ ((as ++ bs) ++ cs) ⦃ Q; E ⦄ :=
+  Triple.intro fun s h => by rw [List.append_assoc]; exact h
+
 @[spec] theorem Program.label_spec (l : Label) :
     ⦃ fun s => wp p Q E s ⦄ (Directive.label l :: p) ⦃ Q; E ⦄ :=
   Triple.intro fun _ h => by

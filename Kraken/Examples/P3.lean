@@ -52,6 +52,12 @@ _end:
 /-- The program a run of `p3` executes: the prologue, the loop, the tail. -/
 def p3 : Program := p3.entry ++ p3.loop ++ p3.exit
 
+/-- `p3`, opened for the walk. -/
+@[spec] private theorem p3_def_spec {Q : Unit → MachineData → Prop}
+    {E : Label → MachineData → Prop} :
+    ⦃ fun s => wp (p3.entry ++ p3.loop ++ p3.exit) Q E s ⦄ p3 ⦃ Q; E ⦄ :=
+  Triple.intro fun s h => h
+
 /-- The split at the loop header. -/
 private theorem p3_eq_entry_append : p3 = p3.entry ++ (p3.loop ++ p3.exit) := by simp [p3]
 
@@ -177,7 +183,6 @@ private theorem p3_entry_spec (rbx0 : Nat) :
       fun l s => if l = "start" then rbx0 ≠ 0 ∧ p3_inv rbx0 (rbx0 - 1) s
                  else if l = "_end" then s.regs.rdx.toNat = 2 ^ 2 ^ rbx0 ∧ s.regs.rax = 0
                  else False ⦄ := by
-  simp only [p3, p3.entry, p3.loop, p3.body, p3.exit, List.cons_append, List.nil_append]
   vcgen simplifying_assumptions with finish
 
 /-- The loop body, traversed once: entered at the header with `k` iterations
@@ -201,7 +206,6 @@ private theorem p3_body_spec (rbx0 : Nat) (hbound : 2 ^ 2 ^ rbx0 < 2 ^ 64) (k : 
         ≤ 2 ^ 2 ^ rbx0 :=
           Nat.pow_le_pow_right (by omega) (Nat.pow_le_pow_right (by omega) (by omega))
       _ < 2 ^ 64 := hbound
-  simp only [p3.loop, p3.body, p3.exit, List.cons_append, List.nil_append]
   vcgen simplifying_assumptions with finish
 
 /-- The tail: the label and the `nop` leave the machine unchanged, and the run
@@ -211,7 +215,6 @@ private theorem p3_exit_spec (rbx0 : Nat) :
       p3.exit
     ⦃ fun _ s => s.regs.rdx.toNat = 2 ^ 2 ^ rbx0 ∧ s.regs.rax = 0;
       fun _ _ => False ⦄ := by
-  simp only [p3.exit]
   vcgen simplifying_assumptions with finish
 
 /-- A run of `p3` from a machine whose `rax` is clear falls off the end of the
