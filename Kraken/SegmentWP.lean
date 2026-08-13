@@ -890,30 +890,31 @@ theorem Program.while_spec (l : Label) (I : MachineData → Prop) (var : Machine
           hmap (sx, lx) hm hch
   exact Triple.intro fun s hI => main (var s) s hI rfl
 
-/-- Resolve the residual label context. A forward jump strictly shortens the
-scope suffix, so each context entry is discharged against its label's body
-with no measure of its own. -/
+/-- Resolve the label context `J` of a traversal. A forward jump strictly
+shortens the scope suffix, so each in-scope context entry is discharged
+against its label's body with no measure of its own. What remains is the part
+of `J` at labels outside the text. -/
 theorem Program.resolve {p : Program} {P : MachineData → Prop}
-    {Q : Unit → MachineData → Prop} {E : Label → MachineData → Prop}
-    (J : Label → MachineData → Prop)
-    (hentry : ⦃P⦄ p ⦃Q; fun l s => (Program.fromLabel p l ≠ [] ∧ J l s) ∨ E l s⦄)
+    {Q : Unit → MachineData → Prop} (J : Label → MachineData → Prop)
+    (hentry : ⦃P⦄ p ⦃Q; J⦄)
     (hbody : ∀ l, Program.fromLabel p l ≠ [] →
       ⦃ J l ⦄ (Program.fromLabel p l)
-      ⦃ Q; fun l' s => (Program.fromLabel p l' ≠ [] ∧
-            (Program.fromLabel p l').length < (Program.fromLabel p l).length ∧ J l' s)
-          ∨ E l' s ⦄) :
-    ⦃P⦄ p ⦃Q; E⦄ := by
+      ⦃ Q; fun l' s => (Program.fromLabel p l').length < (Program.fromLabel p l).length
+                     ∧ J l' s ⦄) :
+    ⦃P⦄ p ⦃Q; fun l s => Program.fromLabel p l = [] ∧ J l s⦄ := by
   refine Program.tie (V := fun n l s => J l s ∧ (Program.fromLabel p l).length = n) ?_ ?_
   · refine Program.triple_conseq hentry (fun _ h => h) ?_
-    rintro l s (⟨hm, hJ⟩ | he)
+    intro l s hJ
+    by_cases hm : Program.fromLabel p l = []
+    · exact Or.inr ⟨hm, hJ⟩
     · exact Or.inl ⟨hm, (Program.fromLabel p l).length, hJ, rfl⟩
-    · exact Or.inr he
   · intro n l hmem
     by_cases hn : (Program.fromLabel p l).length = n
     · refine Program.triple_conseq (hbody l hmem) (fun s hV => hV.1) ?_
-      rintro l' s (⟨hm', hlt, hJ'⟩ | he)
+      rintro l' s ⟨hlt, hJ'⟩
+      by_cases hm' : Program.fromLabel p l' = []
+      · exact Or.inr ⟨hm', hJ'⟩
       · exact Or.inl ⟨hm', (Program.fromLabel p l').length, hn ▸ hlt, hJ', rfl⟩
-      · exact Or.inr he
     · exact Program.triple_conseq Program.triple_false
         (fun s hV => (hn hV.2).elim) (fun _ _ h => False.elim h)
 

@@ -182,9 +182,7 @@ private theorem p3_body_spec (rbx0 : Nat) (hbound : 2 ^ 2 ^ rbx0 < 2 ^ 64) (n : 
       (p3.body ++ p3.exit)
     ⦃ fun _ s => s.regs.rdx.toNat = 2 ^ 2 ^ rbx0 ∧ s.regs.rax = 0;
       fun l s => if l = "start" then p3_inv rbx0 s ∧ s.regs.rbx.toNat < n
-                 else if l = "_end" then
-                   s.regs.rdx.toNat = 2 ^ 2 ^ rbx0 ∧ s.regs.rax = 0
-                 else False ⦄ := by
+                 else l = "_end" ∧ s.regs.rdx.toNat = 2 ^ 2 ^ rbx0 ∧ s.regs.rax = 0 ⦄ := by
   have hsq : ∀ m : Nat, m = 2 ^ 2 ^ (rbx0 - n) → n ≤ rbx0 → n ≠ 0 →
       m * m < 2 ^ 64 ∧ m * m = 2 ^ 2 ^ (rbx0 - (n - 1)) := by
     intro m hm hle hb
@@ -206,22 +204,9 @@ private theorem p3_exit_spec (rbx0 : Nat) :
       fun _ _ => False ⦄ := by
   vcgen simplifying_assumptions with finish
 
-/-- One walk of the text: the prologue establishes the invariant, the while
-rule steps the loop at its header, and the run ends past the text or pauses
-at `_end` with the answer. -/
-private theorem p3_full_spec (rbx0 : Nat) (hbound : 2 ^ 2 ^ rbx0 < 2 ^ 64) :
-    ⦃ fun s => s.regs.rbx.toNat = rbx0 ∧ s.regs.rax = 0 ⦄
-      p3
-    ⦃ fun _ s => s.regs.rdx.toNat = 2 ^ 2 ^ rbx0 ∧ s.regs.rax = 0;
-      fun l s => if l = "_end" then s.regs.rdx.toNat = 2 ^ 2 ^ rbx0 ∧ s.regs.rax = 0
-                 else False ⦄ := by
-  have hwhile := Program.while_spec "start" (p3_inv rbx0) (fun s => s.regs.rbx.toNat)
-    (by decide) (p3_body_spec rbx0 hbound)
-  vcgen [hwhile] simplifying_assumptions with finish
-
 /-- A run of `p3` from a machine whose `rax` is clear falls off the end of the
-text with `rdx = 2 ^ 2 ^ rbx` and `rax` clear again. `Program.resolve`
-discharges the one paused context entry, `_end`, against the tail. -/
+text with `rdx = 2 ^ 2 ^ rbx` and `rax` clear again: walk the text once, with
+the while rule at `start`, then resolve the pause at `_end` against the tail. -/
 theorem p3_correct (d : MachineData) (h_bounds : p3_spec d < 2 ^ 64)
     (h_rax : d.regs.rax = 0) :
     ⦃ fun s => s = d ⦄
@@ -229,34 +214,29 @@ theorem p3_correct (d : MachineData) (h_bounds : p3_spec d < 2 ^ 64)
     ⦃ fun _ s => s.regs.rdx.toNat = p3_spec d ∧ s.regs.rax = 0;
       fun _ _ => False ⦄ := by
   simp only [p3_spec] at h_bounds ⊢
-  refine Program.resolve (J := fun l s =>
-      if l = "_end" then s.regs.rdx.toNat = 2 ^ 2 ^ d.regs.rbx.toNat ∧ s.regs.rax = 0
-      else False) ?_ ?_
-  · refine Program.triple_conseq (p3_full_spec d.regs.rbx.toNat h_bounds)
-      (fun s hs => by rw [hs]; exact ⟨rfl, h_rax⟩) ?_
-    intro l s h
-    by_cases h2 : l = "_end"
-    · subst h2
-      rw [if_pos rfl] at h
-      exact Or.inl ⟨by decide, by rw [if_pos rfl]; exact h⟩
-    · rw [if_neg h2] at h
-      exact h.elim
+  have hwhile := Program.while_spec "start" (p3_inv d.regs.rbx.toNat)
+    (fun s => s.regs.rbx.toNat) (by decide) (p3_body_spec d.regs.rbx.toNat h_bounds)
+  refine Program.triple_conseq
+    (Program.resolve (J := fun l s =>
+        l = "_end" ∧ s.regs.rdx.toNat = 2 ^ 2 ^ d.regs.rbx.toNat ∧ s.regs.rax = 0)
+      ?_ ?_)
+    (fun _ h => h) (fun l s h => absurd (h.2.1 ▸ h.1) (by decide))
+  · vcgen [hwhile] simplifying_assumptions with finish
   · intro l hmem
     by_cases h2 : l = "_end"
     · subst h2
       rw [show Program.fromLabel p3 "_end" = p3.exit by decide]
-      refine Program.triple_conseq (p3_exit_spec d.regs.rbx.toNat)
-        (fun s hJ => by rw [if_pos rfl] at hJ; exact hJ) (fun _ _ h => False.elim h)
-    · refine Program.triple_conseq Program.triple_false
-        (fun s hJ => by rw [if_neg h2] at hJ; exact hJ.elim) (fun _ _ h => False.elim h)
+      exact Program.triple_conseq (p3_exit_spec d.regs.rbx.toNat)
+        (fun s hJ => hJ.2) (fun _ _ h => False.elim h)
+    · exact Program.triple_conseq Program.triple_false
+        (fun s hJ => (h2 hJ.1).elim) (fun _ _ h => False.elim h)
 
 variable [layout : Layout] [hv : Executable.ValidLayout (layout p3)]
 
 /-- `p3_correct`, read at the machine: the omni-semantics judgment of
 `Kraken.OmniSemantics` that a run of the laid-out program from
 `(d, layout.start)` reaches a state with `rdx = 2 ^ 2 ^ rbx` and `rax` clear.
-The exit disjunct drops out because the triple's exceptional postcondition is
-`False`. -/
+The exit disjunct drops out because the triple's label context is `False`. -/
 theorem p3_correct_run (d : MachineData) (h_bounds : p3_spec d < 2 ^ 64)
     (h_rax : d.regs.rax = 0) :
     Eventually (straightlineStep (layout p3))
