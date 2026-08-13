@@ -395,115 +395,309 @@ example :
 /-! ### Programs
 
 A `Program` is a directive list with no sizes. Its transformer runs each
-directive at every instruction range a layout can give it, so sizing
-invariance is the meaning of `wp`: a fragment's triple mentions no layout and
-no position. The fall-through channel carries `MachineData` alone, because the
-address after an instruction of unknown size is unknown; a jump exit (`E`)
-names an address through `Labels`, the label footprint, and those addresses
-are a fragment's whole interface to its host program. -/
+directive under every label table and at every instruction range a layout can
+give it, so a fragment's triple mentions no layout, no position, no program
+counter, and no label table. The fall-through channel carries `MachineData`
+alone. A jump exit names the target label, not an address: `E : Label →
+MachineData → Prop`, and the labels a spec's `E` mentions are the fragment's
+whole interface to its host program. -/
 
-def Program.wpF [Labels] : Program → (MachineData → Prop) → (MachineState → Prop) →
+/-- The label a directive jumps to, read from the syntax. -/
+def Directive.target : Directive → Option Label
+  | .instr (.regular _ _ (.jcc _ l)) => some l
+  | .instr (.regular _ _ (.jmp (.rel (.sub (.label l) .after_current_instruction)))) => some l
+  | _ => none
+
+def Program.wpF : Program → (MachineData → Prop) → (Label → MachineData → Prop) →
     MachineData → Prop
   | [], Q, _, s => Q s
-  | d :: p, Q, E, s => ∀ r : Std.Rco Int64, d.wp1 r (fun s' => Program.wpF p Q E s') E s
+  | d :: p, Q, E, s => ∀ (labels : Labels) (r : Std.Rco Int64),
+      d.wp1 r (fun s' => Program.wpF p Q E s')
+        (fun st => ∃ l, d.target = some l ∧ st.2 = labels.label l ∧ E l st.1) s
 
-theorem Program.wpF_mono [Labels] {Q₁ Q₂ : MachineData → Prop} {E₁ E₂ : MachineState → Prop}
-    (hQ : ∀ s, Q₁ s → Q₂ s) (hE : ∀ st, E₁ st → E₂ st) :
+theorem Program.wpF_mono {Q₁ Q₂ : MachineData → Prop} {E₁ E₂ : Label → MachineData → Prop}
+    (hQ : ∀ s, Q₁ s → Q₂ s) (hE : ∀ l s, E₁ l s → E₂ l s) :
     ∀ (p : Program) (s : MachineData), Program.wpF p Q₁ E₁ s → Program.wpF p Q₂ E₂ s
   | [], s => hQ s
-  | _ :: p, _ => fun h r => Directive.wp1_mono (fun s' => wpF_mono hQ hE p s') hE (h r)
+  | _ :: p, _ => fun h labels r =>
+    Directive.wp1_mono (fun s' => wpF_mono hQ hE p s')
+      (fun _ => fun ⟨l, ht, ha, he⟩ => ⟨l, ht, ha, hE l _ he⟩) (h labels r)
 
-def Program.wpTrans (p : Program) :
-    PredTrans (Labels → MachineData → Prop) (MachineState → Prop) Unit :=
-  ⟨fun Q E labels s => @Program.wpF labels p (Q () labels) E s⟩
-
-instance instWPProgram :
-    WP Program Unit (Labels → MachineData → Prop) (MachineState → Prop) where
-  wpTrans := Program.wpTrans
-  wp_trans_monotone _ _ _ _ _ hE hQ := fun labels s =>
-    Program.wpF_mono (fun s' => hQ () labels s') hE _ s
-
-/-- Unfold a fragment wp into the transformer fold. -/
-theorem Program.wp_eq (p : Program) (Q : Unit → Labels → MachineData → Prop)
-    (E : MachineState → Prop) (labels : Labels) (s : MachineData) :
-    wp p Q E labels s = @Program.wpF labels p (Q () labels) E s := rfl
-
-/-- Sequential composition: a fall-through of `as` continues into `bs`, a jump
-exits the whole fragment. -/
-theorem Program.wpF_append [Labels] (as bs : Program) (Q : MachineData → Prop)
-    (E : MachineState → Prop) :
+/-- Sequential composition of the traversal: a fall-through of `as` continues
+into `bs`, a jump exits the whole fragment. -/
+theorem Program.wpF_append (as bs : Program) (Q : MachineData → Prop)
+    (E : Label → MachineData → Prop) :
     Program.wpF (as ++ bs) Q E = Program.wpF as (Program.wpF bs Q E) E := by
   induction as with
   | nil => rfl
   | cons d p ih => funext s; simp only [List.cons_append, Program.wpF, ih]
 
-/-- A fragment's wp, instantiated at one sizing and one entry address, is the
-sized fold. This is the bridge from a fragment's triple to the run of a
-program that contains the fragment. -/
-theorem Program.wpF_toE [Labels] {Q : MachineData → Prop} {E : MachineState → Prop} :
+/-- The traversal, instantiated at one label table and one sizing, is the
+sized fold, with jump exits resolved to the table's addresses. -/
+theorem Program.wpF_toE [Labels] {Q : MachineData → Prop} {E : Label → MachineData → Prop} :
     ∀ {p : Program} (ds : List (Directive × Nat)), ds.map Prod.fst = p →
       ∀ (s : MachineData) (pc : Int64), Program.wpF p Q E s →
-        Directives.wpE ds (fun st => Q st.1) E (s, pc)
+        Directives.wpE ds (fun st => Q st.1)
+          (fun st => ∃ l, st.2 = label l ∧ E l st.1) (s, pc)
   | _, [], rfl, _, _, hw => hw
   | _, (d, z) :: ds, rfl, _s, pc, hw =>
     Directive.wp1_mono (fun s' hs' => Program.wpF_toE ds rfl s' (pc + .ofNat z) hs')
-      (fun _ h => h) (hw ⟨pc, pc + .ofNat z⟩)
+      (fun _ => fun ⟨l, _, ha, he⟩ => ⟨l, ha, he⟩) (hw _ ⟨pc, pc + .ofNat z⟩)
 
-/-! ### Per-instruction specs on `Program`
+/-! ### Runs
 
-The same rules as the sized specs, with no size and no program counter: a
-fall-through instruction's precondition is the tail's wp at the record update
-it performs, and a jump's precondition sends the label's address to `E`. -/
+`wp` on `Program` is the run: a fall-through past the end of the text lands in
+`Q`, and a jump exit at label `l` either surfaces in `E l` or, when `l` is a
+label of the program, re-enters at that label's cell. The re-entry closure is
+a least fixpoint, taken by `Eventually` inside the definition; no statement
+mentions it. -/
+
+/-- The omni-semantics judgment is monotone in its transition relation and in
+its postcondition. -/
+theorem Eventually.mono {State : Type} {trans₁ trans₂ : State → Post → Prop}
+    {P Q : @Post State} {st : State} (h : Eventually trans₁ P st)
+    (htrans : ∀ st' post, trans₁ st' post → trans₂ st' post) (hPQ : ∀ s, P s → Q s) :
+    Eventually trans₂ Q st := by
+  induction h with
+  | done st hp => exact Eventually.done st (hPQ st hp)
+  | step st mid_p ht _ ih => exact Eventually.step st mid_p (htrans st mid_p ht) ih
+
+/-- The suffix of a program at the last cell carrying `label l`; `[]` when the
+program has no such cell. Re-entry at the last occurrence keeps a suffix's
+scope a restriction of its host's scope. -/
+def Program.fromLabel : Program → Label → Program
+  | [], _ => []
+  | d :: p, l =>
+      if Program.fromLabel p l = [] ∧ d = Directive.label l then d :: p
+      else Program.fromLabel p l
+
+@[simp] theorem Program.fromLabel_nil (l : Label) : Program.fromLabel [] l = [] := rfl
+
+@[simp] theorem Program.fromLabel_cons (d : Directive) (p : Program) (l : Label) :
+    Program.fromLabel (d :: p) l =
+      if Program.fromLabel p l = [] ∧ d = Directive.label l then d :: p
+      else Program.fromLabel p l := rfl
+
+/-- A label present in the tail keeps its scope suffix under a cons. -/
+theorem Program.fromLabel_cons_of_mem (d : Directive) {p : Program} (l : Label)
+    (h : Program.fromLabel p l ≠ []) :
+    Program.fromLabel (d :: p) l = Program.fromLabel p l := by
+  rw [Program.fromLabel_cons, if_neg]
+  rintro ⟨hnil, -⟩
+  exact h hnil
+
+theorem Program.fromLabel_suffix (p : Program) (l : Label) :
+    Program.fromLabel p l <:+ p := by
+  induction p with
+  | nil => exact List.suffix_rfl
+  | cons d p ih =>
+    rw [Program.fromLabel_cons]
+    split
+    · exact List.suffix_rfl
+    · exact ih.trans (List.suffix_cons d p)
+
+/-- A label present in a suffix has the same scope suffix in the host. -/
+theorem Program.fromLabel_of_suffix {q p : Program} (hs : q <:+ p) (l : Label)
+    (h : Program.fromLabel q l ≠ []) :
+    Program.fromLabel p l = Program.fromLabel q l := by
+  induction p with
+  | nil => rw [List.suffix_nil.mp hs]
+  | cons d p ih =>
+    rcases List.suffix_cons_iff.mp hs with heq | hs'
+    · rw [heq]
+    · have hp := ih hs'
+      rw [Program.fromLabel_cons, hp, if_neg]
+      rintro ⟨hnil, -⟩
+      exact h (hp ▸ hnil)
+
+/-- A label with a scope suffix is a cell of the program. -/
+theorem Program.fromLabel_mem {p : Program} {l : Label}
+    (h : Program.fromLabel p l ≠ []) : Directive.label l ∈ p := by
+  induction p with
+  | nil => exact absurd rfl h
+  | cons d p ih =>
+    rw [Program.fromLabel_cons] at h
+    by_cases hc : Program.fromLabel p l = [] ∧ d = Directive.label l
+    · rw [hc.2]
+      exact List.mem_cons_self
+    · rw [if_neg hc] at h
+      exact List.mem_cons_of_mem d (ih h)
+
+/-- One step of the run: traverse the scope suffix at the current label; a
+fall-through ends in `Q`, a jump exit surfaces in `E` or hands an in-scope
+label to the continuation. -/
+def Program.runStep (p : Program) (Q : MachineData → Prop) (E : Label → MachineData → Prop)
+    (st : MachineData × Label) (post : @Post (MachineData × Label)) : Prop :=
+  Program.wpF (Program.fromLabel p st.2) Q
+    (fun l s => E l s ∨ (Program.fromLabel p l ≠ [] ∧ post (s, l))) st.1
+
+/-- Where a jump exit at `l` goes: it surfaces in `E`, or, in scope, the run
+re-enters at `l` and the chain of re-entries ends. -/
+def Program.exitsTo (p : Program) (Q : MachineData → Prop) (E : Label → MachineData → Prop)
+    (l : Label) (s : MachineData) : Prop :=
+  E l s ∨ (Program.fromLabel p l ≠ [] ∧
+    Eventually (Program.runStep p Q E) (fun _ => False) (s, l))
+
+def Program.wpR (p : Program) (Q : MachineData → Prop) (E : Label → MachineData → Prop)
+    (s : MachineData) : Prop :=
+  Program.wpF p Q (Program.exitsTo p Q E) s
+
+/-- Lift a run chain into a host whose scope agrees on the chain's labels:
+each exit either maps into the host's exit dispatch or stays a chain state. -/
+theorem Program.chain_lift {q pf : Program} {Q : MachineData → Prop}
+    {E₁ E₂ : Label → MachineData → Prop}
+    (hsub : ∀ lx, Program.fromLabel q lx ≠ [] →
+      Program.fromLabel pf lx = Program.fromLabel q lx)
+    (hE : ∀ lx s, E₁ lx s → Program.exitsTo pf Q E₂ lx s) :
+    ∀ st, Program.fromLabel q st.2 ≠ [] →
+      Eventually (Program.runStep q Q E₁) (fun _ => False) st →
+      Eventually (Program.runStep pf Q E₂) (fun _ => False) st := by
+  intro st hmem h
+  revert hmem
+  induction h with
+  | done st hp => exact fun _ => hp.elim
+  | step st mid_p ht _ ih =>
+    intro hmem
+    refine Eventually.step st
+      (fun st' => (mid_p st' ∧ Program.fromLabel q st'.2 ≠ [])
+        ∨ Eventually (Program.runStep pf Q E₂) (fun _ => False) st') ?_ ?_
+    · show Program.wpF (Program.fromLabel pf st.2) Q _ st.1
+      rw [hsub st.2 hmem]
+      refine Program.wpF_mono (fun _ h => h) (fun lx s' hx => ?_) _ _ ht
+      rcases hx with hx | ⟨hmq, hmid⟩
+      · rcases hE lx s' hx with he | ⟨hm, hch⟩
+        · exact Or.inl he
+        · exact Or.inr ⟨hm, Or.inr hch⟩
+      · exact Or.inr ⟨hsub lx hmq ▸ hmq, Or.inl ⟨hmid, hmq⟩⟩
+    · rintro mid (⟨hmid, hmq⟩ | hch)
+      · exact ih mid hmid hmq
+      · exact hch
+
+/-- Dispatch a jump exit: out of scope it must surface in `E`; in scope, the
+target's suffix runs on. -/
+theorem Program.exitsTo_of_if {p : Program} {Q : MachineData → Prop}
+    {E : Label → MachineData → Prop} {l : Label} {s : MachineData}
+    (h : if Program.fromLabel p l = [] then E l s
+         else Program.wpR (Program.fromLabel p l) Q E s) :
+    Program.exitsTo p Q E l s := by
+  by_cases hp : Program.fromLabel p l = []
+  · rw [if_pos hp] at h
+    exact Or.inl h
+  · rw [if_neg hp] at h
+    have hsub : ∀ lx, Program.fromLabel (Program.fromLabel p l) lx ≠ [] →
+        Program.fromLabel p lx = Program.fromLabel (Program.fromLabel p l) lx :=
+      fun lx h' => Program.fromLabel_of_suffix (Program.fromLabel_suffix p l) lx h'
+    refine Or.inr ⟨hp, step_cps _ _ _ ?_⟩
+    show Program.wpF (Program.fromLabel p l) Q _ s
+    refine Program.wpF_mono (fun _ h => h) (fun lx s' hx => ?_) _ _ h
+    rcases hx with he | ⟨hmq, hch⟩
+    · exact Or.inl he
+    · exact Or.inr ⟨hsub lx hmq ▸ hmq,
+        Program.chain_lift hsub (fun _ _ he => Or.inl he) (s', lx) hmq hch⟩
+
+/-- Growing the scope by one leading cell: chains re-enter the same suffixes,
+and exits keep their dispatch. -/
+theorem Program.exitsTo_grow {p : Program} {Q : MachineData → Prop}
+    {E : Label → MachineData → Prop} (d : Directive) :
+    ∀ (l : Label) (s : MachineData),
+      Program.exitsTo p Q E l s → Program.exitsTo (d :: p) Q E l s := by
+  intro l s hx
+  rcases hx with he | ⟨hm, hch⟩
+  · exact Or.inl he
+  · refine Or.inr ⟨Program.fromLabel_cons_of_mem d l hm ▸ hm, ?_⟩
+    exact Program.chain_lift (fun lx h' => Program.fromLabel_cons_of_mem d lx h')
+      (fun _ _ he => Or.inl he) (s, l) hm hch
+
+theorem Program.runStep_mono {p : Program} {Q₁ Q₂ : MachineData → Prop}
+    {E₁ E₂ : Label → MachineData → Prop}
+    (hQ : ∀ s, Q₁ s → Q₂ s) (hE : ∀ l s, E₁ l s → E₂ l s) :
+    ∀ st post, Program.runStep p Q₁ E₁ st post → Program.runStep p Q₂ E₂ st post :=
+  fun _ _ h => Program.wpF_mono hQ
+    (fun l s hx => hx.imp (hE l s) (fun ⟨hm, hp⟩ => ⟨hm, hp⟩)) _ _ h
+
+theorem Program.wpR_mono {Q₁ Q₂ : MachineData → Prop} {E₁ E₂ : Label → MachineData → Prop}
+    (hQ : ∀ s, Q₁ s → Q₂ s) (hE : ∀ l s, E₁ l s → E₂ l s) :
+    ∀ (p : Program) (s : MachineData), Program.wpR p Q₁ E₁ s → Program.wpR p Q₂ E₂ s :=
+  fun p s h => Program.wpF_mono hQ
+    (fun l s' hx => hx.imp (hE l s')
+      (fun ⟨hm, hch⟩ => ⟨hm, hch.mono (Program.runStep_mono hQ hE) (fun _ f => f)⟩)) p s h
+
+def Program.wpTrans (p : Program) :
+    PredTrans (MachineData → Prop) (Label → MachineData → Prop) Unit :=
+  ⟨fun Q E s => Program.wpR p (Q ()) E s⟩
+
+instance instWPProgram :
+    WP Program Unit (MachineData → Prop) (Label → MachineData → Prop) where
+  wpTrans := Program.wpTrans
+  wp_trans_monotone _ _ _ _ _ hE hQ := fun s =>
+    Program.wpR_mono (fun s' => hQ () s') hE _ s
+
+/-- Unfold the run wp into the traversal with its exit dispatch. -/
+theorem Program.wp_eq (p : Program) (Q : Unit → MachineData → Prop)
+    (E : Label → MachineData → Prop) (s : MachineData) :
+    wp p Q E s = Program.wpR p (Q ()) E s := rfl
+
+/-- Weakening a run triple's exit dispatch. -/
+theorem Program.triple_mono {P : MachineData → Prop} {p : Program}
+    {Q : Unit → MachineData → Prop} {E₁ E₂ : Label → MachineData → Prop}
+    (h : ⦃P⦄ p ⦃Q; E₁⦄) (hE : ∀ l s, E₁ l s → E₂ l s) : ⦃P⦄ p ⦃Q; E₂⦄ :=
+  Triple.intro fun s hp => Program.wpR_mono (fun _ h => h) hE p s (h.le_wp s hp)
+
+/-! ### Per-instruction specs
+
+One rule per instruction shape, on the cons cell. A fall-through instruction's
+precondition is the tail's wp at the record update it performs. A jump's
+precondition dispatches on the target's scope: in scope, the target's suffix
+runs on; out of scope, the exit surfaces in `E`. A label cell is skipped, or,
+when jumps re-enter it, stepped with `Program.label_loop_spec` and a
+measure-indexed invariant. -/
 
 section ProgramSpecs
 
-variable {Q : Unit → Labels → MachineData → Prop} {E : MachineState → Prop} {p : Program}
+variable {Q : Unit → MachineData → Prop} {E : Label → MachineData → Prop} {p : Program}
 
 local macro "wpF_step" : tactic =>
-  `(tactic| simp only [Program.wp_eq, Program.wpF, Directive.wp1, Directive.stepFall,
-      Directive.stepJump, Directive.interp, Instr.interp,
+  `(tactic| simp only [Program.wp_eq, Program.wpR, Program.wpF, Directive.wp1,
+      Directive.stepFall, Directive.stepJump, Directive.interp, Instr.interp,
       Operation.interp, Operand.interp, RegOrMem.interp, RelRegOrMem.interp, ConstExpr.interp,
       MachineData.set, MachineData.setReg, Reg64s.get_low64, Reg64s.set_low64, Effects.All,
       or_false, false_or])
 
 @[spec] theorem Program.nil_spec :
-    ⦃ fun labels s => Q () labels s ⦄ ([] : Program) ⦃ Q; E ⦄ :=
-  Triple.intro fun _ _ h => h
-
-/-- The sequential-composition rule: the precondition is the wp of the first
-fragment, continuing into the wp of the second, with the jump postcondition
-passed through. -/
-@[spec] theorem Program.append_spec (as bs : Program) :
-    ⦃ fun labels s => wp as (fun _ labels' s' => wp bs Q E labels' s') E labels s ⦄
-      (as ++ bs)
-    ⦃ Q; E ⦄ :=
-  Triple.intro fun labels s h => by
-    rw [Program.wp_eq, Program.wpF_append]
-    exact h
+    ⦃ fun s => Q () s ⦄ ([] : Program) ⦃ Q; E ⦄ :=
+  Triple.intro fun _ h => h
 
 @[spec] theorem Program.label_spec (l : Label) :
-    ⦃ fun labels s => wp p Q E labels s ⦄ (Directive.label l :: p) ⦃ Q; E ⦄ :=
-  Triple.intro fun _ _ h => by intro rco; wpF_step; exact h
+    ⦃ fun s => wp p Q E s ⦄ (Directive.label l :: p) ⦃ Q; E ⦄ :=
+  Triple.intro fun _ h => by
+    intro labels rco
+    wpF_step
+    exact Program.wpF_mono (fun _ h => h) (Program.exitsTo_grow _) _ _ h
 
 @[spec] theorem Program.nop_spec (asz osz : Width) (n : Nat) :
-    ⦃ fun labels s => wp p Q E labels s ⦄
+    ⦃ fun s => wp p Q E s ⦄
       (Directive.instr (.regular asz osz (.nop n)) :: p)
     ⦃ Q; E ⦄ :=
-  Triple.intro fun _ _ h => by intro rco; wpF_step; exact h
+  Triple.intro fun _ h => by
+    intro labels rco
+    wpF_step
+    exact Program.wpF_mono (fun _ h => h) (Program.exitsTo_grow _) _ _ h
 
 @[spec] theorem Program.mov_reg_imm_spec (asz : Width) (r : Reg64) (i : Int64) :
-    ⦃ fun labels s =>
-        wp p Q E labels { s with regs := s.regs.set64 r (BitVec.setWidth 64 i.toBitVec) } ⦄
+    ⦃ fun s => wp p Q E { s with regs := s.regs.set64 r (BitVec.setWidth 64 i.toBitVec) } ⦄
       (Directive.instr (.regular asz .W64 (.mov (.reg (.low r .W64)) (.imm (.int64 i)))) :: p)
     ⦃ Q; E ⦄ :=
-  Triple.intro fun _ _ h => by intro rco; wpF_step; exact h
+  Triple.intro fun _ h => by
+    intro labels rco
+    wpF_step
+    exact Program.wpF_mono (fun _ h => h) (Program.exitsTo_grow _) _ _ h
 
 @[spec] theorem Program.sub_reg_imm_spec (asz : Width) (r : Reg64) (i : Int64) :
-    ⦃ fun labels s =>
+    ⦃ fun s =>
         let b := s.regs.get64 r
         let a := BitVec.setWidth 64 i.toBitVec
         let v := b - a
-        wp p Q E labels
+        wp p Q E
           { s with
               regs := s.regs.set64 r v,
               status := StatusFlags.from_result v
@@ -512,14 +706,17 @@ passed through. -/
                   of := v.signed != b.signed - a.signed } } ⦄
       (Directive.instr (.regular asz .W64 (.sub (.reg (.low r .W64)) (.imm (.int64 i)))) :: p)
     ⦃ Q; E ⦄ :=
-  Triple.intro fun _ _ h => by intro rco; wpF_step; exact h
+  Triple.intro fun _ h => by
+    intro labels rco
+    wpF_step
+    exact Program.wpF_mono (fun _ h => h) (Program.exitsTo_grow _) _ _ h
 
 @[spec] theorem Program.add_reg_imm_spec (asz : Width) (r : Reg64) (i : Int64) :
-    ⦃ fun labels s =>
+    ⦃ fun s =>
         let a := BitVec.setWidth 64 i.toBitVec
         let b := s.regs.get64 r
         let v := a + b
-        wp p Q E labels
+        wp p Q E
           { s with
               regs := s.regs.set64 r v,
               status := StatusFlags.from_result v
@@ -528,15 +725,18 @@ passed through. -/
                   of := v.signed != a.signed + b.signed } } ⦄
       (Directive.instr (.regular asz .W64 (.add (.reg (.low r .W64)) (.imm (.int64 i)))) :: p)
     ⦃ Q; E ⦄ :=
-  Triple.intro fun _ _ h => by intro rco; wpF_step; exact h
+  Triple.intro fun _ h => by
+    intro labels rco
+    wpF_step
+    exact Program.wpF_mono (fun _ h => h) (Program.exitsTo_grow _) _ _ h
 
 @[spec] theorem Program.adc_reg_reg_spec (asz : Width) (rd rs : Reg64) :
-    ⦃ fun labels s =>
+    ⦃ fun s =>
         let a := s.regs.get64 rs
         let b := s.regs.get64 rd
         let c := s.status.cf
         let v := a + b + BitVec.ofNat 64 c.toNat
-        wp p Q E labels
+        wp p Q E
           { s with
               regs := s.regs.set64 rd v,
               status := StatusFlags.from_result v
@@ -546,41 +746,51 @@ passed through. -/
       (Directive.instr (.regular asz .W64
           (.adc (.reg (.low rd .W64)) (.regOrMem (.reg (.low rs .W64))))) :: p)
     ⦃ Q; E ⦄ :=
-  Triple.intro fun _ _ h => by intro rco; wpF_step; exact h
+  Triple.intro fun _ h => by
+    intro labels rco
+    wpF_step
+    exact Program.wpF_mono (fun _ h => h) (Program.exitsTo_grow _) _ _ h
 
 @[spec] theorem Program.mulx_reg_spec (asz : Width) (hi lo rs : Reg64) :
-    ⦃ fun labels s =>
+    ⦃ fun s =>
         let v := (s.regs.get64 rs).unsigned * (s.regs.get64 .rdx).unsigned
-        wp p Q E labels
+        wp p Q E
           { s with regs :=
               (s.regs.set64 lo (BitVec.ofInt 64 v)).set64 hi (BitVec.ofInt 64 (v >>> 64)) } ⦄
       (Directive.instr (.regular asz .W64
           (.mulx (.low hi .W64) (.low lo .W64) (.reg (.low rs .W64)))) :: p)
     ⦃ Q; E ⦄ :=
-  Triple.intro fun _ _ h => by intro rco; wpF_step; exact h
+  Triple.intro fun _ h => by
+    intro labels rco
+    wpF_step
+    exact Program.wpF_mono (fun _ h => h) (Program.exitsTo_grow _) _ _ h
 
 @[spec] theorem Program.jcc_spec (asz osz : Width) (cc : CondCode) (l : Label) :
-    ⦃ fun labels s =>
-        (cc.interp s.status = true → E (s, labels.label l))
-          ⊓ (cc.interp s.status = false → wp p Q E labels s) ⦄
+    ⦃ fun s =>
+        (cc.interp s.status = true →
+          (if Program.fromLabel p l = [] then E l s
+           else wp (Program.fromLabel p l) Q E s))
+          ⊓ (cc.interp s.status = false → wp p Q E s) ⦄
       (Directive.instr (.regular asz osz (.jcc cc l)) :: p)
     ⦃ Q; E ⦄ :=
-  Triple.intro fun labels s h => by
-    intro rco
+  Triple.intro fun s h => by
+    intro labels rco
     wpF_step
     cases hc : CondCode.interp cc s.status <;>
       simp only [hc, Bool.false_eq_true, if_true, if_false, meet_prop_eq_and,
         Effects.All, or_false, false_or] at h ⊢
-    · exact h.2 trivial
-    · exact h.1 trivial
+    · exact Program.wpF_mono (fun _ h => h) (Program.exitsTo_grow _) _ _ (h.2 trivial)
+    · exact ⟨l, rfl, rfl, Program.exitsTo_grow _ l s (Program.exitsTo_of_if (h.1 trivial))⟩
 
 @[spec] theorem Program.jmp_label_spec (asz osz : Width) (l : Label) :
-    ⦃ fun labels s => E (s, labels.label l) ⦄
+    ⦃ fun s =>
+        if Program.fromLabel p l = [] then E l s
+        else wp (Program.fromLabel p l) Q E s ⦄
       (Directive.instr (.regular asz osz
           (.jmp (.rel (.sub (.label l) .after_current_instruction)))) :: p)
     ⦃ Q; E ⦄ :=
-  Triple.intro fun labels s h => by
-    intro rco
+  Triple.intro fun s h => by
+    intro labels rco
     obtain ⟨lo, hi⟩ := rco
     wpF_step
     have hcancel : hi + (labels.label l - hi) = labels.label l := by
@@ -588,7 +798,45 @@ passed through. -/
       simp only [Int64.toBitVec_add, Int64.toBitVec_sub]
       rw [BitVec.add_comm, BitVec.sub_add_cancel]
     simp only [hcancel]
-    exact h
+    exact ⟨l, rfl, rfl, Program.exitsTo_grow _ l s (Program.exitsTo_of_if h)⟩
+
+/-- The loop rule, as the spec of a label cell that jumps re-enter: a
+measure-indexed invariant holds at the label, and every exit of the tail back
+to the label decreases the measure. `hl` says the label is not re-declared in
+the tail, so re-entry lands here. -/
+theorem Program.label_loop_spec (l : Label) (I : Nat → MachineData → Prop)
+    (hl : Program.fromLabel p l = [])
+    (hbody : ∀ k, ⦃ I k ⦄ p
+        ⦃ Q; fun l' s => if l' = l then ∃ j, j < k ∧ I j s else E l' s ⦄) :
+    ⦃ fun s => ∃ k, I k s ⦄ (Directive.label l :: p) ⦃ Q; E ⦄ := by
+  have main : ∀ k s, I k s → Program.wpR (Directive.label l :: p) (Q ()) E s := by
+    intro k
+    induction k using Nat.strongRecOn with
+    | ind k ih =>
+      intro s hI labels rco
+      wpF_step
+      have hmap : ∀ lx s', (if lx = l then ∃ j, j < k ∧ I j s' else E lx s') →
+          Program.exitsTo (Directive.label l :: p) (Q ()) E lx s' := by
+        intro lx s' he
+        by_cases hxl : lx = l
+        · rw [if_pos hxl] at he
+          obtain ⟨j, hj, hIj⟩ := he
+          have hfull : Program.fromLabel (Directive.label l :: p) lx
+              = Directive.label l :: p := by
+            rw [hxl, Program.fromLabel_cons, if_pos ⟨hl, rfl⟩]
+          refine Or.inr ⟨by rw [hfull]; exact List.cons_ne_nil _ _, step_cps _ _ _ ?_⟩
+          show Program.wpF (Program.fromLabel (Directive.label l :: p) lx) _ _ s'
+          rw [hfull]
+          exact ih j hj s' hIj
+        · rw [if_neg hxl] at he
+          exact Or.inl he
+      have hb := (hbody k).le_wp s hI
+      refine Program.wpF_mono (fun _ h => h) (fun lx s' hx => ?_) _ _ hb
+      rcases hx with he | ⟨hm, hch⟩
+      · exact hmap lx s' he
+      · refine Or.inr ⟨Program.fromLabel_cons_of_mem _ lx hm ▸ hm, ?_⟩
+        exact Program.chain_lift (fun lx' h' => Program.fromLabel_cons_of_mem _ lx' h')
+          hmap (s', lx) hm hch
+  exact Triple.intro fun s ⟨k, hI⟩ => main k s hI
 
 end ProgramSpecs
-

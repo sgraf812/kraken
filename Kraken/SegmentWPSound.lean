@@ -328,125 +328,79 @@ attribute [irreducible] Executable.directivesFromAddress
 
 /-! ## Runs
 
-A run of a program is the omni-semantics judgment over `Program.runStep`:
-`Eventually (Program.runStep prog E) Q st` says the run reaches `Q`, or leaves
-the program text at a state in `E`. -/
+`Program.sound` reads a run triple back as the baseline judgment: from the
+entry address, the machine eventually satisfies the run's fall-through
+postcondition, or sits at the address of a label whose exit assertion holds.
+Its hypotheses are the extraction facts of the program: the segment at a
+label's address is that label's scope suffix, laid out. -/
 
-/-- The omni-semantics judgment is monotone in its transition relation and in
-its postcondition. -/
-theorem Eventually.mono {State : Type} {trans₁ trans₂ : State → Post → Prop}
-    {P Q : @Post State} {st : State} (h : Eventually trans₁ P st)
-    (htrans : ∀ st' post, trans₁ st' post → trans₂ st' post) (hPQ : ∀ s, P s → Q s) :
-    Eventually trans₂ Q st := by
+private theorem Program.chain_sound [layout : Layout] {p : Program}
+    {Q : MachineData → Prop} {E : Label → MachineData → Prop}
+    (hlab : ∀ l, Program.fromLabel p l ≠ [] →
+      (layout p).directivesFromAddress ((layout p).labels.label l)
+        = Layout.frag (p.length - (Program.fromLabel p l).length) (Program.fromLabel p l)) :
+    ∀ st, Program.fromLabel p st.2 ≠ [] →
+      Eventually (Program.runStep p Q E) (fun _ => False) st →
+      Eventually (straightlineStep (layout p))
+        (fun mid => Q mid.1 ∨ ∃ l, mid.2 = (layout p).labels.label l ∧ E l mid.1)
+        (st.1, (layout p).labels.label st.2) := by
+  intro st hmem h
+  revert hmem
   induction h with
-  | done st hp => exact Eventually.done st (hPQ st hp)
-  | step st mid_p ht _ ih => exact Eventually.step st mid_p (htrans st mid_p ht) ih
+  | done st hp => exact fun _ => hp.elim
+  | step st mid_p ht _ ih =>
+    intro hmem
+    letI : Labels := (layout p).labels
+    have hw := Program.wpF_toE (Layout.frag (p.length - (Program.fromLabel p st.2).length)
+        (Program.fromLabel p st.2))
+      (Layout.frag_map_fst _ _) st.1 ((layout p).labels.label st.2) ht
+    refine Eventually.step _
+      (fun mid => (Q mid.1 ∨ ∃ l, mid.2 = (layout p).labels.label l ∧ E l mid.1)
+        ∨ (∃ l, mid.2 = (layout p).labels.label l
+            ∧ Program.fromLabel p l ≠ [] ∧ mid_p (mid.1, l)))
+      (straightlineStep_of_wp ?_) ?_
+    · rw [hlab st.2 hmem]
+      refine Directives.wpE_mono (fun mid hq => ?_) (fun mid hx => ?_) _ _ hw
+      · exact Or.inl (Or.inl hq)
+      · obtain ⟨l, ha, he⟩ := hx
+        rcases he with he | ⟨hm, hmid⟩
+        · exact Or.inl (Or.inr ⟨l, ha, he⟩)
+        · exact Or.inr ⟨l, ha, hm, hmid⟩
+    · rintro mid (hdone | ⟨l, ha, hm, hmid⟩)
+      · exact Eventually.done _ hdone
+      · have hb := ih (mid.1, l) hmid hm
+        rw [← ha] at hb
+        exact hb
 
-/-- One segment of a run. A jump whose target is a directive of `prog` keeps
-the run going, so it lands back in the continuation `post`; a jump that leaves
-the program text leaves through `E`. -/
-def Program.runStep [layout : Layout] (prog : Program) (E : MachineState → Prop)
-    (st : MachineState) (post : @Post MachineState) : Prop :=
-  wp ((layout prog).directivesFromAddress st.2) (fun _ _ mid => post mid)
-    (fun mid => ((layout prog).directivesFromAddress mid.2 = [] → E mid)
-              ∧ ((layout prog).directivesFromAddress mid.2 ≠ [] → post mid))
-    (layout prog).labels st
-
-/-- Weakening what a jump out of the program text may conclude. -/
-theorem Program.runStep_mono [Layout] {prog : Program} {E₁ E₂ : MachineState → Prop}
-    {st : MachineState} {post : @Post MachineState} (hE : ∀ st', E₁ st' → E₂ st')
-    (h : Program.runStep prog E₁ st post) : Program.runStep prog E₂ st post :=
-  Directives.wp_mono _ _ _ (fun _ h => h)
-    (fun st' h => ⟨fun hnil => hE st' (h.1 hnil), h.2⟩) h
-
-/-- Enter the run at `pc` through the extraction lemma for that address: the
-run continues from whatever the fragment there does. The fall-through
-continuation holds at every address, because a sizing-invariant traversal
-cannot know where it lands; a jump continues the run inside the text and
-leaves through `E` outside it. `vcgen` discharges the wp obligation with the
-`Program` specs. -/
-theorem Eventually.enter [layout : Layout] {prog : Program} {n : Nat} {p : Program}
-    {E : MachineState → Prop} {post : @Post MachineState} {s : MachineData} {pc : Int64}
-    (hseg : (layout prog).directivesFromAddress pc = Layout.frag n p)
-    (h : wp p (fun _ _ s' => ∀ pc', Eventually (Program.runStep prog E) post (s', pc'))
-          (fun mid => ((layout prog).directivesFromAddress mid.2 = [] → E mid)
-                    ∧ ((layout prog).directivesFromAddress mid.2 ≠ [] →
-                        Eventually (Program.runStep prog E) post mid))
-          (layout prog).labels s) :
-    Eventually (Program.runStep prog E) post (s, pc) := by
-  refine step_cps _ _ _ ?_
-  rw [Program.runStep, hseg]
-  letI : Labels := (layout prog).labels
-  have hw := Program.wpF_toE (Layout.frag n p) (Layout.frag_map_fst n p) s pc h
-  exact Directives.wpE_mono (fun st hq => hq st.2) (fun _ hh => hh) _ _ hw
-
-/-- What a run says about the machine: the baseline judgment that the run
-reaches the normal postcondition, or leaves the program text at the
-exceptional one. Every rule about `Program.runStep` is answerable to this
-reading. -/
-theorem Program.run_sound [layout : Layout] {prog : Program}
-    {Q : @Post MachineState} {E : MachineState → Prop} {st : MachineState}
-    (h : Eventually (Program.runStep prog E) Q st) :
-    Eventually (straightlineStep (layout prog)) (fun mid => Q mid ∨ E mid) st := by
-  induction h with
-  | done st hq => exact Eventually.done st (Or.inl hq)
-  | step st mid_p hstep _ ih =>
-    refine Eventually.step st _ (straightlineStep_of_wp ?_) (fun _ h => h)
-    refine Directives.wp_mono _ _ _ (fun mid hq => ih mid hq) (fun mid hmid => ?_) hstep
-    by_cases hnil : (layout prog).directivesFromAddress mid.2 = []
-    · exact Eventually.done mid (Or.inr (hmid.1 hnil))
-    · exact ih mid (hmid.2 hnil)
-
-/-- A loop verified at its header label `l`: a run that reaches the header
-with `k` iterations left reaches `post`. The back jump is not assumed
-anywhere; it is what the body's jump postcondition demands.
-
-The body is one `Program` triple, for every `k`: the body never falls off its
-fragment, and each jump exit either returns to the header with one iteration
-accounted for or, at zero, satisfies `Exit`. `hin` says the body's exits stay
-inside the program text, so the run continues at them rather than leaving
-through `E`. -/
-theorem Eventually.loop [layout : Layout] {prog : Program} {l : Label} {n : Nat}
-    {body : Program} {I : Nat → MachineData → Prop}
-    {Exit : MachineState → Prop} {E : MachineState → Prop} {post : @Post MachineState}
-    (hseg : (layout prog).directivesFromAddress ((layout prog).labels.label l)
-      = Layout.frag n body)
-    (hbody : ∀ k,
-      ⦃ fun labels s => labels = (layout prog).labels ∧ I k s ⦄
-        body
-      ⦃ fun _ _ _ => False;
-        fun st => (k ≠ 0 ∧ st.2 = (layout prog).labels.label l ∧ I (k - 1) st.1)
-                ∨ (k = 0 ∧ Exit st) ⦄)
-    (hin : ∀ st, ((st.2 = (layout prog).labels.label l) ∨ Exit st) →
-      (layout prog).directivesFromAddress st.2 ≠ [])
-    (hexit : ∀ st, Exit st → Eventually (Program.runStep prog E) post st) :
-    ∀ k s, I k s →
-      Eventually (Program.runStep prog E) post (s, (layout prog).labels.label l) := by
-  have hstep : ∀ k s, I k s →
-      Program.runStep prog E (s, (layout prog).labels.label l)
-        (fun st => (k ≠ 0 ∧ st.2 = (layout prog).labels.label l ∧ I (k - 1) st.1)
-                 ∨ (k = 0 ∧ Exit st)) := by
-    intro k s hI
-    rw [Program.runStep, hseg]
-    letI : Labels := (layout prog).labels
-    have hw := Program.wpF_toE (Layout.frag n body) (Layout.frag_map_fst n body) s
-      ((layout prog).labels.label l) ((hbody k).le_wp (layout prog).labels s ⟨rfl, hI⟩)
-    refine Directives.wpE_mono (fun st hq => hq.elim) (fun st hh => ⟨fun hnil => ?_, fun _ => hh⟩)
-      _ _ hw
-    exact absurd hnil (hin st (hh.elim (fun a => Or.inl a.2.1) (fun b => Or.inr b.2)))
-  intro k
-  induction k with
-  | zero =>
-    intro s hI
-    refine Eventually.step _ _ (hstep 0 s hI) ?_
-    rintro st (⟨h0, -⟩ | ⟨-, hx⟩)
-    · exact absurd rfl h0
-    · exact hexit st hx
-  | succ m ih =>
-    intro s hI
-    refine Eventually.step _ _ (hstep (m + 1) s hI) ?_
-    rintro ⟨d, pc⟩ (⟨-, hpc, hId⟩ | ⟨h0, -⟩)
-    · simp only at hpc hId
-      subst hpc
-      exact ih d hId
-    · exact absurd h0 (by omega)
+/-- A run triple, read at the machine: from the entry address, the machine
+eventually satisfies the fall-through postcondition, or sits at the address of
+a label whose exit assertion holds. -/
+theorem Program.sound [layout : Layout] {p : Program}
+    {Q : MachineData → Prop} {E : Label → MachineData → Prop} {s : MachineData} {pc : Int64}
+    (hentry : (layout p).directivesFromAddress pc = Layout.frag 0 p)
+    (hlab : ∀ l, Program.fromLabel p l ≠ [] →
+      (layout p).directivesFromAddress ((layout p).labels.label l)
+        = Layout.frag (p.length - (Program.fromLabel p l).length) (Program.fromLabel p l))
+    (h : Program.wpR p Q E s) :
+    Eventually (straightlineStep (layout p))
+      (fun mid => Q mid.1 ∨ ∃ l, mid.2 = (layout p).labels.label l ∧ E l mid.1)
+      (s, pc) := by
+  letI : Labels := (layout p).labels
+  have hw := Program.wpF_toE (Layout.frag 0 p) (Layout.frag_map_fst 0 p) s pc h
+  refine Eventually.step _
+    (fun mid => (Q mid.1 ∨ ∃ l, mid.2 = (layout p).labels.label l ∧ E l mid.1)
+      ∨ (∃ l, mid.2 = (layout p).labels.label l ∧ Program.fromLabel p l ≠ []
+          ∧ Eventually (Program.runStep p Q E) (fun _ => False) (mid.1, l)))
+    (straightlineStep_of_wp ?_) ?_
+  · rw [hentry]
+    refine Directives.wpE_mono (fun mid hq => ?_) (fun mid hx => ?_) _ _ hw
+    · exact Or.inl (Or.inl hq)
+    · obtain ⟨l, ha, he⟩ := hx
+      rcases he with he | ⟨hm, hch⟩
+      · exact Or.inl (Or.inr ⟨l, ha, he⟩)
+      · exact Or.inr ⟨l, ha, hm, hch⟩
+  · rintro mid (hdone | ⟨l, ha, hm, hch⟩)
+    · exact Eventually.done _ hdone
+    · have hb := Program.chain_sound hlab (mid.1, l) hm hch
+      rw [← ha] at hb
+      exact hb
