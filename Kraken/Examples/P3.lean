@@ -1,18 +1,17 @@
 /-
 The squaring loop `p3`: starting from `rdx = 2`, each iteration squares `rdx`
 by `mulx` and counts `rbx` down to zero, so the loop computes
-`rdx = 2 ^ 2 ^ rbx`. `p3_correct` proves it as one `Triple` of the run wp on
-`Program`: the fall-through postcondition holds when the run falls off the end
-of the text, and the exceptional postcondition is `False` because the run
-never leaves the text.
+`rdx = 2 ^ 2 ^ rbx`. `p3_correct` is one `Triple` of the run wp on `Program`:
+the fall-through postcondition holds when the run falls off the end of the
+text, and the label context is `False` because the run never pauses.
 
-`vcgen` walks the program through the `Program` specs. The label cells `init`
-and `_end` are skipped; the label cell `start` is stepped with
-`Program.label_loop_spec` and the measure-indexed invariant
-`rbx = k ∧ rdx = 2 ^ 2 ^ (rbx₀ - k)`, whose body obligation is
-`p3_body_spec`, the one traversal of the loop. `Program.sound` reads the
-triple back as the baseline judgment (`p3_correct_run`), fed by the
-extraction lemmas of the three labels.
+Every spec is a pure cons rule, and a jump exits into the label context `E`.
+Three traversals cover the text once each: `p3_entry_spec` from the head,
+`p3_body_spec` from `start`, `p3_exit_spec` from `_end`. `Program.tie`
+discharges the context against those bodies with the measure `n`, `start` at
+`n = k + 1` for `k` iterations left and `_end` at `n = 0`. `Program.sound`
+reads the triple back as the baseline judgment (`p3_correct_run`), fed by the
+extraction facts `p3_hlab`.
 -/
 import Kraken.Parser
 import Kraken.SegmentExtract
@@ -31,15 +30,18 @@ init:
   mov $2, %rdx
 ")
 
-/-- The loop: it squares `rdx` and counts `rbx` down, jumping to `_end` at zero. -/
-abbrev p3.loop : Program := parse("
-start:
+/-- The loop body: it squares `rdx` and counts `rbx` down, jumping to `_end`
+at zero and back to `start` otherwise. -/
+abbrev p3.body : Program := parse("
   sub $0, %rbx
   jz _end
   mulx %rdx, %rdx, %rax
   sub $1, %rbx
   jmp start
 ")
+
+/-- The loop: its header label, then the body. -/
+abbrev p3.loop : Program := Directive.label "start" :: p3.body
 
 /-- The tail the loop exits to. -/
 abbrev p3.exit : Program := parse("
@@ -165,102 +167,123 @@ count `k`: `rbx` holds `k` and `rdx` holds the `rbx₀ - k`-fold squaring. -/
 private abbrev p3_inv (rbx0 k : Nat) (s : MachineData) : Prop :=
   s.regs.rbx.toNat = k ∧ k ≤ rbx0 ∧ s.regs.rdx.toNat = 2 ^ 2 ^ (rbx0 - k) ∧ s.regs.rax = 0
 
-/-- The cells of the loop body and the tail, named so the dispatch specs and
-the walked text unify at reducible transparency. -/
-private abbrev c_sub0 : Directive :=
-  .instr (.regular .W64 .W64 (.sub (.reg (.low .rbx .W64)) (.imm (.int64 0))))
-private abbrev c_jz : Directive := .instr (.regular .W64 .W64 (.jcc .z "_end"))
-private abbrev c_mulx : Directive :=
-  .instr (.regular .W64 .W64 (.mulx (.low .rax .W64) (.low .rdx .W64) (.reg (.low .rdx .W64))))
-private abbrev c_sub1 : Directive :=
-  .instr (.regular .W64 .W64 (.sub (.reg (.low .rbx .W64)) (.imm (.int64 1))))
-private abbrev c_jmp : Directive :=
-  .instr (.regular .W64 .W64 (.jmp (.rel (.sub (.label "start") .after_current_instruction))))
-private abbrev c_end : Directive := .label "_end"
-private abbrev c_nop : Directive := .instr (.regular .W64 .W64 (.nop 1))
-
-/-- The loop body: everything the run traverses from past the `start` cell. -/
-private abbrev p3_body : Program := [c_sub0, c_jz, c_mulx, c_sub1, c_jmp, c_end, c_nop]
-
-/-- The conditional exit of the loop, with its dispatch computed: `_end` is in
-scope, and the taken branch continues at the tail fragment. -/
-private theorem p3_jz_spec (Q : Unit → MachineData → Prop) (E : Label → MachineData → Prop) :
-    ⦃ fun s =>
-        (CondCode.z.interp s.status = true → wp ([c_end, c_nop] : Program) Q E s)
-          ⊓ (CondCode.z.interp s.status = false →
-              wp ([c_mulx, c_sub1, c_jmp, c_end, c_nop] : Program) Q E s) ⦄
-      (c_jz :: [c_mulx, c_sub1, c_jmp, c_end, c_nop])
-    ⦃ Q; E ⦄ := by
-  have h := Program.jcc_spec (p := [c_mulx, c_sub1, c_jmp, c_end, c_nop])
-    (Q := Q) (E := E) .W64 .W64 .z "_end"
-  rw [show Program.fromLabel [c_mulx, c_sub1, c_jmp, c_end, c_nop] "_end"
-      = [c_end, c_nop] by decide] at h
-  simp only [show (([c_end, c_nop] : Program) = []) = False by simp, if_false] at h
-  exact h
-
-/-- The back jump of the loop, with its dispatch computed: `start` is not a
-label of what follows, so the exit surfaces at `start`. -/
-private theorem p3_jmp_spec (Q : Unit → MachineData → Prop) (E : Label → MachineData → Prop) :
-    ⦃ fun s => E "start" s ⦄
-      (c_jmp :: [c_end, c_nop])
-    ⦃ Q; E ⦄ := by
-  have h := Program.jmp_label_spec (p := [c_end, c_nop]) (Q := Q) (E := E) .W64 .W64 "start"
-  rw [show Program.fromLabel [c_end, c_nop] "start" = [] by decide] at h
-  simp only [reduceIte] at h
-  exact h
-
-/-- The loop body, traversed once: the countdown either reaches zero and the
-run continues through `_end` off the end of the text with the answer, or one
-squaring runs and the back jump exits at `start` with the invariant one step
-down. -/
-private theorem p3_body_spec (rbx0 : Nat) (hbound : 2 ^ 2 ^ rbx0 < 2 ^ 64)
-    (E : Label → MachineData → Prop) (k : Nat) :
-    ⦃ p3_inv rbx0 k ⦄
-      p3_body
+/-- The entry traversal: one pass over the whole text. The countdown test
+either exits at `_end` at once with the answer, or the first squaring runs and
+the back jump exits at `start` with the invariant one step down. -/
+private theorem p3_entry_spec (rbx0 : Nat) :
+    ⦃ fun s => s.regs.rbx.toNat = rbx0 ∧ s.regs.rax = 0 ⦄
+      p3
     ⦃ fun _ s => s.regs.rdx.toNat = 2 ^ 2 ^ rbx0 ∧ s.regs.rax = 0;
-      fun l s => if l = "start" then k ≠ 0 ∧ p3_inv rbx0 (k - 1) s else E l s ⦄ := by
-  with_reducible refine Triple.intro fun s ⟨hrbx, hle, hrdx, hrax⟩ => ?_
-  have hlt : k ≠ 0 → s.regs.rdx.toNat * s.regs.rdx.toNat < 2 ^ 64 := by
-    intro _
-    rw [hrdx, pow_sq]
+      fun l s => if l = "start" then rbx0 ≠ 0 ∧ p3_inv rbx0 (rbx0 - 1) s
+                 else if l = "_end" then s.regs.rdx.toNat = 2 ^ 2 ^ rbx0 ∧ s.regs.rax = 0
+                 else False ⦄ := by
+  simp only [p3, p3.entry, p3.loop, p3.body, p3.exit, List.cons_append, List.nil_append]
+  vcgen simplifying_assumptions with finish
+
+/-- The loop body, traversed once: entered at the header with `k` iterations
+left, the countdown either reaches zero and exits at `_end` with the answer,
+or one squaring runs and the back jump exits at `start` with the invariant one
+step down. -/
+private theorem p3_body_spec (rbx0 : Nat) (hbound : 2 ^ 2 ^ rbx0 < 2 ^ 64) (k : Nat) :
+    ⦃ p3_inv rbx0 k ⦄
+      (p3.loop ++ p3.exit)
+    ⦃ fun _ s => s.regs.rdx.toNat = 2 ^ 2 ^ rbx0 ∧ s.regs.rax = 0;
+      fun l s => if l = "start" then k ≠ 0 ∧ p3_inv rbx0 (k - 1) s
+                 else if l = "_end" then s.regs.rdx.toNat = 2 ^ 2 ^ rbx0 ∧ s.regs.rax = 0
+                 else False ⦄ := by
+  have hsq : ∀ n : Nat, n = 2 ^ 2 ^ (rbx0 - k) → k ≤ rbx0 → k ≠ 0 →
+      n * n < 2 ^ 64 ∧ n * n = 2 ^ 2 ^ (rbx0 - (k - 1)) := by
+    intro n hn hle hk
+    subst hn
+    rw [pow_sq, show rbx0 - (k - 1) = rbx0 - k + 1 from by omega]
+    refine ⟨?_, rfl⟩
     calc 2 ^ 2 ^ (rbx0 - k + 1)
         ≤ 2 ^ 2 ^ rbx0 :=
           Nat.pow_le_pow_right (by omega) (Nat.pow_le_pow_right (by omega) (by omega))
       _ < 2 ^ 64 := hbound
-  have hsq : k ≠ 0 → s.regs.rdx.toNat * s.regs.rdx.toNat = 2 ^ 2 ^ (rbx0 - (k - 1)) := by
-    intro hk
-    rw [hrdx, pow_sq, show rbx0 - (k - 1) = rbx0 - k + 1 from by omega]
-  vcgen [p3_jz_spec, p3_jmp_spec] simplifying_assumptions with finish
+  simp only [p3.loop, p3.body, p3.exit, List.cons_append, List.nil_append]
+  vcgen simplifying_assumptions with finish
+
+/-- The tail: the label and the `nop` leave the machine unchanged, and the run
+falls off the end of the text. -/
+private theorem p3_exit_spec (rbx0 : Nat) :
+    ⦃ fun s => s.regs.rdx.toNat = 2 ^ 2 ^ rbx0 ∧ s.regs.rax = 0 ⦄
+      p3.exit
+    ⦃ fun _ s => s.regs.rdx.toNat = 2 ^ 2 ^ rbx0 ∧ s.regs.rax = 0;
+      fun _ _ => False ⦄ := by
+  simp only [p3.exit]
+  vcgen simplifying_assumptions with finish
 
 /-- A run of `p3` from a machine whose `rax` is clear falls off the end of the
-text with `rdx = 2 ^ 2 ^ rbx` and `rax` clear again. The exceptional
-postcondition is `False`: the run never leaves the text. -/
+text with `rdx = 2 ^ 2 ^ rbx` and `rax` clear again. The label context is
+`False`: `Program.tie` discharges `start` and `_end` against their own bodies
+with the measure `n`, `start` at `n = k + 1` for `k` iterations left and
+`_end` at `n = 0`. -/
 theorem p3_correct (d : MachineData) (h_bounds : p3_spec d < 2 ^ 64)
     (h_rax : d.regs.rax = 0) :
     ⦃ fun s => s = d ⦄
       p3
     ⦃ fun _ s => s.regs.rdx.toNat = p3_spec d ∧ s.regs.rax = 0;
       fun _ _ => False ⦄ := by
-  with_reducible refine Triple.intro fun s hs => ?_
-  rw [hs]
   simp only [p3_spec] at h_bounds ⊢
-  simp only [p3, p3.entry, p3.loop, p3.exit, List.cons_append, List.nil_append]
-  have hbody : ∀ k, ⦃ p3_inv d.regs.rbx.toNat k ⦄ p3_body
-      ⦃ fun _ s => s.regs.rdx.toNat = 2 ^ 2 ^ d.regs.rbx.toNat ∧ s.regs.rax = 0;
-        fun l s => if l = "start" then ∃ j, j < k ∧ p3_inv d.regs.rbx.toNat j s
-                   else (fun _ (_ : MachineData) => False) l s ⦄ := by
-    intro k
-    refine Program.triple_mono
-      (p3_body_spec d.regs.rbx.toNat h_bounds (fun _ _ => False) k) ?_
-    intro l s' h
-    by_cases hl : l = "start"
-    · rw [if_pos hl] at h ⊢
-      obtain ⟨hk, hinv⟩ := h
-      exact ⟨k - 1, by omega, hinv⟩
-    · rw [if_neg hl] at h
-      exact h.elim
-  have hloop := Program.label_loop_spec "start" (p3_inv d.regs.rbx.toNat) (by decide) hbody
-  vcgen [hloop] simplifying_assumptions with finish
+  refine Program.tie
+    (V := fun n l s =>
+      if l = "start" then n ≠ 0 ∧ p3_inv d.regs.rbx.toNat (n - 1) s
+      else if l = "_end" then
+        n = 0 ∧ s.regs.rdx.toNat = 2 ^ 2 ^ d.regs.rbx.toNat ∧ s.regs.rax = 0
+      else False) ?_ ?_
+  · refine Program.triple_conseq (p3_entry_spec d.regs.rbx.toNat)
+      (fun s hs => by rw [hs]; exact ⟨rfl, h_rax⟩) ?_
+    intro l s h
+    by_cases h1 : l = "start"
+    · subst h1
+      rw [if_pos rfl] at h
+      exact Or.inl ⟨by decide, d.regs.rbx.toNat, by
+        rw [if_pos rfl]
+        exact ⟨h.1, h.2⟩⟩
+    · by_cases h2 : l = "_end"
+      · subst h2
+        rw [if_neg h1, if_pos rfl] at h
+        exact Or.inl ⟨by decide, 0, by
+          rw [if_neg h1, if_pos rfl]
+          exact ⟨rfl, h⟩⟩
+      · rw [if_neg h1, if_neg h2] at h
+        exact h.elim
+  · intro n l hmem
+    have hmem' := Program.fromLabel_mem hmem
+    simp only [p3, p3.entry, p3.loop, p3.body, p3.exit, List.mem_append, List.mem_cons,
+      List.not_mem_nil, or_false, Directive.label.injEq, reduceCtorEq] at hmem'
+    rcases hmem' with (h1 | h1) | h1 <;> subst h1
+    · refine Program.triple_conseq Program.triple_false (fun s hV => ?_)
+        (fun _ _ h => False.elim h)
+      simp at hV
+    · rw [show Program.fromLabel p3 "start" = p3.loop ++ p3.exit by decide]
+      rcases n with _ | m
+      · refine Program.triple_conseq Program.triple_false (fun s hV => ?_)
+          (fun _ _ h => False.elim h)
+        rw [if_pos rfl] at hV
+        exact hV.1 rfl
+      · refine Program.triple_conseq (p3_body_spec d.regs.rbx.toNat h_bounds m)
+          (fun s hV => by rw [if_pos rfl] at hV; simpa using hV.2) ?_
+        intro l' s h
+        by_cases h1 : l' = "start"
+        · subst h1
+          rw [if_pos rfl] at h
+          exact Or.inl ⟨by decide, m, Nat.lt_succ_self m, by
+            rw [if_pos rfl]
+            exact h⟩
+        · by_cases h2 : l' = "_end"
+          · subst h2
+            rw [if_neg h1, if_pos rfl] at h
+            exact Or.inl ⟨by decide, 0, Nat.succ_pos m, by
+              rw [if_neg h1, if_pos rfl]
+              exact ⟨rfl, h⟩⟩
+          · rw [if_neg h1, if_neg h2] at h
+            exact h.elim
+    · rw [show Program.fromLabel p3 "_end" = p3.exit by decide]
+      refine Program.triple_conseq (p3_exit_spec d.regs.rbx.toNat)
+        (fun s hV => by rw [if_neg (by decide), if_pos rfl] at hV; exact hV.2)
+        (fun _ _ h => False.elim h)
 
 variable [layout : Layout] [hv : Executable.ValidLayout (layout p3)]
 

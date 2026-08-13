@@ -573,28 +573,6 @@ theorem Program.chain_lift {q pf : Program} {Q : MachineData → Prop}
       · exact ih mid hmid hmq
       · exact hch
 
-/-- Dispatch a jump exit: out of scope it must surface in `E`; in scope, the
-target's suffix runs on. -/
-theorem Program.exitsTo_of_if {p : Program} {Q : MachineData → Prop}
-    {E : Label → MachineData → Prop} {l : Label} {s : MachineData}
-    (h : if Program.fromLabel p l = [] then E l s
-         else Program.wpR (Program.fromLabel p l) Q E s) :
-    Program.exitsTo p Q E l s := by
-  by_cases hp : Program.fromLabel p l = []
-  · rw [if_pos hp] at h
-    exact Or.inl h
-  · rw [if_neg hp] at h
-    have hsub : ∀ lx, Program.fromLabel (Program.fromLabel p l) lx ≠ [] →
-        Program.fromLabel p lx = Program.fromLabel (Program.fromLabel p l) lx :=
-      fun lx h' => Program.fromLabel_of_suffix (Program.fromLabel_suffix p l) lx h'
-    refine Or.inr ⟨hp, step_cps _ _ _ ?_⟩
-    show Program.wpF (Program.fromLabel p l) Q _ s
-    refine Program.wpF_mono (fun _ h => h) (fun lx s' hx => ?_) _ _ h
-    rcases hx with he | ⟨hmq, hch⟩
-    · exact Or.inl he
-    · exact Or.inr ⟨hsub lx hmq ▸ hmq,
-        Program.chain_lift hsub (fun _ _ he => Or.inl he) (s', lx) hmq hch⟩
-
 /-- Growing the scope by one leading cell: chains re-enter the same suffixes,
 and exits keep their dispatch. -/
 theorem Program.exitsTo_grow {p : Program} {Q : MachineData → Prop}
@@ -636,12 +614,6 @@ instance instWPProgram :
 theorem Program.wp_eq (p : Program) (Q : Unit → MachineData → Prop)
     (E : Label → MachineData → Prop) (s : MachineData) :
     wp p Q E s = Program.wpR p (Q ()) E s := rfl
-
-/-- Weakening a run triple's exit dispatch. -/
-theorem Program.triple_mono {P : MachineData → Prop} {p : Program}
-    {Q : Unit → MachineData → Prop} {E₁ E₂ : Label → MachineData → Prop}
-    (h : ⦃P⦄ p ⦃Q; E₁⦄) (hE : ∀ l s, E₁ l s → E₂ l s) : ⦃P⦄ p ⦃Q; E₂⦄ :=
-  Triple.intro fun s hp => Program.wpR_mono (fun _ h => h) hE p s (h.le_wp s hp)
 
 /-! ### Per-instruction specs
 
@@ -767,9 +739,7 @@ local macro "wpF_step" : tactic =>
 
 @[spec] theorem Program.jcc_spec (asz osz : Width) (cc : CondCode) (l : Label) :
     ⦃ fun s =>
-        (cc.interp s.status = true →
-          (if Program.fromLabel p l = [] then E l s
-           else wp (Program.fromLabel p l) Q E s))
+        (cc.interp s.status = true → E l s)
           ⊓ (cc.interp s.status = false → wp p Q E s) ⦄
       (Directive.instr (.regular asz osz (.jcc cc l)) :: p)
     ⦃ Q; E ⦄ :=
@@ -780,12 +750,10 @@ local macro "wpF_step" : tactic =>
       simp only [hc, Bool.false_eq_true, if_true, if_false, meet_prop_eq_and,
         Effects.All, or_false, false_or] at h ⊢
     · exact Program.wpF_mono (fun _ h => h) (Program.exitsTo_grow _) _ _ (h.2 trivial)
-    · exact ⟨l, rfl, rfl, Program.exitsTo_grow _ l s (Program.exitsTo_of_if (h.1 trivial))⟩
+    · exact ⟨l, rfl, rfl, Or.inl (h.1 trivial)⟩
 
 @[spec] theorem Program.jmp_label_spec (asz osz : Width) (l : Label) :
-    ⦃ fun s =>
-        if Program.fromLabel p l = [] then E l s
-        else wp (Program.fromLabel p l) Q E s ⦄
+    ⦃ fun s => E l s ⦄
       (Directive.instr (.regular asz osz
           (.jmp (.rel (.sub (.label l) .after_current_instruction)))) :: p)
     ⦃ Q; E ⦄ :=
@@ -798,45 +766,73 @@ local macro "wpF_step" : tactic =>
       simp only [Int64.toBitVec_add, Int64.toBitVec_sub]
       rw [BitVec.add_comm, BitVec.sub_add_cancel]
     simp only [hcancel]
-    exact ⟨l, rfl, rfl, Program.exitsTo_grow _ l s (Program.exitsTo_of_if h)⟩
+    exact ⟨l, rfl, rfl, Or.inl h⟩
 
-/-- The loop rule, as the spec of a label cell that jumps re-enter: a
-measure-indexed invariant holds at the label, and every exit of the tail back
-to the label decreases the measure. `hl` says the label is not re-declared in
-the tail, so re-entry lands here. -/
-theorem Program.label_loop_spec (l : Label) (I : Nat → MachineData → Prop)
-    (hl : Program.fromLabel p l = [])
-    (hbody : ∀ k, ⦃ I k ⦄ p
-        ⦃ Q; fun l' s => if l' = l then ∃ j, j < k ∧ I j s else E l' s ⦄) :
-    ⦃ fun s => ∃ k, I k s ⦄ (Directive.label l :: p) ⦃ Q; E ⦄ := by
-  have main : ∀ k s, I k s → Program.wpR (Directive.label l :: p) (Q ()) E s := by
-    intro k
-    induction k using Nat.strongRecOn with
-    | ind k ih =>
-      intro s hI labels rco
-      wpF_step
-      have hmap : ∀ lx s', (if lx = l then ∃ j, j < k ∧ I j s' else E lx s') →
-          Program.exitsTo (Directive.label l :: p) (Q ()) E lx s' := by
-        intro lx s' he
-        by_cases hxl : lx = l
-        · rw [if_pos hxl] at he
-          obtain ⟨j, hj, hIj⟩ := he
-          have hfull : Program.fromLabel (Directive.label l :: p) lx
-              = Directive.label l :: p := by
-            rw [hxl, Program.fromLabel_cons, if_pos ⟨hl, rfl⟩]
-          refine Or.inr ⟨by rw [hfull]; exact List.cons_ne_nil _ _, step_cps _ _ _ ?_⟩
-          show Program.wpF (Program.fromLabel (Directive.label l :: p) lx) _ _ s'
-          rw [hfull]
-          exact ih j hj s' hIj
-        · rw [if_neg hxl] at he
-          exact Or.inl he
-      have hb := (hbody k).le_wp s hI
-      refine Program.wpF_mono (fun _ h => h) (fun lx s' hx => ?_) _ _ hb
-      rcases hx with he | ⟨hm, hch⟩
-      · exact hmap lx s' he
-      · refine Or.inr ⟨Program.fromLabel_cons_of_mem _ lx hm ▸ hm, ?_⟩
-        exact Program.chain_lift (fun lx' h' => Program.fromLabel_cons_of_mem _ lx' h')
-          hmap (s', lx) hm hch
-  exact Triple.intro fun s ⟨k, hI⟩ => main k s hI
+/-- A triple from an absurd precondition. -/
+theorem Program.triple_false {p : Program} {Q : Unit → MachineData → Prop}
+    {E : Label → MachineData → Prop} :
+    ⦃ fun _ => False ⦄ p ⦃ Q; E ⦄ :=
+  Triple.intro fun _ h => h.elim
+
+/-- The consequence rule of the run wp. -/
+theorem Program.triple_conseq {P₁ P₂ : MachineData → Prop} {p : Program}
+    {Q : Unit → MachineData → Prop} {E₁ E₂ : Label → MachineData → Prop}
+    (h : ⦃P₁⦄ p ⦃Q; E₁⦄) (hP : ∀ s, P₂ s → P₁ s) (hE : ∀ l s, E₁ l s → E₂ l s) :
+    ⦃P₂⦄ p ⦃Q; E₂⦄ :=
+  Triple.intro fun s hp => Program.wpR_mono (fun _ h => h) hE p s (h.le_wp s (hP s hp))
+
+/-- Tie the label knot. `E` is the label context of a traversal: a jump spec
+sends its target's assertion there, and this rule discharges the in-scope part
+of the context against the labels' own bodies, once, with a measure.
+
+`V n l` is the assertion at label `l` with measure `n`. The entry traversal
+may exit at an in-scope label with some measure, or into the residual context
+`E`. Each label's body starts at the label's scope suffix and must exit at
+in-scope labels with a smaller measure, or into `E`. The run then satisfies
+the triple with the in-scope labels gone from the context. -/
+theorem Program.tie {p : Program} {P : MachineData → Prop}
+    {Q : Unit → MachineData → Prop} {E : Label → MachineData → Prop}
+    (V : Nat → Label → MachineData → Prop)
+    (hentry : ⦃P⦄ p
+      ⦃Q; fun l s => (Program.fromLabel p l ≠ [] ∧ ∃ n, V n l s) ∨ E l s⦄)
+    (hbody : ∀ n l, Program.fromLabel p l ≠ [] →
+      ⦃V n l⦄ (Program.fromLabel p l)
+      ⦃Q; fun l' s => (Program.fromLabel p l' ≠ [] ∧ ∃ n', n' < n ∧ V n' l' s)
+                    ∨ E l' s⦄) :
+    ⦃P⦄ p ⦃Q; E⦄ := by
+  refine Triple.intro fun s hp => ?_
+  have hmain : ∀ n l, Program.fromLabel p l ≠ [] → ∀ s', V n l s' →
+      Eventually (Program.runStep p (Q ()) E) (fun _ => False) (s', l) := by
+    intro n
+    induction n using Nat.strongRecOn with
+    | ind n ih =>
+      intro l hmem s' hV
+      have hmap : ∀ lx sx,
+          ((Program.fromLabel p lx ≠ [] ∧ ∃ n', n' < n ∧ V n' lx sx) ∨ E lx sx) →
+          Program.exitsTo p (Q ()) E lx sx := by
+        rintro lx sx (⟨hm', n', hn', hV'⟩ | he)
+        · exact Or.inr ⟨hm', ih n' hn' lx hm' sx hV'⟩
+        · exact Or.inl he
+      have hsub : ∀ lx, Program.fromLabel (Program.fromLabel p l) lx ≠ [] →
+          Program.fromLabel p lx = Program.fromLabel (Program.fromLabel p l) lx :=
+        fun lx h' => Program.fromLabel_of_suffix (Program.fromLabel_suffix p l) lx h'
+      refine step_cps _ _ _ ?_
+      show Program.wpF (Program.fromLabel p l) (Q ()) _ s'
+      refine Program.wpF_mono (fun _ h => h) (fun lx sx hx => ?_) _ _
+        ((hbody n l hmem).le_wp s' hV)
+      rcases hx with he | ⟨hmq, hch⟩
+      · exact hmap lx sx he
+      · exact Or.inr ⟨hsub lx hmq ▸ hmq,
+          Program.chain_lift hsub hmap (sx, lx) hmq hch⟩
+  have hmapO : ∀ lx sx,
+      ((Program.fromLabel p lx ≠ [] ∧ ∃ n, V n lx sx) ∨ E lx sx) →
+      Program.exitsTo p (Q ()) E lx sx := by
+    rintro lx sx (⟨hm', n, hV'⟩ | he)
+    · exact Or.inr ⟨hm', hmain n lx hm' sx hV'⟩
+    · exact Or.inl he
+  refine Program.wpF_mono (fun _ h => h) (fun lx sx hx => ?_) _ _ (hentry.le_wp s hp)
+  rcases hx with he | ⟨hmq, hch⟩
+  · exact hmapO lx sx he
+  · exact Or.inr ⟨hmq, Program.chain_lift (fun _ _ => rfl) hmapO (sx, lx) hmq hch⟩
 
 end ProgramSpecs
