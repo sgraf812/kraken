@@ -795,7 +795,8 @@ theorem Program.triple_conseq {P₁ P₂ : MachineData → Prop} {p : Program}
     ⦃P₂⦄ p ⦃Q; E₂⦄ :=
   Triple.intro fun s hp => Program.wpR_mono (fun _ h => h) hE p s (h.le_wp s (hP s hp))
 
-/-- Tie the label knot. `E` is the label context of a traversal: a jump spec
+/-- The engine under `Program.while_spec` and `Program.resolve`. `E` is the
+label context of a traversal: a jump spec
 sends its target's assertion there, and this rule discharges the in-scope part
 of the context against the labels' own bodies, once, with a measure.
 
@@ -804,7 +805,7 @@ may exit at an in-scope label with some measure, or into the residual context
 `E`. Each label's body starts at the label's scope suffix and must exit at
 in-scope labels with a smaller measure, or into `E`. The run then satisfies
 the triple with the in-scope labels gone from the context. -/
-theorem Program.tie {p : Program} {P : MachineData → Prop}
+private theorem Program.tie {p : Program} {P : MachineData → Prop}
     {Q : Unit → MachineData → Prop} {E : Label → MachineData → Prop}
     (V : Nat → Label → MachineData → Prop)
     (hentry : ⦃P⦄ p
@@ -848,5 +849,72 @@ theorem Program.tie {p : Program} {P : MachineData → Prop}
   rcases hx with he | ⟨hmq, hch⟩
   · exact hmapO lx sx he
   · exact Or.inr ⟨hmq, Program.chain_lift (fun _ _ => rfl) hmapO (sx, lx) hmq hch⟩
+
+/-- The while rule, at the label cell the back jumps re-enter: the invariant
+`I` holds at the header, and every exit of the tail back to `l` keeps `I` and
+decreases the variant. `hl` says the label is not re-declared in the tail, so
+re-entry lands here. -/
+theorem Program.while_spec (l : Label) (I : MachineData → Prop) (var : MachineData → Nat)
+    (hl : Program.fromLabel p l = [])
+    (hbody : ∀ n, ⦃ fun s => I s ∧ var s = n ⦄ p
+        ⦃ Q; fun l' s => if l' = l then I s ∧ var s < n else E l' s ⦄) :
+    ⦃ I ⦄ (Directive.label l :: p) ⦃ Q; E ⦄ := by
+  have main : ∀ n s, I s → var s = n →
+      Program.wpR (Directive.label l :: p) (Q ()) E s := by
+    intro n
+    induction n using Nat.strongRecOn with
+    | ind n ih =>
+      intro s hI hvar
+      intro labels rco
+      wpF_step
+      have hmap : ∀ lx sx, (if lx = l then I sx ∧ var sx < n else E lx sx) →
+          Program.exitsTo (Directive.label l :: p) (Q ()) E lx sx := by
+        intro lx sx he
+        by_cases hxl : lx = l
+        · rw [if_pos hxl] at he
+          have hfull : Program.fromLabel (Directive.label l :: p) lx
+              = Directive.label l :: p := by
+            rw [hxl, Program.fromLabel_cons, if_pos ⟨hl, rfl⟩]
+          refine Or.inr ⟨by rw [hfull]; exact List.cons_ne_nil _ _, step_cps _ _ _ ?_⟩
+          show Program.wpF (Program.fromLabel (Directive.label l :: p) lx) _ _ sx
+          rw [hfull]
+          exact ih (var sx) he.2 sx he.1 rfl
+        · rw [if_neg hxl] at he
+          exact Or.inl he
+      refine Program.wpF_mono (fun _ h => h) (fun lx sx hx => ?_) _ _
+        ((hbody n).le_wp s ⟨hI, hvar⟩)
+      rcases hx with he | ⟨hm, hch⟩
+      · exact hmap lx sx he
+      · refine Or.inr ⟨Program.fromLabel_cons_of_mem _ lx hm ▸ hm, ?_⟩
+        exact Program.chain_lift (fun lx' h' => Program.fromLabel_cons_of_mem _ lx' h')
+          hmap (sx, lx) hm hch
+  exact Triple.intro fun s hI => main (var s) s hI rfl
+
+/-- Resolve the residual label context. A forward jump strictly shortens the
+scope suffix, so each context entry is discharged against its label's body
+with no measure of its own. -/
+theorem Program.resolve {p : Program} {P : MachineData → Prop}
+    {Q : Unit → MachineData → Prop} {E : Label → MachineData → Prop}
+    (J : Label → MachineData → Prop)
+    (hentry : ⦃P⦄ p ⦃Q; fun l s => (Program.fromLabel p l ≠ [] ∧ J l s) ∨ E l s⦄)
+    (hbody : ∀ l, Program.fromLabel p l ≠ [] →
+      ⦃ J l ⦄ (Program.fromLabel p l)
+      ⦃ Q; fun l' s => (Program.fromLabel p l' ≠ [] ∧
+            (Program.fromLabel p l').length < (Program.fromLabel p l).length ∧ J l' s)
+          ∨ E l' s ⦄) :
+    ⦃P⦄ p ⦃Q; E⦄ := by
+  refine Program.tie (V := fun n l s => J l s ∧ (Program.fromLabel p l).length = n) ?_ ?_
+  · refine Program.triple_conseq hentry (fun _ h => h) ?_
+    rintro l s (⟨hm, hJ⟩ | he)
+    · exact Or.inl ⟨hm, (Program.fromLabel p l).length, hJ, rfl⟩
+    · exact Or.inr he
+  · intro n l hmem
+    by_cases hn : (Program.fromLabel p l).length = n
+    · refine Program.triple_conseq (hbody l hmem) (fun s hV => hV.1) ?_
+      rintro l' s (⟨hm', hlt, hJ'⟩ | he)
+      · exact Or.inl ⟨hm', (Program.fromLabel p l').length, hn ▸ hlt, hJ', rfl⟩
+      · exact Or.inr he
+    · exact Program.triple_conseq Program.triple_false
+        (fun s hV => (hn hV.2).elim) (fun _ _ h => False.elim h)
 
 end ProgramSpecs

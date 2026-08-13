@@ -5,13 +5,13 @@ by `mulx` and counts `rbx` down to zero, so the loop computes
 the fall-through postcondition holds when the run falls off the end of the
 text, and the label context is `False` because the run never pauses.
 
-Every spec is a pure cons rule, and a jump exits into the label context `E`.
-Three traversals cover the text once each: `p3_entry_spec` from the head,
-`p3_body_spec` from `start`, `p3_exit_spec` from `_end`. `Program.tie`
-discharges the context against those bodies with the measure `n`, `start` at
-`n = k + 1` for `k` iterations left and `_end` at `n = 0`. `Program.sound`
-reads the triple back as the baseline judgment (`p3_correct_run`), fed by the
-extraction facts `p3_hlab`.
+The walk is one `vcgen` call (`p3_full_spec`): the prologue establishes the
+invariant, and `Program.while_spec` steps the loop at its header with the
+invariant `rdx = 2 ^ 2 ^ (rbx₀ - rbx)` and the variant `rbx`. The loop body is
+one traversal (`p3_body_spec`), whose forward exit pauses at `_end`;
+`Program.resolve` discharges that pause against the tail (`p3_exit_spec`).
+`Program.sound` reads the triple back as the baseline judgment
+(`p3_correct_run`), fed by the extraction facts `p3_hlab`.
 -/
 import Kraken.Parser
 import Kraken.SegmentExtract
@@ -56,7 +56,7 @@ def p3 : Program := p3.entry ++ p3.loop ++ p3.exit
 @[spec] private theorem p3_def_spec {Q : Unit → MachineData → Prop}
     {E : Label → MachineData → Prop} :
     ⦃ fun s => wp (p3.entry ++ p3.loop ++ p3.exit) Q E s ⦄ p3 ⦃ Q; E ⦄ :=
-  Triple.intro fun s h => h
+  Triple.intro fun _ h => h
 
 /-- The split at the loop header. -/
 private theorem p3_eq_entry_append : p3 = p3.entry ++ (p3.loop ++ p3.exit) := by simp [p3]
@@ -168,41 +168,30 @@ end Extraction
 
 section Proof
 
-/-- The loop invariant at the header, indexed by the remaining iteration
-count `k`: `rbx` holds `k` and `rdx` holds the `rbx₀ - k`-fold squaring. -/
-private abbrev p3_inv (rbx0 k : Nat) (s : MachineData) : Prop :=
-  s.regs.rbx.toNat = k ∧ k ≤ rbx0 ∧ s.regs.rdx.toNat = 2 ^ 2 ^ (rbx0 - k) ∧ s.regs.rax = 0
+/-- The loop invariant at the header: `rdx` holds the `rbx₀ - rbx`-fold
+squaring, and `rbx` is the variant. -/
+private abbrev p3_inv (rbx0 : Nat) (s : MachineData) : Prop :=
+  s.regs.rdx.toNat = 2 ^ 2 ^ (rbx0 - s.regs.rbx.toNat)
+  ∧ s.regs.rbx.toNat ≤ rbx0 ∧ s.regs.rax = 0
 
-/-- The entry traversal: one pass over the whole text. The countdown test
-either exits at `_end` at once with the answer, or the first squaring runs and
-the back jump exits at `start` with the invariant one step down. -/
-private theorem p3_entry_spec (rbx0 : Nat) :
-    ⦃ fun s => s.regs.rbx.toNat = rbx0 ∧ s.regs.rax = 0 ⦄
-      p3
+/-- The loop body, traversed once with `rbx = n`: the countdown either reaches
+zero and exits at `_end` with the answer, or one squaring runs and the back
+jump exits at `start` with the invariant kept and the variant decreased. -/
+private theorem p3_body_spec (rbx0 : Nat) (hbound : 2 ^ 2 ^ rbx0 < 2 ^ 64) (n : Nat) :
+    ⦃ fun s => p3_inv rbx0 s ∧ s.regs.rbx.toNat = n ⦄
+      (p3.body ++ p3.exit)
     ⦃ fun _ s => s.regs.rdx.toNat = 2 ^ 2 ^ rbx0 ∧ s.regs.rax = 0;
-      fun l s => if l = "start" then rbx0 ≠ 0 ∧ p3_inv rbx0 (rbx0 - 1) s
-                 else if l = "_end" then s.regs.rdx.toNat = 2 ^ 2 ^ rbx0 ∧ s.regs.rax = 0
+      fun l s => if l = "start" then p3_inv rbx0 s ∧ s.regs.rbx.toNat < n
+                 else if l = "_end" then
+                   s.regs.rdx.toNat = 2 ^ 2 ^ rbx0 ∧ s.regs.rax = 0
                  else False ⦄ := by
-  vcgen simplifying_assumptions with finish
-
-/-- The loop body, traversed once: entered at the header with `k` iterations
-left, the countdown either reaches zero and exits at `_end` with the answer,
-or one squaring runs and the back jump exits at `start` with the invariant one
-step down. -/
-private theorem p3_body_spec (rbx0 : Nat) (hbound : 2 ^ 2 ^ rbx0 < 2 ^ 64) (k : Nat) :
-    ⦃ p3_inv rbx0 k ⦄
-      (p3.loop ++ p3.exit)
-    ⦃ fun _ s => s.regs.rdx.toNat = 2 ^ 2 ^ rbx0 ∧ s.regs.rax = 0;
-      fun l s => if l = "start" then k ≠ 0 ∧ p3_inv rbx0 (k - 1) s
-                 else if l = "_end" then s.regs.rdx.toNat = 2 ^ 2 ^ rbx0 ∧ s.regs.rax = 0
-                 else False ⦄ := by
-  have hsq : ∀ n : Nat, n = 2 ^ 2 ^ (rbx0 - k) → k ≤ rbx0 → k ≠ 0 →
-      n * n < 2 ^ 64 ∧ n * n = 2 ^ 2 ^ (rbx0 - (k - 1)) := by
-    intro n hn hle hk
-    subst hn
-    rw [pow_sq, show rbx0 - (k - 1) = rbx0 - k + 1 from by omega]
+  have hsq : ∀ m : Nat, m = 2 ^ 2 ^ (rbx0 - n) → n ≤ rbx0 → n ≠ 0 →
+      m * m < 2 ^ 64 ∧ m * m = 2 ^ 2 ^ (rbx0 - (n - 1)) := by
+    intro m hm hle hb
+    subst hm
+    rw [pow_sq, show rbx0 - (n - 1) = rbx0 - n + 1 from by omega]
     refine ⟨?_, rfl⟩
-    calc 2 ^ 2 ^ (rbx0 - k + 1)
+    calc 2 ^ 2 ^ (rbx0 - n + 1)
         ≤ 2 ^ 2 ^ rbx0 :=
           Nat.pow_le_pow_right (by omega) (Nat.pow_le_pow_right (by omega) (by omega))
       _ < 2 ^ 64 := hbound
@@ -217,11 +206,22 @@ private theorem p3_exit_spec (rbx0 : Nat) :
       fun _ _ => False ⦄ := by
   vcgen simplifying_assumptions with finish
 
+/-- One walk of the text: the prologue establishes the invariant, the while
+rule steps the loop at its header, and the run ends past the text or pauses
+at `_end` with the answer. -/
+private theorem p3_full_spec (rbx0 : Nat) (hbound : 2 ^ 2 ^ rbx0 < 2 ^ 64) :
+    ⦃ fun s => s.regs.rbx.toNat = rbx0 ∧ s.regs.rax = 0 ⦄
+      p3
+    ⦃ fun _ s => s.regs.rdx.toNat = 2 ^ 2 ^ rbx0 ∧ s.regs.rax = 0;
+      fun l s => if l = "_end" then s.regs.rdx.toNat = 2 ^ 2 ^ rbx0 ∧ s.regs.rax = 0
+                 else False ⦄ := by
+  have hwhile := Program.while_spec "start" (p3_inv rbx0) (fun s => s.regs.rbx.toNat)
+    (by decide) (p3_body_spec rbx0 hbound)
+  vcgen [hwhile] simplifying_assumptions with finish
+
 /-- A run of `p3` from a machine whose `rax` is clear falls off the end of the
-text with `rdx = 2 ^ 2 ^ rbx` and `rax` clear again. The label context is
-`False`: `Program.tie` discharges `start` and `_end` against their own bodies
-with the measure `n`, `start` at `n = k + 1` for `k` iterations left and
-`_end` at `n = 0`. -/
+text with `rdx = 2 ^ 2 ^ rbx` and `rax` clear again. `Program.resolve`
+discharges the one paused context entry, `_end`, against the tail. -/
 theorem p3_correct (d : MachineData) (h_bounds : p3_spec d < 2 ^ 64)
     (h_rax : d.regs.rax = 0) :
     ⦃ fun s => s = d ⦄
@@ -229,64 +229,26 @@ theorem p3_correct (d : MachineData) (h_bounds : p3_spec d < 2 ^ 64)
     ⦃ fun _ s => s.regs.rdx.toNat = p3_spec d ∧ s.regs.rax = 0;
       fun _ _ => False ⦄ := by
   simp only [p3_spec] at h_bounds ⊢
-  refine Program.tie
-    (V := fun n l s =>
-      if l = "start" then n ≠ 0 ∧ p3_inv d.regs.rbx.toNat (n - 1) s
-      else if l = "_end" then
-        n = 0 ∧ s.regs.rdx.toNat = 2 ^ 2 ^ d.regs.rbx.toNat ∧ s.regs.rax = 0
+  refine Program.resolve (J := fun l s =>
+      if l = "_end" then s.regs.rdx.toNat = 2 ^ 2 ^ d.regs.rbx.toNat ∧ s.regs.rax = 0
       else False) ?_ ?_
-  · refine Program.triple_conseq (p3_entry_spec d.regs.rbx.toNat)
+  · refine Program.triple_conseq (p3_full_spec d.regs.rbx.toNat h_bounds)
       (fun s hs => by rw [hs]; exact ⟨rfl, h_rax⟩) ?_
     intro l s h
-    by_cases h1 : l = "start"
-    · subst h1
+    by_cases h2 : l = "_end"
+    · subst h2
       rw [if_pos rfl] at h
-      exact Or.inl ⟨by decide, d.regs.rbx.toNat, by
-        rw [if_pos rfl]
-        exact ⟨h.1, h.2⟩⟩
-    · by_cases h2 : l = "_end"
-      · subst h2
-        rw [if_neg h1, if_pos rfl] at h
-        exact Or.inl ⟨by decide, 0, by
-          rw [if_neg h1, if_pos rfl]
-          exact ⟨rfl, h⟩⟩
-      · rw [if_neg h1, if_neg h2] at h
-        exact h.elim
-  · intro n l hmem
-    have hmem' := Program.fromLabel_mem hmem
-    simp only [p3, p3.entry, p3.loop, p3.body, p3.exit, List.mem_append, List.mem_cons,
-      List.not_mem_nil, or_false, Directive.label.injEq, reduceCtorEq] at hmem'
-    rcases hmem' with (h1 | h1) | h1 <;> subst h1
-    · refine Program.triple_conseq Program.triple_false (fun s hV => ?_)
-        (fun _ _ h => False.elim h)
-      simp at hV
-    · rw [show Program.fromLabel p3 "start" = p3.loop ++ p3.exit by decide]
-      rcases n with _ | m
-      · refine Program.triple_conseq Program.triple_false (fun s hV => ?_)
-          (fun _ _ h => False.elim h)
-        rw [if_pos rfl] at hV
-        exact hV.1 rfl
-      · refine Program.triple_conseq (p3_body_spec d.regs.rbx.toNat h_bounds m)
-          (fun s hV => by rw [if_pos rfl] at hV; simpa using hV.2) ?_
-        intro l' s h
-        by_cases h1 : l' = "start"
-        · subst h1
-          rw [if_pos rfl] at h
-          exact Or.inl ⟨by decide, m, Nat.lt_succ_self m, by
-            rw [if_pos rfl]
-            exact h⟩
-        · by_cases h2 : l' = "_end"
-          · subst h2
-            rw [if_neg h1, if_pos rfl] at h
-            exact Or.inl ⟨by decide, 0, Nat.succ_pos m, by
-              rw [if_neg h1, if_pos rfl]
-              exact ⟨rfl, h⟩⟩
-          · rw [if_neg h1, if_neg h2] at h
-            exact h.elim
-    · rw [show Program.fromLabel p3 "_end" = p3.exit by decide]
+      exact Or.inl ⟨by decide, by rw [if_pos rfl]; exact h⟩
+    · rw [if_neg h2] at h
+      exact h.elim
+  · intro l hmem
+    by_cases h2 : l = "_end"
+    · subst h2
+      rw [show Program.fromLabel p3 "_end" = p3.exit by decide]
       refine Program.triple_conseq (p3_exit_spec d.regs.rbx.toNat)
-        (fun s hV => by rw [if_neg (by decide), if_pos rfl] at hV; exact hV.2)
-        (fun _ _ h => False.elim h)
+        (fun s hJ => by rw [if_pos rfl] at hJ; exact hJ) (fun _ _ h => False.elim h)
+    · refine Program.triple_conseq Program.triple_false
+        (fun s hJ => by rw [if_neg h2] at hJ; exact hJ.elim) (fun _ _ h => False.elim h)
 
 variable [layout : Layout] [hv : Executable.ValidLayout (layout p3)]
 
