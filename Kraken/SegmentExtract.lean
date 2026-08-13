@@ -192,17 +192,6 @@ theorem addrOf_succ (e : Executable) {n : Nat} {d : Directive} {z : Nat}
   unfold addrOf
   rw [sizeBefore_succ e hd, int64_ofNat_add, Int64.add_assoc]
 
-/-- Stepping one directive, given only the size it occupies. -/
-theorem addrOf_succ' (e : Executable) {n z : Nat} (h : (e.2[n]?).map (·.2) = some z) :
-    e.addrOf (n + 1) = e.addrOf n + .ofNat z := by
-  match hd : e.2[n]? with
-  | some (d, z') =>
-    rw [hd] at h
-    simp only [Option.map_some, Option.some.injEq] at h
-    subst h
-    exact addrOf_succ e hd
-  | none => rw [hd] at h; simp at h
-
 /-- Distinct addresses at a cut point that follows a non-label directive. -/
 theorem addrOf_ne_of_valid (e : Executable) [hv : ValidLayout e] {k n : Nat}
     (hk : k < n) (hsome : (e.2[n - 1]?).isSome)

@@ -336,9 +336,9 @@ theorem Directives.wp_cons_jmp_label (asz osz : Width) (l : Label) (sz : Nat) (l
 
 /-! ### Fragments
 
-A laid-out fragment is stepped through the same rules as a directive list: the
-three specs below let `vcgen` walk `Layout.frag` down to the cons cells the
-per-directive specs are keyed on, and split it where the program splits. -/
+`Layout.frag` names a fragment as it is laid out at a position of its host
+program. Extraction lemmas end in `Layout.frag` terms, and `Program.wpF_toE`
+instantiates a fragment's triple at them. -/
 
 /-- The fragment `p` as it is laid out from position `n` of the program that
 contains it: each directive paired with the size the layout assigns to its
@@ -356,27 +356,16 @@ def Layout.frag [layout : Layout] (n : Nat) (p : Program) : List (Directive × N
     Layout.frag n (d :: ds) = (d, layout.size n) :: Layout.frag (n + 1) ds := by
   simp [Layout.frag, List.mapIdx_cons, Nat.add_assoc, Nat.add_comm 1]
 
+@[simp] theorem Layout.frag_map_fst [Layout] (n : Nat) (p : Program) :
+    (Layout.frag n p).map Prod.fst = p := by
+  induction p generalizing n with
+  | nil => rfl
+  | cons d ds ih => simp [ih]
+
 /-- A fragment splits where the program it lays out splits. -/
 theorem Layout.frag_append [layout : Layout] (n : Nat) (as bs : Program) :
     Layout.frag n (as ++ bs) = Layout.frag n as ++ Layout.frag (n + as.length) bs := by
   simp [Layout.frag, List.mapIdx_append, Nat.add_left_comm, Nat.add_comm]
-
-@[spec] theorem Directives.frag_nil_spec [Layout] (n : Nat) :
-    ⦃ fun labels st => Q () labels st ⦄ (Layout.frag n ([] : Program)) ⦃ Q; E ⦄ :=
-  Triple.intro fun _ _ h => h
-
-@[spec] theorem Directives.frag_cons_spec [layout : Layout] (n : Nat) (d : Directive)
-    (p : Program) :
-    ⦃ fun labels st => wp ((d, layout.size n) :: Layout.frag (n + 1) p) Q E labels st ⦄
-      (Layout.frag n (d :: p))
-    ⦃ Q; E ⦄ :=
-  Triple.intro fun _ _ h => by rw [Layout.frag_cons]; exact h
-
-@[spec] theorem Directives.frag_append_spec [Layout] (n : Nat) (as bs : Program) :
-    ⦃ fun labels st => wp (Layout.frag n as ++ Layout.frag (n + as.length) bs) Q E labels st ⦄
-      (Layout.frag n (as ++ bs))
-    ⦃ Q; E ⦄ :=
-  Triple.intro fun _ _ h => by rw [Layout.frag_append]; exact h
 
 /-- The sequential-composition rule, the analogue of the `Bind.bind` spec: the
 precondition is the wp of the first piece, continuing into the wp of the
@@ -405,63 +394,201 @@ example :
 
 /-! ### Programs
 
-A `Program` is a directive list with no sizes. Its transformer quantifies over
-every sizing a layout can give the list, so sizing invariance is the meaning of
-`wp`, and a fragment's triple mentions no layout and no position. `Labels`
-stays in the assertion language as the label footprint: the addresses a
-fragment's jumps name are its whole interface to the host program. -/
+A `Program` is a directive list with no sizes. Its transformer runs each
+directive at every instruction range a layout can give it, so sizing
+invariance is the meaning of `wp`: a fragment's triple mentions no layout and
+no position. The fall-through channel carries `MachineData` alone, because the
+address after an instruction of unknown size is unknown; a jump exit (`E`)
+names an address through `Labels`, the label footprint, and those addresses
+are a fragment's whole interface to its host program. -/
 
-@[simp] theorem Layout.frag_map_fst [Layout] (n : Nat) (p : Program) :
-    (Layout.frag n p).map Prod.fst = p := by
-  induction p generalizing n with
-  | nil => rfl
-  | cons d ds ih => simp [ih]
+def Program.wpF [Labels] : Program → (MachineData → Prop) → (MachineState → Prop) →
+    MachineData → Prop
+  | [], Q, _, s => Q s
+  | d :: p, Q, E, s => ∀ r : Std.Rco Int64, d.wp1 r (fun s' => Program.wpF p Q E s') E s
+
+theorem Program.wpF_mono [Labels] {Q₁ Q₂ : MachineData → Prop} {E₁ E₂ : MachineState → Prop}
+    (hQ : ∀ s, Q₁ s → Q₂ s) (hE : ∀ st, E₁ st → E₂ st) :
+    ∀ (p : Program) (s : MachineData), Program.wpF p Q₁ E₁ s → Program.wpF p Q₂ E₂ s
+  | [], s => hQ s
+  | _ :: p, _ => fun h r => Directive.wp1_mono (fun s' => wpF_mono hQ hE p s') hE (h r)
 
 def Program.wpTrans (p : Program) :
-    PredTrans (Labels → MachineState → Prop) (MachineState → Prop) Unit :=
-  ⟨fun Q E labels st => ∀ ds : List (Directive × Nat),
-      ds.map Prod.fst = p → @Directives.wpE labels ds (Q () labels) E st⟩
+    PredTrans (Labels → MachineData → Prop) (MachineState → Prop) Unit :=
+  ⟨fun Q E labels s => @Program.wpF labels p (Q () labels) E s⟩
 
 instance instWPProgram :
-    WP Program Unit (Labels → MachineState → Prop) (MachineState → Prop) where
+    WP Program Unit (Labels → MachineData → Prop) (MachineState → Prop) where
   wpTrans := Program.wpTrans
-  wp_trans_monotone _ _ _ _ _ hE hQ := fun labels st h ds hds =>
-    Directives.wpE_mono (fun st' => hQ () labels st') hE ds st (h ds hds)
+  wp_trans_monotone _ _ _ _ _ hE hQ := fun labels s =>
+    Program.wpF_mono (fun s' => hQ () labels s') hE _ s
 
-/-- A sized list is the fragment it projects to, laid out by the sizes it
-carries. -/
-private theorem mapIdx_fst_eq_self {α β : Type _} :
-    ∀ (f : Nat → β) (ds : List (α × β)), (∀ i (h : i < ds.length), f i = ds[i].2) →
-      (ds.map Prod.fst).mapIdx (fun i a => (a, f i)) = ds
-  | _, [], _ => rfl
-  | f, (a, b) :: tl, h => by
-    have h0 : f 0 = b := h 0 (by simp)
-    simp only [List.map_cons, List.mapIdx_cons, h0]
-    exact congrArg _ (mapIdx_fst_eq_self (fun i => f (i + 1)) tl fun i hi => by
-      have := h (i + 1) (by simpa using Nat.succ_lt_succ hi)
-      simpa using this)
+/-- Unfold a fragment wp into the transformer fold. -/
+theorem Program.wp_eq (p : Program) (Q : Unit → Labels → MachineData → Prop)
+    (E : MachineState → Prop) (labels : Labels) (s : MachineData) :
+    wp p Q E labels s = @Program.wpF labels p (Q () labels) E s := rfl
 
-/-- A triple proved for the fragment at every layout and position is a triple
-for the fragment itself. This is the proof vehicle: `vcgen` walks the concrete
-`Layout.frag` list, and the conversion happens once. -/
-theorem Program.triple_of_frag {P : Labels → MachineState → Prop} {p : Program}
-    {Q : Unit → Labels → MachineState → Prop} {E : MachineState → Prop}
-    (h : ∀ (layout : Layout) (n : Nat), ⦃P⦄ Layout.frag n p ⦃Q; E⦄) :
-    ⦃P⦄ p ⦃Q; E⦄ := by
-  refine Triple.intro fun labels st hp => ?_
-  intro ds hds
-  have hfrag : @Layout.frag ⟨0, fun i => ((ds[i]?).map Prod.snd).getD 0⟩ 0 p = ds := by
-    subst hds
-    simp only [Layout.frag, Nat.zero_add]
-    exact mapIdx_fst_eq_self _ ds fun i hi => by simp [List.getElem?_eq_getElem hi]
-  have hw := (h ⟨0, fun i => ((ds[i]?).map Prod.snd).getD 0⟩ 0).le_wp labels st hp
-  rw [hfrag] at hw
-  exact hw
+/-- Sequential composition: a fall-through of `as` continues into `bs`, a jump
+exits the whole fragment. -/
+theorem Program.wpF_append [Labels] (as bs : Program) (Q : MachineData → Prop)
+    (E : MachineState → Prop) :
+    Program.wpF (as ++ bs) Q E = Program.wpF as (Program.wpF bs Q E) E := by
+  induction as with
+  | nil => rfl
+  | cons d p ih => funext s; simp only [List.cons_append, Program.wpF, ih]
 
-/-- A fragment's triple, placed: the fragment at position `n` under `layout`. -/
-theorem Program.triple_frag [layout : Layout] {P : Labels → MachineState → Prop}
-    {p : Program} {Q : Unit → Labels → MachineState → Prop} {E : MachineState → Prop}
-    (h : ⦃P⦄ p ⦃Q; E⦄) (n : Nat) : ⦃P⦄ Layout.frag n p ⦃Q; E⦄ :=
-  Triple.intro fun labels st hp =>
-    h.le_wp labels st hp (Layout.frag n p) (Layout.frag_map_fst n p)
+/-- A fragment's wp, instantiated at one sizing and one entry address, is the
+sized fold. This is the bridge from a fragment's triple to the run of a
+program that contains the fragment. -/
+theorem Program.wpF_toE [Labels] {Q : MachineData → Prop} {E : MachineState → Prop} :
+    ∀ {p : Program} (ds : List (Directive × Nat)), ds.map Prod.fst = p →
+      ∀ (s : MachineData) (pc : Int64), Program.wpF p Q E s →
+        Directives.wpE ds (fun st => Q st.1) E (s, pc)
+  | _, [], rfl, _, _, hw => hw
+  | _, (d, z) :: ds, rfl, _s, pc, hw =>
+    Directive.wp1_mono (fun s' hs' => Program.wpF_toE ds rfl s' (pc + .ofNat z) hs')
+      (fun _ h => h) (hw ⟨pc, pc + .ofNat z⟩)
+
+/-! ### Per-instruction specs on `Program`
+
+The same rules as the sized specs, with no size and no program counter: a
+fall-through instruction's precondition is the tail's wp at the record update
+it performs, and a jump's precondition sends the label's address to `E`. -/
+
+section ProgramSpecs
+
+variable {Q : Unit → Labels → MachineData → Prop} {E : MachineState → Prop} {p : Program}
+
+local macro "wpF_step" : tactic =>
+  `(tactic| simp only [Program.wp_eq, Program.wpF, Directive.wp1, Directive.stepFall,
+      Directive.stepJump, Directive.interp, Instr.interp,
+      Operation.interp, Operand.interp, RegOrMem.interp, RelRegOrMem.interp, ConstExpr.interp,
+      MachineData.set, MachineData.setReg, Reg64s.get_low64, Reg64s.set_low64, Effects.All,
+      or_false, false_or])
+
+@[spec] theorem Program.nil_spec :
+    ⦃ fun labels s => Q () labels s ⦄ ([] : Program) ⦃ Q; E ⦄ :=
+  Triple.intro fun _ _ h => h
+
+/-- The sequential-composition rule: the precondition is the wp of the first
+fragment, continuing into the wp of the second, with the jump postcondition
+passed through. -/
+@[spec] theorem Program.append_spec (as bs : Program) :
+    ⦃ fun labels s => wp as (fun _ labels' s' => wp bs Q E labels' s') E labels s ⦄
+      (as ++ bs)
+    ⦃ Q; E ⦄ :=
+  Triple.intro fun labels s h => by
+    rw [Program.wp_eq, Program.wpF_append]
+    exact h
+
+@[spec] theorem Program.label_spec (l : Label) :
+    ⦃ fun labels s => wp p Q E labels s ⦄ (Directive.label l :: p) ⦃ Q; E ⦄ :=
+  Triple.intro fun _ _ h => by intro rco; wpF_step; exact h
+
+@[spec] theorem Program.nop_spec (asz osz : Width) (n : Nat) :
+    ⦃ fun labels s => wp p Q E labels s ⦄
+      (Directive.instr (.regular asz osz (.nop n)) :: p)
+    ⦃ Q; E ⦄ :=
+  Triple.intro fun _ _ h => by intro rco; wpF_step; exact h
+
+@[spec] theorem Program.mov_reg_imm_spec (asz : Width) (r : Reg64) (i : Int64) :
+    ⦃ fun labels s =>
+        wp p Q E labels { s with regs := s.regs.set64 r (BitVec.setWidth 64 i.toBitVec) } ⦄
+      (Directive.instr (.regular asz .W64 (.mov (.reg (.low r .W64)) (.imm (.int64 i)))) :: p)
+    ⦃ Q; E ⦄ :=
+  Triple.intro fun _ _ h => by intro rco; wpF_step; exact h
+
+@[spec] theorem Program.sub_reg_imm_spec (asz : Width) (r : Reg64) (i : Int64) :
+    ⦃ fun labels s =>
+        let b := s.regs.get64 r
+        let a := BitVec.setWidth 64 i.toBitVec
+        let v := b - a
+        wp p Q E labels
+          { s with
+              regs := s.regs.set64 r v,
+              status := StatusFlags.from_result v
+                { cf := v.unsigned != b.unsigned - a.unsigned,
+                  af := (v.take 4).unsigned != (b.take 4).unsigned - (a.take 4).unsigned,
+                  of := v.signed != b.signed - a.signed } } ⦄
+      (Directive.instr (.regular asz .W64 (.sub (.reg (.low r .W64)) (.imm (.int64 i)))) :: p)
+    ⦃ Q; E ⦄ :=
+  Triple.intro fun _ _ h => by intro rco; wpF_step; exact h
+
+@[spec] theorem Program.add_reg_imm_spec (asz : Width) (r : Reg64) (i : Int64) :
+    ⦃ fun labels s =>
+        let a := BitVec.setWidth 64 i.toBitVec
+        let b := s.regs.get64 r
+        let v := a + b
+        wp p Q E labels
+          { s with
+              regs := s.regs.set64 r v,
+              status := StatusFlags.from_result v
+                { cf := v.unsigned != a.unsigned + b.unsigned,
+                  af := (v.take 4).unsigned != (a.take 4).unsigned + (b.take 4).unsigned,
+                  of := v.signed != a.signed + b.signed } } ⦄
+      (Directive.instr (.regular asz .W64 (.add (.reg (.low r .W64)) (.imm (.int64 i)))) :: p)
+    ⦃ Q; E ⦄ :=
+  Triple.intro fun _ _ h => by intro rco; wpF_step; exact h
+
+@[spec] theorem Program.adc_reg_reg_spec (asz : Width) (rd rs : Reg64) :
+    ⦃ fun labels s =>
+        let a := s.regs.get64 rs
+        let b := s.regs.get64 rd
+        let c := s.status.cf
+        let v := a + b + BitVec.ofNat 64 c.toNat
+        wp p Q E labels
+          { s with
+              regs := s.regs.set64 rd v,
+              status := StatusFlags.from_result v
+                { cf := v.unsigned != a.unsigned + b.unsigned + c,
+                  af := (v.take 4).unsigned != (a.take 4).unsigned + (b.take 4).unsigned + c,
+                  of := v.signed != a.signed + b.signed + c } } ⦄
+      (Directive.instr (.regular asz .W64
+          (.adc (.reg (.low rd .W64)) (.regOrMem (.reg (.low rs .W64))))) :: p)
+    ⦃ Q; E ⦄ :=
+  Triple.intro fun _ _ h => by intro rco; wpF_step; exact h
+
+@[spec] theorem Program.mulx_reg_spec (asz : Width) (hi lo rs : Reg64) :
+    ⦃ fun labels s =>
+        let v := (s.regs.get64 rs).unsigned * (s.regs.get64 .rdx).unsigned
+        wp p Q E labels
+          { s with regs :=
+              (s.regs.set64 lo (BitVec.ofInt 64 v)).set64 hi (BitVec.ofInt 64 (v >>> 64)) } ⦄
+      (Directive.instr (.regular asz .W64
+          (.mulx (.low hi .W64) (.low lo .W64) (.reg (.low rs .W64)))) :: p)
+    ⦃ Q; E ⦄ :=
+  Triple.intro fun _ _ h => by intro rco; wpF_step; exact h
+
+@[spec] theorem Program.jcc_spec (asz osz : Width) (cc : CondCode) (l : Label) :
+    ⦃ fun labels s =>
+        (cc.interp s.status = true → E (s, labels.label l))
+          ⊓ (cc.interp s.status = false → wp p Q E labels s) ⦄
+      (Directive.instr (.regular asz osz (.jcc cc l)) :: p)
+    ⦃ Q; E ⦄ :=
+  Triple.intro fun labels s h => by
+    intro rco
+    wpF_step
+    cases hc : CondCode.interp cc s.status <;>
+      simp only [hc, Bool.false_eq_true, if_true, if_false, meet_prop_eq_and,
+        Effects.All, or_false, false_or] at h ⊢
+    · exact h.2 trivial
+    · exact h.1 trivial
+
+@[spec] theorem Program.jmp_label_spec (asz osz : Width) (l : Label) :
+    ⦃ fun labels s => E (s, labels.label l) ⦄
+      (Directive.instr (.regular asz osz
+          (.jmp (.rel (.sub (.label l) .after_current_instruction)))) :: p)
+    ⦃ Q; E ⦄ :=
+  Triple.intro fun labels s h => by
+    intro rco
+    obtain ⟨lo, hi⟩ := rco
+    wpF_step
+    have hcancel : hi + (labels.label l - hi) = labels.label l := by
+      apply Int64.toBitVec_inj.mp
+      simp only [Int64.toBitVec_add, Int64.toBitVec_sub]
+      rw [BitVec.add_comm, BitVec.sub_add_cancel]
+    simp only [hcancel]
+    exact h
+
+end ProgramSpecs
 

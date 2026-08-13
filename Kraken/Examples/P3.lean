@@ -4,28 +4,20 @@ by `mulx` and counts `rbx` down to zero, so the loop computes
 `rdx = 2 ^ 2 ^ rbx`. `p3_correct` proves it against the omni-semantics
 judgments.
 
-The program is three fragments, `p3.entry ++ p3.loop ++ p3.exit`. `Layout.frag`
-lays a fragment out at its position in the program, and the segment a cut point
-reaches is the fragments from there on, joined by `++`. `Directives.frag_append_spec`
-and `Directives.append_spec` decompose that join and `Directives.frag_cons_spec`
-walks into a fragment, so `vcgen` steps each directive once, in the one proof
-that specifies its fragment: the prologue in `p3_enter_spec`, the loop in
-`p3_body_spec`, the tail in `p3_end_spec`. `Eventually.loop` takes that one body
-specification for every `k`, so nothing traverses the loop a second time.
+The program is three fragments, `p3.entry ++ p3.loop ++ p3.exit`, and every
+spec is a `Triple` over a fragment as written. The `wp` of a `Program`
+quantifies over every sizing a layout can give it, so `p3_loop_spec` mentions
+no layout, no position, and no program counter. Its parameter `L` is the label
+footprint: the assertions name the addresses of `start` and `_end`, nothing
+else.
 
-A fragment is specified as a `Triple` over its directive list. The `wp` of a
-`Program` quantifies over every sizing a layout can give the list, so
-`p3_loop_spec` mentions no layout and no position. Its parameter `L` is the
-label footprint: the assertions name the addresses of `start` and `_end`,
-nothing else. The run of the laid-out program is the judgment
-`Eventually (Program.runStep p3 E)`; `Program.runStep_of_seg` carries a
-fragment's triple into that run, and `Program.run_sound` reads the result back
-against the baseline `straightlineStep`.
-
-Each cut point gets an address (`p3_start_addr`, `p3_end_addr`) and the segment
-reached from it (`p3_start_segment`, `p3_end_segment`). The segments chain by
-`Eventually.step`, and the loop closes by `Eventually.loop` with the invariant
-`rbx = k ∧ rdx = 2 ^ 2 ^ (rbx₀ - k)` at the header.
+A run enters through `Eventually.enter` at a cut point. Each cut point gets an
+address (`p3_start_addr`, `p3_end_addr`) and the fragment reached from it
+(`p3_entry_segment`, `p3_start_segment`, `p3_end_segment`), and `vcgen` walks
+that fragment through the `Program` specs, so each directive is stepped once.
+The loop closes by `Eventually.loop` with the invariant
+`rbx = k ∧ rdx = 2 ^ 2 ^ (rbx₀ - k)` at the header, and `Program.run_sound`
+reads the run back as the baseline judgment (`p3_correct_run`).
 -/
 import Kraken.Parser
 import Kraken.SegmentExtract
@@ -62,14 +54,11 @@ _end:
 /-- The program a run of `p3` executes: the prologue, the loop, the tail.
 
 The fragments above are reducible, so `vcgen` walks into their directives; `p3`
-and `p3.body` are not, so a proof that cites their specifications never steps
-them. -/
+is not, so a proof that cites its parts never steps them. -/
 def p3 : Program := p3.entry ++ p3.loop ++ p3.exit
 
-/-- The directives a run reaches from the loop header: the loop and the tail it
-falls into, laid out past the prologue. -/
-def p3.body [Layout] : List (Directive × Nat) :=
-  Layout.frag p3.entry.length (p3.loop ++ p3.exit)
+/-- The label table of the laid-out program. -/
+abbrev p3.labels [layout : Layout] : Labels := (layout p3).labels
 
 /-- The split at the loop header. -/
 private theorem p3_eq_entry_append : p3 = p3.entry ++ (p3.loop ++ p3.exit) := by simp [p3]
@@ -99,11 +88,11 @@ variable [layout : Layout]
 
 /-- From the start the run traverses the prologue and falls into the loop. -/
 theorem p3_entry_segment :
-    (layout p3).directivesFromAddress layout.start = Layout.frag 0 p3.entry ++ p3.body := by
+    (layout p3).directivesFromAddress layout.start
+      = Layout.frag 0 (p3.entry ++ (p3.loop ++ p3.exit)) := by
   have h := Executable.directivesFromAddress_addrOf (layout p3) 0 (Nat.zero_le _)
     (fun k hk => absurd hk (Nat.not_lt_zero k))
-  rw [p3.body, ← Nat.zero_add p3.entry.length, ← Layout.frag_append,
-    ← p3_eq_entry_append, ← Layout.apply_snd]
+  rw [← p3_eq_entry_append, ← Layout.apply_snd]
   simpa using h
 
 variable [hv : Executable.ValidLayout (layout p3)]
@@ -120,9 +109,9 @@ theorem p3_start_addr :
 falls into. -/
 theorem p3_start_segment :
     (layout p3).directivesFromAddress ((layout p3).labels.label "start")
-      = p3.body := by
+      = Layout.frag p3.entry.length (p3.loop ++ p3.exit) := by
   rw [p3_start_addr, Executable.directivesFromAddress_addrOf]
-  · rw [p3_eq_entry_append, p3.body]
+  · rw [p3_eq_entry_append]
     with_reducible exact Layout.apply_drop p3.entry (p3.loop ++ p3.exit)
   · simp
   · intro k hk
@@ -150,30 +139,6 @@ theorem p3_end_segment :
     with_reducible apply Executable.addrOf_ne_of_valid (layout p3) hk <;>
       simp
 
-/-- Traversing the prologue lands on the loop header. -/
-theorem p3_start_pc :
-    layout.start + .ofNat (layout.size 0) + .ofNat (layout.size 1)
-      = (layout p3).labels.label "start" := by
-  have h0 : ((layout p3).2[0]?).map (·.2) = some (layout.size 0) := by simp
-  have h1 : ((layout p3).2[1]?).map (·.2) = some (layout.size 1) := by simp
-  rw [p3_start_addr, show p3.entry.length = 1 + 1 by simp [p3.entry],
-    Executable.addrOf_succ' (layout p3) h1, Executable.addrOf_succ' (layout p3) h0,
-    Executable.addrOf_zero, Layout.apply_fst]
-
-/-- Traversing the tail fragment ends just past the program text. -/
-private theorem p3_end_pc :
-    (layout p3).labels.label "_end"
-        + .ofNat (layout.size (p3.entry ++ p3.loop).length)
-        + .ofNat (layout.size ((p3.entry ++ p3.loop).length + 1))
-      = (layout p3).addrOf p3.length := by
-  have h8 : ((layout p3).2[(p3.entry ++ p3.loop).length]?).map (·.2)
-      = some (layout.size (p3.entry ++ p3.loop).length) := by simp
-  have h9 : ((layout p3).2[(p3.entry ++ p3.loop).length + 1]?).map (·.2)
-      = some (layout.size ((p3.entry ++ p3.loop).length + 1)) := by simp
-  rw [p3_end_addr, ← Executable.addrOf_succ' (layout p3) h8,
-    ← Executable.addrOf_succ' (layout p3) h9]
-  simp
-
 end Extraction
 
 /-! ## The proof -/
@@ -187,21 +152,6 @@ count `k`: `rbx` holds `k` and `rdx` holds the `rbx₀ - k`-fold squaring. -/
 private abbrev p3_inv (rbx0 k : Nat) (s : MachineData) : Prop :=
   s.regs.rbx.toNat = k ∧ k ≤ rbx0 ∧ s.regs.rdx.toNat = 2 ^ 2 ^ (rbx0 - k) ∧ s.regs.rax = 0
 
-/-- The tail: the label and the `nop` leave the machine unchanged, and the run
-falls off the end of the program text. -/
-private theorem p3_end_spec (Q : Unit → Labels → MachineState → Prop) :
-    ⦃ fun labels st => st.2 = (layout p3).labels.label "_end"
-        ∧ Q () labels (st.1, (layout p3).addrOf p3.length) ⦄
-      (Layout.frag (p3.entry ++ p3.loop).length p3.exit)
-    ⦃ Q ⦄ := by
-  with_reducible refine Triple.intro fun labels st ⟨hpc, hq⟩ => ?_
-  obtain ⟨m, pc⟩ := st
-  simp only at hpc hq
-  subst hpc
-  vcgen simplifying_assumptions
-  rw [p3_end_pc]
-  with_reducible exact hq
-
 /-- Where a traversal from the loop header leaves the segment: back at the
 header with one iteration accounted for, or at `_end` with the answer. -/
 private abbrev p3_exits (L : Labels) (rbx0 k : Nat) (st : MachineState) : Prop :=
@@ -210,72 +160,44 @@ private abbrev p3_exits (L : Labels) (rbx0 k : Nat) (st : MachineState) : Prop :
       ∧ st.1.regs.rdx.toNat = 2 ^ 2 ^ rbx0 ∧ st.1.regs.rax = 0)
 
 /-- Both cut points a jump of `p3` targets are directives of `p3`. -/
-private theorem p3_exits_inText (rbx0 k : Nat) (st : MachineState)
+private theorem p3_exits_inText (rbx0 : Nat) (st : MachineState)
     (h : st.2 = (layout p3).labels.label "start"
       ∨ (st.2 = (layout p3).labels.label "_end"
           ∧ st.1.regs.rdx.toNat = 2 ^ 2 ^ rbx0 ∧ st.1.regs.rax = 0)) :
     (layout p3).directivesFromAddress st.2 ≠ [] := by
   rcases h with hpc | ⟨hpc, -, -⟩ <;> rw [hpc]
-  · rw [p3_start_segment, p3.body]
-    simp [p3.loop]
+  · rw [p3_start_segment]
+    simp [p3.loop, Layout.frag]
   · rw [p3_end_segment]
-    simp [p3.exit]
+    simp [p3.exit, Layout.frag]
 
 omit layout hv in
-/-- The loop, as a fragment: the triple mentions no layout and no position.
-`L` is the label footprint, the addresses of the two targets the fragment's
-jumps name. Placing the fragment in a concrete program is the use site's
-obligation, discharged by its extraction lemmas. -/
+/-- The loop, as a fragment: no layout, no position, no program counter. `L` is
+the label footprint, the addresses of the two targets the fragment's jumps
+name. Placing the fragment in a concrete program is the use site's obligation,
+discharged by its extraction lemmas. -/
 private theorem p3_loop_spec (L : Labels) (rbx0 k : Nat)
-    (hbound : 2 ^ 2 ^ rbx0 < 2 ^ 64) (Q : Unit → Labels → MachineState → Prop) :
-    ⦃ fun labels st => labels = L ∧ st.2 = L.label "start" ∧ p3_inv rbx0 k st.1 ⦄
+    (hbound : 2 ^ 2 ^ rbx0 < 2 ^ 64) (Q : Unit → Labels → MachineData → Prop) :
+    ⦃ fun labels s => labels = L ∧ p3_inv rbx0 k s ⦄
       (p3.loop ++ p3.exit)
     ⦃ Q; p3_exits L rbx0 k ⦄ := by
-  refine Program.triple_of_frag fun layout n => ?_
-  with_reducible refine Triple.intro fun labels st ⟨hlab, hpc, hrbx, hle, hrdx, hrax⟩ => ?_
+  with_reducible refine Triple.intro fun labels s ⟨hlab, hrbx, hle, hrdx, hrax⟩ => ?_
   subst hlab
-  have hlt : k ≠ 0 → st.1.regs.rdx.toNat * st.1.regs.rdx.toNat < 2 ^ 64 := by
+  have hlt : k ≠ 0 → s.regs.rdx.toNat * s.regs.rdx.toNat < 2 ^ 64 := by
     intro _
     rw [hrdx, pow_sq]
     calc 2 ^ 2 ^ (rbx0 - k + 1)
         ≤ 2 ^ 2 ^ rbx0 :=
           Nat.pow_le_pow_right (by omega) (Nat.pow_le_pow_right (by omega) (by omega))
       _ < 2 ^ 64 := hbound
-  have hsq : k ≠ 0 → st.1.regs.rdx.toNat * st.1.regs.rdx.toNat = 2 ^ 2 ^ (rbx0 - (k - 1)) := by
+  have hsq : k ≠ 0 → s.regs.rdx.toNat * s.regs.rdx.toNat = 2 ^ 2 ^ (rbx0 - (k - 1)) := by
     intro hk
     rw [hrdx, pow_sq, show rbx0 - (k - 1) = rbx0 - k + 1 from by omega]
   vcgen simplifying_assumptions with finish
 
-omit hv in
-/-- `p3_loop_spec`, placed: the fragment as it sits in `p3`, past the prologue,
-under `p3`'s label table. -/
-private theorem p3_body_spec (rbx0 k : Nat) (hbound : 2 ^ 2 ^ rbx0 < 2 ^ 64)
-    (Q : Unit → Labels → MachineState → Prop) :
-    ⦃ fun labels st => labels = (layout p3).labels
-        ∧ st.2 = (layout p3).labels.label "start" ∧ p3_inv rbx0 k st.1 ⦄
-      p3.body
-    ⦃ Q; p3_exits (layout p3).labels rbx0 k ⦄ :=
-  Program.triple_frag (p3_loop_spec (layout p3).labels rbx0 k hbound Q) p3.entry.length
-
-/-- The prologue sets `rdx` to `2`, which is the invariant at the full count,
-and falls into the loop; the segment's exits are the loop's. -/
-private theorem p3_enter_spec (rbx0 : Nat) (hbound : 2 ^ 2 ^ rbx0 < 2 ^ 64)
-    (Q : Unit → Labels → MachineState → Prop) :
-    ⦃ fun labels st => labels = (layout p3).labels ∧ st.2 = layout.start
-        ∧ st.1.regs.rbx.toNat = rbx0 ∧ st.1.regs.rax = 0 ⦄
-      (Layout.frag 0 p3.entry ++ p3.body)
-    ⦃ Q; p3_exits (layout p3).labels rbx0 rbx0 ⦄ := by
-  with_reducible refine Triple.intro fun labels st ⟨hlab, hpc, hrbx, hrax⟩ => ?_
-  subst hlab
-  obtain ⟨m, pc⟩ := st
-  simp only at hpc hrbx hrax
-  subst hpc
-  have hstart := p3_start_pc (layout := layout)
-  vcgen [p3_body_spec rbx0 rbx0 hbound] simplifying_assumptions with finish
-
 /-- From the exit label the tail carries the answer to the end of the text. -/
 private theorem p3_finish (rbx0 : Nat) (E : MachineState → Prop) (st : MachineState)
-    (h : st.2 = (layout p3).labels.label "_end"
+    (h : st.2 = p3.labels.label "_end"
       ∧ st.1.regs.rdx.toNat = 2 ^ 2 ^ rbx0 ∧ st.1.regs.rax = 0) :
     Eventually (Program.runStep p3 E)
       (fun s => s.1.regs.rdx.toNat = 2 ^ 2 ^ rbx0 ∧ s.1.regs.rax = 0) st := by
@@ -283,13 +205,9 @@ private theorem p3_finish (rbx0 : Nat) (E : MachineState → Prop) (st : Machine
   obtain ⟨hpc, hrdx, hrax⟩ := h
   simp only at hpc hrdx hrax
   subst hpc
-  refine step_cps _ _ _ (Program.runStep_of_seg p3_end_segment ?_)
-  refine Directives.wp_mono
-    (Q₁ := fun _ _ mid => Eventually (Program.runStep p3 E)
-      (fun s => s.1.regs.rdx.toNat = 2 ^ 2 ^ rbx0 ∧ s.1.regs.rax = 0) mid)
-    (E₁ := (Lean.Order.bot : MachineState → Prop))
-    _ _ _ (fun _ h => h) (fun _ h => Assertion.bot_elim h) ?_
-  exact (p3_end_spec _).le_wp _ _ ⟨rfl, Eventually.done _ ⟨hrdx, hrax⟩⟩
+  refine Eventually.enter p3_end_segment ?_
+  vcgen simplifying_assumptions
+  with_reducible exact Eventually.done _ ⟨hrdx, hrax⟩
 
 /-- A run of `p3` from a machine whose `rax` is clear reaches a state where
 `rdx` holds `2 ^ 2 ^ rbx` and `rax` is clear again. `E` is arbitrary because
@@ -300,19 +218,23 @@ theorem p3_correct (d : MachineData) (h_bounds : p3_spec d < 2 ^ 64)
       (fun st => st.1.regs.rdx.toNat = p3_spec d ∧ st.1.regs.rax = 0)
       (d, layout.start) := by
   simp only [p3_spec] at h_bounds ⊢
-  refine Eventually.step _ (p3_exits (layout p3).labels d.regs.rbx.toNat d.regs.rbx.toNat) ?_ ?_
-  · refine Program.runStep_of_seg p3_entry_segment ?_
-    refine Directives.wp_mono (Q₁ := fun _ _ _ => False) _ _ _ (fun _ h => h.elim)
-      (fun st h => ⟨p3_exits_inText d.regs.rbx.toNat d.regs.rbx.toNat st
-        (h.elim (fun hl => Or.inl hl.2.1) (fun hr => Or.inr hr.2)), h⟩) ?_
-    exact (p3_enter_spec d.regs.rbx.toNat h_bounds _).le_wp _ _ ⟨rfl, rfl, rfl, h_rax⟩
-  · rintro ⟨m, pc⟩ (⟨hne, hpc, hinv⟩ | hexit)
-    · subst hpc
+  refine Eventually.enter p3_entry_segment ?_
+  vcgen [p3_loop_spec p3.labels d.regs.rbx.toNat d.regs.rbx.toNat h_bounds]
+    simplifying_assumptions
+  · grind
+  · rename_i st
+    intro hst
+    refine ⟨fun hnil => absurd hnil (p3_exits_inText d.regs.rbx.toNat st
+      (hst.elim (fun a => Or.inl a.2.1) (fun b => Or.inr b.2))), fun _ => ?_⟩
+    obtain ⟨m, pc⟩ := st
+    rcases hst with ⟨hne, hpc, hinv⟩ | ⟨h0, hpc, hrdx, hrax⟩
+    · simp only at hpc hinv
+      subst hpc
       exact Eventually.loop p3_start_segment
-        (fun k => p3_body_spec d.regs.rbx.toNat k h_bounds _)
-        (fun st h => p3_exits_inText d.regs.rbx.toNat 0 st h)
-        (p3_finish d.regs.rbx.toNat _) _ m hinv
-    · exact p3_finish d.regs.rbx.toNat _ _ hexit.2
+        (fun k => p3_loop_spec p3.labels d.regs.rbx.toNat k h_bounds _)
+        (fun st h => p3_exits_inText d.regs.rbx.toNat st h)
+        (fun st hx => p3_finish d.regs.rbx.toNat E st hx) _ m hinv
+    · exact p3_finish d.regs.rbx.toNat E _ ⟨hpc, hrdx, hrax⟩
 
 /-- `p3_correct` read as the omni-semantics judgment of `Kraken.OmniSemantics`:
 a run of the laid-out program from `(d, layout.start)` reaches a state where

@@ -307,15 +307,6 @@ theorem straightlineStep_of_wp [Layout] {e : Executable} {s : MachineData} {pc :
   letI := e.labels
   Directives.wpE_sound (fun _ h => h) (fun _ h => h) (e.directivesFromAddress pc) (s, pc) h
 
-/-- Enter a segment through the lemma that extracts it: what the run from `pc`
-does is what the weakest precondition of the extracted directives says. -/
-theorem straightlineStep_of_seg [Layout] {e : Executable} {s : MachineData} {pc : Int64}
-    {seg : List (Directive × Nat)} {post : MachineState → Prop}
-    (hseg : e.directivesFromAddress pc = seg)
-    (h : wp seg (fun _ _ => post) post e.labels (s, pc)) :
-    straightlineStep e (s, pc) post :=
-  straightlineStep_of_wp (hseg ▸ h)
-
 /- `straightlineStep` is the API boundary: every proof enters through
 `apply straightlineStep_of_wp`. Sealing it keeps that apply fast: whenever a
 goal or expected type is headed by `straightlineStep` of a concrete
@@ -368,23 +359,26 @@ theorem Program.runStep_mono [Layout] {prog : Program} {E₁ E₂ : MachineState
   Directives.wp_mono _ _ _ (fun _ h => h)
     (fun st' h => ⟨fun hnil => hE st' (h.1 hnil), h.2⟩) h
 
-/-- A segment whose jumps all land in the program text is a step of the run. -/
-theorem Program.runStep_of_seg [layout : Layout] {prog : Program} {E : MachineState → Prop}
-    {st : MachineState} {seg : List (Directive × Nat)} {post : @Post MachineState}
-    (hseg : (layout prog).directivesFromAddress st.2 = seg)
-    (h : wp seg (fun _ _ mid => post mid)
-          (fun mid => (layout prog).directivesFromAddress mid.2 ≠ [] ∧ post mid)
-          (layout prog).labels st) :
-    Program.runStep prog E st post := by
+/-- Enter the run at `pc` through the extraction lemma for that address: the
+run continues from whatever the fragment there does. The fall-through
+continuation holds at every address, because a sizing-invariant traversal
+cannot know where it lands; a jump continues the run inside the text and
+leaves through `E` outside it. `vcgen` discharges the wp obligation with the
+`Program` specs. -/
+theorem Eventually.enter [layout : Layout] {prog : Program} {n : Nat} {p : Program}
+    {E : MachineState → Prop} {post : @Post MachineState} {s : MachineData} {pc : Int64}
+    (hseg : (layout prog).directivesFromAddress pc = Layout.frag n p)
+    (h : wp p (fun _ _ s' => ∀ pc', Eventually (Program.runStep prog E) post (s', pc'))
+          (fun mid => ((layout prog).directivesFromAddress mid.2 = [] → E mid)
+                    ∧ ((layout prog).directivesFromAddress mid.2 ≠ [] →
+                        Eventually (Program.runStep prog E) post mid))
+          (layout prog).labels s) :
+    Eventually (Program.runStep prog E) post (s, pc) := by
+  refine step_cps _ _ _ ?_
   rw [Program.runStep, hseg]
-  exact Directives.wp_mono seg _ _ (fun _ h => h)
-    (fun _ h => ⟨fun hnil => absurd hnil h.1, fun _ => h.2⟩) h
-
-/-- A triple that names no exceptional postcondition rules its jumps out: the
-bottom assertion entails everything. -/
-theorem Assertion.bot_elim {x : MachineState} {C : Prop}
-    (h : (Lean.Order.bot : MachineState → Prop) x) : C :=
-  ((Lean.Order.bot_le (α := MachineState → Prop) (fun _ => False)) x h).elim
+  letI : Labels := (layout prog).labels
+  have hw := Program.wpF_toE (Layout.frag n p) (Layout.frag_map_fst n p) s pc h
+  exact Directives.wpE_mono (fun st hq => hq st.2) (fun _ hh => hh) _ _ hw
 
 /-- What a run says about the machine: the baseline judgment that the run
 reaches the normal postcondition, or leaves the program text at the
@@ -403,38 +397,43 @@ theorem Program.run_sound [layout : Layout] {prog : Program}
     · exact Eventually.done mid (Or.inr (hmid.1 hnil))
     · exact ih mid (hmid.2 hnil)
 
-/-- A loop verified at its header address `labels.label l`: a run that reaches
-the header with `k` iterations left reaches `post`. The back jump is not assumed
+/-- A loop verified at its header label `l`: a run that reaches the header
+with `k` iterations left reaches `post`. The back jump is not assumed
 anywhere; it is what the body's jump postcondition demands.
 
-The body is specified once, for every `k`: it never falls off its segment, and
-each jump exit either returns to the header with one iteration accounted for or,
-at zero, satisfies `Exit`. `hin` says the body's exits stay inside the program,
-so the run continues at them rather than leaving through `E`. -/
-theorem Eventually.loop [layout : Layout] {prog : Program} {l : Label}
-    {seg : List (Directive × Nat)} {I : Nat → MachineData → Prop}
+The body is one `Program` triple, for every `k`: the body never falls off its
+fragment, and each jump exit either returns to the header with one iteration
+accounted for or, at zero, satisfies `Exit`. `hin` says the body's exits stay
+inside the program text, so the run continues at them rather than leaving
+through `E`. -/
+theorem Eventually.loop [layout : Layout] {prog : Program} {l : Label} {n : Nat}
+    {body : Program} {I : Nat → MachineData → Prop}
     {Exit : MachineState → Prop} {E : MachineState → Prop} {post : @Post MachineState}
-    (hseg : (layout prog).directivesFromAddress ((layout prog).labels.label l) = seg)
+    (hseg : (layout prog).directivesFromAddress ((layout prog).labels.label l)
+      = Layout.frag n body)
     (hbody : ∀ k,
-      ⦃ fun labels st => labels = (layout prog).labels
-          ∧ st.2 = (layout prog).labels.label l ∧ I k st.1 ⦄
-        seg
+      ⦃ fun labels s => labels = (layout prog).labels ∧ I k s ⦄
+        body
       ⦃ fun _ _ _ => False;
         fun st => (k ≠ 0 ∧ st.2 = (layout prog).labels.label l ∧ I (k - 1) st.1)
                 ∨ (k = 0 ∧ Exit st) ⦄)
     (hin : ∀ st, ((st.2 = (layout prog).labels.label l) ∨ Exit st) →
       (layout prog).directivesFromAddress st.2 ≠ [])
     (hexit : ∀ st, Exit st → Eventually (Program.runStep prog E) post st) :
-    ∀ k s, I k s → Eventually (Program.runStep prog E) post (s, (layout prog).labels.label l) := by
-  have hstep : ∀ k s, I k s → Program.runStep prog E (s, (layout prog).labels.label l)
-      (fun st => (k ≠ 0 ∧ st.2 = (layout prog).labels.label l ∧ I (k - 1) st.1)
-               ∨ (k = 0 ∧ Exit st)) := by
+    ∀ k s, I k s →
+      Eventually (Program.runStep prog E) post (s, (layout prog).labels.label l) := by
+  have hstep : ∀ k s, I k s →
+      Program.runStep prog E (s, (layout prog).labels.label l)
+        (fun st => (k ≠ 0 ∧ st.2 = (layout prog).labels.label l ∧ I (k - 1) st.1)
+                 ∨ (k = 0 ∧ Exit st)) := by
     intro k s hI
-    refine Program.runStep_of_seg hseg ?_
-    refine Directives.wp_mono (Q₁ := fun _ _ _ => False) seg _ _ (fun _ h => h.elim)
-      (fun st (h : (k ≠ 0 ∧ _ ∧ _) ∨ (k = 0 ∧ Exit st)) =>
-        ⟨hin st (h.elim (fun hl => Or.inl hl.2.1) (fun hr => Or.inr hr.2)), h⟩) ?_
-    exact (hbody k).le_wp (layout prog).labels (s, (layout prog).labels.label l) ⟨rfl, rfl, hI⟩
+    rw [Program.runStep, hseg]
+    letI : Labels := (layout prog).labels
+    have hw := Program.wpF_toE (Layout.frag n body) (Layout.frag_map_fst n body) s
+      ((layout prog).labels.label l) ((hbody k).le_wp (layout prog).labels s ⟨rfl, hI⟩)
+    refine Directives.wpE_mono (fun st hq => hq.elim) (fun st hh => ⟨fun hnil => ?_, fun _ => hh⟩)
+      _ _ hw
+    exact absurd hnil (hin st (hh.elim (fun a => Or.inl a.2.1) (fun b => Or.inr b.2)))
   intro k
   induction k with
   | zero =>
@@ -443,11 +442,11 @@ theorem Eventually.loop [layout : Layout] {prog : Program} {l : Label}
     rintro st (⟨h0, -⟩ | ⟨-, hx⟩)
     · exact absurd rfl h0
     · exact hexit st hx
-  | succ n ih =>
+  | succ m ih =>
     intro s hI
-    refine Eventually.step _ _ (hstep (n + 1) s hI) ?_
-    rintro ⟨m, pc⟩ (⟨-, hpc, hIm⟩ | ⟨h0, -⟩)
-    · simp only at hpc hIm
+    refine Eventually.step _ _ (hstep (m + 1) s hI) ?_
+    rintro ⟨d, pc⟩ (⟨-, hpc, hId⟩ | ⟨h0, -⟩)
+    · simp only at hpc hId
       subst hpc
-      exact ih m hIm
+      exact ih d hId
     · exact absurd h0 (by omega)
