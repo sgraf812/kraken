@@ -206,6 +206,18 @@ private abbrev p3_exits (rbx0 k : Nat) (st : MachineState) : Prop :=
   ∨ (k = 0 ∧ st.2 = (layout p3).labels.label "_end"
       ∧ st.1.regs.rdx.toNat = 2 ^ 2 ^ rbx0 ∧ st.1.regs.rax = 0)
 
+/-- Both cut points a jump of `p3` targets are directives of `p3`. -/
+private theorem p3_exits_inText (rbx0 k : Nat) (st : MachineState)
+    (h : st.2 = (layout p3).labels.label "start"
+      ∨ (st.2 = (layout p3).labels.label "_end"
+          ∧ st.1.regs.rdx.toNat = 2 ^ 2 ^ rbx0 ∧ st.1.regs.rax = 0)) :
+    (layout p3).directivesFromAddress st.2 ≠ [] := by
+  rcases h with hpc | ⟨hpc, -, -⟩ <;> rw [hpc]
+  · rw [p3_start_segment, p3.body]
+    simp [p3.loop]
+  · rw [p3_end_segment]
+    simp [p3.exit]
+
 omit hv in
 /-- The loop body: entered at the header with `k` iterations left, the run never
 falls off its segment, and every jump exit is one of `p3_exits`. -/
@@ -247,41 +259,43 @@ private theorem p3_enter_spec (rbx0 : Nat) (hbound : 2 ^ 2 ^ rbx0 < 2 ^ 64)
   vcgen [p3_body_spec rbx0 rbx0 hbound] simplifying_assumptions with finish
 
 /-- From the exit label the tail carries the answer to the end of the text. -/
-private theorem p3_finish (rbx0 : Nat) (st : MachineState)
+private theorem p3_finish (rbx0 : Nat) (E : MachineState → Prop) (st : MachineState)
     (h : st.2 = (layout p3).labels.label "_end"
       ∧ st.1.regs.rdx.toNat = 2 ^ 2 ^ rbx0 ∧ st.1.regs.rax = 0) :
-    Eventually (straightlineStep (layout p3))
+    Eventually (Program.runStep p3 E)
       (fun s => s.1.regs.rdx.toNat = 2 ^ 2 ^ rbx0 ∧ s.1.regs.rax = 0) st := by
   obtain ⟨m, pc⟩ := st
   obtain ⟨hpc, hrdx, hrax⟩ := h
   simp only at hpc hrdx hrax
   subst hpc
-  with_reducible
-    exact Eventually.of_triple p3_end_segment (p3_end_spec _ _)
-      ⟨rfl, Eventually.done _ ⟨hrdx, hrax⟩⟩
+  refine step_cps _ _ _ (Program.runStep_of_seg p3_end_segment ?_)
+  exact (p3_end_spec _ _).le_wp _ _ ⟨rfl, Eventually.done _ ⟨hrdx, hrax⟩⟩
 
 /-- A run of `p3` from a machine whose `rax` is clear reaches a state where
-`rdx` holds `2 ^ 2 ^ rbx` and `rax` is clear again. -/
+`rdx` holds `2 ^ 2 ^ rbx` and `rax` is clear again. The run never leaves the
+program text, so its exceptional postcondition is arbitrary. -/
 theorem p3_correct (d : MachineData) (h_bounds : p3_spec d < 2 ^ 64)
-    (h_rax : d.regs.rax = 0) :
+    (h_rax : d.regs.rax = 0) (E : MachineState → Prop) :
     ⦃ fun labels st => labels = (layout p3).labels ∧ st = (d, layout.start) ⦄
       p3
-    ⦃ fun _ _ st => st.1.regs.rdx.toNat = p3_spec d ∧ st.1.regs.rax = 0;
-      fun _ => False ⦄ := by
+    ⦃ fun _ _ st => st.1.regs.rdx.toNat = p3_spec d ∧ st.1.regs.rax = 0; E ⦄ := by
   with_reducible refine Triple.intro fun labels st ⟨hlab, hst⟩ => ?_
   subst hlab
   subst hst
   rw [Program.wp_eq]
   simp only [p3_spec] at h_bounds ⊢
-  with_reducible
-    apply Eventually.step _ _ (straightlineStep_of_triple p3_entry_segment
-      (p3_enter_spec d.regs.rbx.toNat h_bounds _) ⟨rfl, rfl, rfl, h_rax⟩)
-  rintro ⟨m, pc⟩ (⟨hne, hpc, hinv⟩ | hexit)
-  · subst hpc
-    with_reducible
+  refine Eventually.step _ (p3_exits d.regs.rbx.toNat d.regs.rbx.toNat) ?_ ?_
+  · refine Program.runStep_of_seg p3_entry_segment ?_
+    refine Directives.wp_mono (Q₁ := fun _ _ _ => False) _ _ _ (fun _ h => h.elim)
+      (fun st h => ⟨p3_exits_inText d.regs.rbx.toNat d.regs.rbx.toNat st
+        (h.elim (fun hl => Or.inl hl.2.1) (fun hr => Or.inr hr.2)), h⟩) ?_
+    exact (p3_enter_spec d.regs.rbx.toNat h_bounds _).le_wp _ _ ⟨rfl, rfl, rfl, h_rax⟩
+  · rintro ⟨m, pc⟩ (⟨hne, hpc, hinv⟩ | hexit)
+    · subst hpc
       exact Eventually.loop p3_start_segment
         (fun k => p3_body_spec d.regs.rbx.toNat k h_bounds _)
-        (p3_finish d.regs.rbx.toNat) _ m hinv
-  · with_reducible exact p3_finish d.regs.rbx.toNat _ hexit.2
+        (fun st h => p3_exits_inText d.regs.rbx.toNat 0 st h)
+        (p3_finish d.regs.rbx.toNat E) _ m hinv
+    · exact p3_finish d.regs.rbx.toNat E _ hexit.2
 
 end Proof

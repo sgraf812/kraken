@@ -363,58 +363,97 @@ is the omni-semantics judgment that the run reaches `Q`. Registering it as a
 `WP` instance lets a whole program carry a `Triple`, so a result about a run and
 a result about a segment are stated in one language. -/
 
-/-- The omni-semantics judgment is monotone in its postcondition. -/
-theorem Eventually.mono {State : Type} {trans : State → Post → Prop} {P Q : @Post State}
-    {st : State} (h : Eventually trans P st) (hPQ : ∀ s, P s → Q s) :
-    Eventually trans Q st := by
+/-- The omni-semantics judgment is monotone in its transition relation and in
+its postcondition. -/
+theorem Eventually.mono {State : Type} {trans₁ trans₂ : State → Post → Prop}
+    {P Q : @Post State} {st : State} (h : Eventually trans₁ P st)
+    (htrans : ∀ st' post, trans₁ st' post → trans₂ st' post) (hPQ : ∀ s, P s → Q s) :
+    Eventually trans₂ Q st := by
   induction h with
   | done st hp => exact Eventually.done st (hPQ st hp)
-  | step st mid_p htrans _ ih => exact Eventually.step st mid_p htrans (fun mid hmid => ih mid hmid)
+  | step st mid_p ht _ ih => exact Eventually.step st mid_p (htrans st mid_p ht) ih
+
+/-- One segment of a run. A jump whose target is a directive of `prog` keeps
+the run going, so it lands back in the continuation `post`; a jump that leaves
+the program text leaves through `E`. -/
+def Program.runStep [layout : Layout] (prog : Program) (E : MachineState → Prop)
+    (st : MachineState) (post : @Post MachineState) : Prop :=
+  wp ((layout prog).directivesFromAddress st.2) (fun _ _ mid => post mid)
+    (fun mid => ((layout prog).directivesFromAddress mid.2 = [] → E mid)
+              ∧ ((layout prog).directivesFromAddress mid.2 ≠ [] → post mid))
+    (layout prog).labels st
+
+/-- Weakening what a jump out of the program text may conclude. -/
+theorem Program.runStep_mono [Layout] {prog : Program} {E₁ E₂ : MachineState → Prop}
+    {st : MachineState} {post : @Post MachineState} (hE : ∀ st', E₁ st' → E₂ st')
+    (h : Program.runStep prog E₁ st post) : Program.runStep prog E₂ st post :=
+  Directives.wp_mono _ _ _ (fun _ h => h)
+    (fun st' h => ⟨fun hnil => hE st' (h.1 hnil), h.2⟩) h
 
 /-- The run of a program, as the transformer its `Triple`s are about. Laying
 the program out is part of running it, so a `Triple` names the program as
-written. -/
-def Program.wpTrans [layout : Layout] (prog : Program) :
+written. `Eventually` closes the recursion over jumps that stay inside the
+program; `E` collects the jumps that leave it. -/
+def Program.wpTrans [Layout] (prog : Program) :
     PredTrans (Labels → MachineState → Prop) (MachineState → Prop) Unit :=
-  ⟨fun Q _ labels st => Eventually (straightlineStep (layout prog)) (Q () labels) st⟩
+  ⟨fun Q E labels st => Eventually (Program.runStep prog E) (Q () labels) st⟩
 
 instance instWPProgram [Layout] :
     WP Program Unit (Labels → MachineState → Prop) (MachineState → Prop) where
   wpTrans := Program.wpTrans
-  wp_trans_monotone _ _ _ _ _ _ hQ := fun labels _ h => h.mono (fun st' => hQ () labels st')
+  wp_trans_monotone _ _ _ _ _ hE hQ := fun labels _ h =>
+    h.mono (fun _ _ hst => Program.runStep_mono hE hst) (fun st' => hQ () labels st')
 
 /-- A run's weakest precondition is the omni-semantics judgment. -/
-theorem Program.wp_eq [layout : Layout] (prog : Program)
+theorem Program.wp_eq [Layout] (prog : Program)
     (Q : Unit → Labels → MachineState → Prop) (E : MachineState → Prop)
     (labels : Labels) (st : MachineState) :
-    wp prog Q E labels st
-      = Eventually (straightlineStep (layout prog)) (Q () labels) st := rfl
+    wp prog Q E labels st = Eventually (Program.runStep prog E) (Q () labels) st := rfl
 
-/-- A loop verified at its header address `e.labels.label l`: a run that reaches
+/-- A segment whose jumps all land in the program text is a step of the run. -/
+theorem Program.runStep_of_seg [layout : Layout] {prog : Program} {E : MachineState → Prop}
+    {st : MachineState} {seg : List (Directive × Nat)} {post : @Post MachineState}
+    (hseg : (layout prog).directivesFromAddress st.2 = seg)
+    (h : wp seg (fun _ _ mid => post mid)
+          (fun mid => (layout prog).directivesFromAddress mid.2 ≠ [] ∧ post mid)
+          (layout prog).labels st) :
+    Program.runStep prog E st post := by
+  rw [Program.runStep, hseg]
+  exact Directives.wp_mono seg _ _ (fun _ h => h)
+    (fun _ h => ⟨fun hnil => absurd hnil h.1, fun _ => h.2⟩) h
+
+/-- A loop verified at its header address `labels.label l`: a run that reaches
 the header with `k` iterations left reaches `post`. The back jump is not assumed
 anywhere; it is what the body's jump postcondition demands.
 
 The body is specified once, for every `k`: it never falls off its segment, and
 each jump exit either returns to the header with one iteration accounted for or,
-at zero, satisfies `Exit`. `hexit` takes the run from there. -/
-theorem Eventually.loop [Layout] {e : Executable} {l : Label}
+at zero, satisfies `Exit`. `hin` says the body's exits stay inside the program,
+so the run continues at them rather than leaving through `E`. -/
+theorem Eventually.loop [layout : Layout] {prog : Program} {l : Label}
     {seg : List (Directive × Nat)} {I : Nat → MachineData → Prop}
-    {Exit : MachineState → Prop} {post : @Post MachineState}
-    (hseg : e.directivesFromAddress (e.labels.label l) = seg)
+    {Exit : MachineState → Prop} {E : MachineState → Prop} {post : @Post MachineState}
+    (hseg : (layout prog).directivesFromAddress ((layout prog).labels.label l) = seg)
     (hbody : ∀ k,
-      ⦃ fun labels st => labels = e.labels ∧ st.2 = e.labels.label l ∧ I k st.1 ⦄
+      ⦃ fun labels st => labels = (layout prog).labels
+          ∧ st.2 = (layout prog).labels.label l ∧ I k st.1 ⦄
         seg
       ⦃ fun _ _ _ => False;
-        fun st => (k ≠ 0 ∧ st.2 = e.labels.label l ∧ I (k - 1) st.1) ∨ (k = 0 ∧ Exit st) ⦄)
-    (hexit : ∀ st, Exit st → Eventually (straightlineStep e) post st) :
-    ∀ k s, I k s → Eventually (straightlineStep e) post (s, e.labels.label l) := by
-  have hstep : ∀ k s, I k s → straightlineStep e (s, e.labels.label l)
-      (fun st => (k ≠ 0 ∧ st.2 = e.labels.label l ∧ I (k - 1) st.1) ∨ (k = 0 ∧ Exit st)) := by
+        fun st => (k ≠ 0 ∧ st.2 = (layout prog).labels.label l ∧ I (k - 1) st.1)
+                ∨ (k = 0 ∧ Exit st) ⦄)
+    (hin : ∀ st, ((st.2 = (layout prog).labels.label l) ∨ Exit st) →
+      (layout prog).directivesFromAddress st.2 ≠ [])
+    (hexit : ∀ st, Exit st → Eventually (Program.runStep prog E) post st) :
+    ∀ k s, I k s → Eventually (Program.runStep prog E) post (s, (layout prog).labels.label l) := by
+  have hstep : ∀ k s, I k s → Program.runStep prog E (s, (layout prog).labels.label l)
+      (fun st => (k ≠ 0 ∧ st.2 = (layout prog).labels.label l ∧ I (k - 1) st.1)
+               ∨ (k = 0 ∧ Exit st)) := by
     intro k s hI
-    apply straightlineStep_of_wp
-    rw [hseg]
-    exact @Directives.wpE_mono e.labels _ _ _ _ (fun st h => h.elim) (fun st h => h) seg _
-      ((hbody k).le_wp e.labels (s, e.labels.label l) ⟨rfl, rfl, hI⟩)
+    refine Program.runStep_of_seg hseg ?_
+    refine Directives.wp_mono (Q₁ := fun _ _ _ => False) seg _ _ (fun _ h => h.elim)
+      (fun st (h : (k ≠ 0 ∧ _ ∧ _) ∨ (k = 0 ∧ Exit st)) =>
+        ⟨hin st (h.elim (fun hl => Or.inl hl.2.1) (fun hr => Or.inr hr.2)), h⟩) ?_
+    exact (hbody k).le_wp (layout prog).labels (s, (layout prog).labels.label l) ⟨rfl, rfl, hI⟩
   intro k
   induction k with
   | zero =>
