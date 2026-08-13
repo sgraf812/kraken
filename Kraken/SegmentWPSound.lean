@@ -316,27 +316,6 @@ theorem straightlineStep_of_seg [Layout] {e : Executable} {s : MachineData} {pc 
     straightlineStep e (s, pc) post :=
   straightlineStep_of_wp (hseg ▸ h)
 
-/-- A segment that never falls through takes the run to its jump postcondition. -/
-theorem straightlineStep_of_triple [Layout] {e : Executable} {s : MachineData} {pc : Int64}
-    {seg : List (Directive × Nat)} {P : Labels → MachineState → Prop}
-    {E : MachineState → Prop} (hseg : e.directivesFromAddress pc = seg)
-    (h : ⦃P⦄ seg ⦃fun _ _ _ => False; E⦄) (hp : P e.labels (s, pc)) :
-    straightlineStep e (s, pc) E :=
-  straightlineStep_of_seg hseg
-    (@Directives.wpE_mono e.labels _ _ _ _ (fun _ h => h.elim) (fun _ h => h) seg _
-      (h.le_wp e.labels (s, pc) hp))
-
-/-- A segment whose two postconditions are the run's continuation: whatever the
-segment does, the run goes on from there. -/
-theorem Eventually.of_triple [Layout] {e : Executable} {s : MachineData} {pc : Int64}
-    {seg : List (Directive × Nat)} {P : Labels → MachineState → Prop}
-    {post : @Post MachineState} (hseg : e.directivesFromAddress pc = seg)
-    (h : ⦃P⦄ seg ⦃fun _ _ st => Eventually (straightlineStep e) post st;
-                  fun st => Eventually (straightlineStep e) post st⦄)
-    (hp : P e.labels (s, pc)) :
-    Eventually (straightlineStep e) post (s, pc) :=
-  step_cps _ post _ (straightlineStep_of_seg hseg (h.le_wp e.labels (s, pc) hp))
-
 /- `straightlineStep` is the API boundary: every proof enters through
 `apply straightlineStep_of_wp`. Sealing it keeps that apply fast: whenever a
 goal or expected type is headed by `straightlineStep` of a concrete
@@ -421,6 +400,25 @@ theorem Program.runStep_of_seg [layout : Layout] {prog : Program} {E : MachineSt
   rw [Program.runStep, hseg]
   exact Directives.wp_mono seg _ _ (fun _ h => h)
     (fun _ h => ⟨fun hnil => absurd hnil h.1, fun _ => h.2⟩) h
+
+/-- What a run triple says about the machine: the omni-semantics judgment that
+the run reaches the normal postcondition, or leaves the program text at the
+exceptional one. This is the only reading of `wp prog Q E` that the baseline
+gives, and every rule above is answerable to it. -/
+theorem Program.wp_sound [layout : Layout] {prog : Program}
+    {Q : Unit → Labels → MachineState → Prop} {E : MachineState → Prop}
+    {st : MachineState} (h : wp prog Q E (layout prog).labels st) :
+    Eventually (straightlineStep (layout prog))
+      (fun mid => Q () (layout prog).labels mid ∨ E mid) st := by
+  rw [Program.wp_eq] at h
+  induction h with
+  | done st hq => exact Eventually.done st (Or.inl hq)
+  | step st mid_p hstep _ ih =>
+    refine Eventually.step st _ (straightlineStep_of_wp ?_) (fun _ h => h)
+    refine Directives.wp_mono _ _ _ (fun mid hq => ih mid hq) (fun mid hmid => ?_) hstep
+    by_cases hnil : (layout prog).directivesFromAddress mid.2 = []
+    · exact Eventually.done mid (Or.inr (hmid.1 hnil))
+    · exact ih mid (hmid.2 hnil)
 
 /-- A loop verified at its header address `labels.label l`: a run that reaches
 the header with `k` iterations left reaches `post`. The back jump is not assumed

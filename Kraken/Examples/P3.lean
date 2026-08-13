@@ -15,8 +15,9 @@ specification for every `k`, so nothing traverses the loop a second time.
 
 Every result here is a `Triple`, `p3_correct` included: a run of an executable
 is a predicate transformer too, and `wp p3 Q ⊥` is the omni-semantics judgment
-that a run of the laid-out program reaches `Q`. `straightlineStep_of_triple` and
-`Eventually.of_triple` carry a fragment's triple into that run.
+that a run of the laid-out program reaches `Q`, or leaves the program text at
+`E`. `Program.runStep_of_seg` carries a fragment's triple into that run, and
+`Program.wp_sound` reads the result back as the omni-semantics judgment.
 
 Each cut point gets an address (`p3_start_addr`, `p3_end_addr`) and the segment
 reached from it (`p3_start_segment`, `p3_end_segment`). The segments chain by
