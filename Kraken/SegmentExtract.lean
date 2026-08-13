@@ -10,7 +10,7 @@ one, and the program fits in the address space; `addrOf_ne_of_valid`
 discharges the freshness hypothesis at any index that follows a non-label
 directive.
 -/
-import Kraken.Semantics
+import Kraken.SegmentWP
 
 namespace Executable
 
@@ -228,27 +228,6 @@ theorem addrOf_ne_of_valid (e : Executable) [hv : ValidLayout e] {k n : Nat}
   omega
 
 end Executable
-
-/-- The fragment `p` as it is laid out from position `n` of the program that
-contains it: each directive paired with the size the layout assigns to its
-position. -/
-def _root_.Layout.frag [layout : Layout] (n : Nat) (p : Program) : List (Directive × Nat) :=
-  p.mapIdx (fun i d => (d, layout.size (n + i)))
-
-@[simp] theorem _root_.Layout.frag_nil [Layout] (n : Nat) :
-    Layout.frag n [] = [] := rfl
-
-@[simp] theorem _root_.Layout.frag_length [Layout] (n : Nat) (p : Program) :
-    (Layout.frag n p).length = p.length := by simp [Layout.frag]
-
-@[simp] theorem _root_.Layout.frag_cons [layout : Layout] (n : Nat) (d : Directive) (ds : Program) :
-    Layout.frag n (d :: ds) = (d, layout.size n) :: Layout.frag (n + 1) ds := by
-  simp [Layout.frag, List.mapIdx_cons, Nat.add_assoc, Nat.add_comm 1]
-
-/-- A fragment splits where the program it lays out splits. -/
-theorem _root_.Layout.frag_append [layout : Layout] (n : Nat) (as bs : Program) :
-    Layout.frag n (as ++ bs) = Layout.frag n as ++ Layout.frag (n + as.length) bs := by
-  simp [Layout.frag, List.mapIdx_append, Nat.add_left_comm, Nat.add_comm]
 
 /-- The start address a layout gives a program. -/
 theorem _root_.Layout.apply_fst [layout : Layout] (p : Program) :

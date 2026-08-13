@@ -6,10 +6,11 @@ judgments.
 
 The program is three fragments, `p3.entry ++ p3.loop ++ p3.exit`. `Layout.frag`
 lays a fragment out at its position in the program, and the segment a cut point
-reaches is the fragments from there on, joined by `++`. `Directives.append_spec`
-decomposes that join, so each directive is stepped once, in the one proof that
-specifies its fragment: the prologue in `p3_enter`, the loop in `p3_body_spec`,
-the tail in `p3_end_run`. `p3_loop_step` and `p3_leave` cite `p3_body_spec`
+reaches is the fragments from there on, joined by `++`. `Directives.frag_append_spec`
+and `Directives.append_spec` decompose that join and `Directives.frag_cons_spec`
+walks into a fragment, so `vcgen` steps each directive once, in the one proof
+that specifies its fragment: the prologue in `p3_enter`, the loop in
+`p3_body_spec`, the tail in `p3_end_run`. `p3_loop_step` and `p3_leave` cite `p3_body_spec`
 rather than traverse the loop again.
 
 Each cut point gets an address (`p3_start_addr`, `p3_end_addr`) and the segment
@@ -27,18 +28,14 @@ open Std.Internal.Do
 
 set_option mvcgen.warning false
 
-/-- Expand a fragment expression into the directive list `vcgen` steps through. -/
-local macro "materialize" "[" fs:Lean.Parser.Tactic.simpLemma,* "]" : tactic =>
-  `(tactic| simp only [$fs,*, Layout.frag_append, Layout.frag_cons, Layout.frag_nil])
-
 /-- The prologue: it sets the base `rdx` holds on entry to the loop. -/
-def p3.entry : Program := parse("
+abbrev p3.entry : Program := parse("
 init:
   mov $2, %rdx
 ")
 
 /-- The loop: it squares `rdx` and counts `rbx` down, jumping to `_end` at zero. -/
-def p3.loop : Program := parse("
+abbrev p3.loop : Program := parse("
 start:
   sub $0, %rbx
   jz _end
@@ -48,12 +45,16 @@ start:
 ")
 
 /-- The tail the loop exits to. -/
-def p3.exit : Program := parse("
+abbrev p3.exit : Program := parse("
 _end:
   nop
 ")
 
-/-- The program a run of `p3` executes: the prologue, the loop, the tail. -/
+/-- The program a run of `p3` executes: the prologue, the loop, the tail.
+
+The fragments above are reducible, so `vcgen` walks into their directives; `p3`
+and `p3.body` are not, so a proof that cites their specifications never steps
+them. -/
 def p3 : Program := p3.entry ++ p3.loop ++ p3.exit
 
 /-- The directives a run reaches from the loop header: the loop and the tail it
@@ -83,7 +84,7 @@ starts there, laid out with the sizes past the fragments before it. -/
 
 section Extraction
 
-attribute [local simp] p3 p3.entry p3.loop p3.exit Layout.apply_fst Layout.apply_snd
+attribute [local simp] p3 Layout.apply_fst Layout.apply_snd
 
 variable [layout : Layout]
 
@@ -185,7 +186,6 @@ private theorem p3_end_run (s : MachineData) (post : @Post MachineState)
   with_reducible apply step_cps
   with_reducible apply straightlineStep_of_wp
   rw [p3_end_segment]
-  materialize [p3.exit]
   vcgen simplifying_assumptions
   rw [p3_end_pc]
   with_reducible exact Eventually.done _ h
@@ -218,7 +218,7 @@ private theorem p3_body_spec (rbx0 k : Nat) (hbound : 2 ^ 2 ^ rbx0 < 2 ^ 64)
   have hsq : k ≠ 0 → st.1.regs.rdx.toNat * st.1.regs.rdx.toNat = 2 ^ 2 ^ (rbx0 - (k - 1)) := by
     intro hk
     rw [hrdx, pow_sq, show rbx0 - (k - 1) = rbx0 - k + 1 from by omega]
-  materialize [p3.body, p3.loop]
+  simp only [p3.body]
   vcgen simplifying_assumptions with finish
 
 /-- The prologue sets `rdx` to `2`, which is the invariant at the full count,
@@ -229,7 +229,6 @@ private theorem p3_enter (d : MachineData) (hrax : d.regs.rax = 0)
       (p3_exits d.regs.rbx.toNat d.regs.rbx.toNat) := by
   with_reducible apply straightlineStep_of_wp
   rw [p3_entry_segment]
-  materialize [p3.entry]
   have hpc := p3_start_pc (layout := layout)
   vcgen [p3_body_spec d.regs.rbx.toNat d.regs.rbx.toNat hbound] simplifying_assumptions with finish
 

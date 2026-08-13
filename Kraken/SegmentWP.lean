@@ -342,6 +342,50 @@ theorem Directives.wp_cons_jmp_label (asz osz : Width) (l : Label) (sz : Nat) (l
     ((try wp_step_at h) <;> (try wp_step) <;>
       (try simp only [hcancel, Int64.ofBitVec_toBitVec] at h ⊢) <;> exact h)
 
+/-! ### Fragments
+
+A laid-out fragment is stepped through the same rules as a directive list: the
+three specs below let `vcgen` walk `Layout.frag` down to the cons cells the
+per-directive specs are keyed on, and split it where the program splits. -/
+
+/-- The fragment `p` as it is laid out from position `n` of the program that
+contains it: each directive paired with the size the layout assigns to its
+position. -/
+def Layout.frag [layout : Layout] (n : Nat) (p : Program) : List (Directive × Nat) :=
+  p.mapIdx (fun i d => (d, layout.size (n + i)))
+
+@[simp] theorem Layout.frag_nil [Layout] (n : Nat) :
+    Layout.frag n [] = [] := rfl
+
+@[simp] theorem Layout.frag_length [Layout] (n : Nat) (p : Program) :
+    (Layout.frag n p).length = p.length := by simp [Layout.frag]
+
+@[simp] theorem Layout.frag_cons [layout : Layout] (n : Nat) (d : Directive) (ds : Program) :
+    Layout.frag n (d :: ds) = (d, layout.size n) :: Layout.frag (n + 1) ds := by
+  simp [Layout.frag, List.mapIdx_cons, Nat.add_assoc, Nat.add_comm 1]
+
+/-- A fragment splits where the program it lays out splits. -/
+theorem Layout.frag_append [layout : Layout] (n : Nat) (as bs : Program) :
+    Layout.frag n (as ++ bs) = Layout.frag n as ++ Layout.frag (n + as.length) bs := by
+  simp [Layout.frag, List.mapIdx_append, Nat.add_left_comm, Nat.add_comm]
+
+@[spec] theorem Directives.frag_nil_spec [Layout] (n : Nat) :
+    ⦃ fun labels st => Q () labels st ⦄ (Layout.frag n ([] : Program)) ⦃ Q; E ⦄ :=
+  Triple.intro fun _ _ h => h
+
+@[spec] theorem Directives.frag_cons_spec [layout : Layout] (n : Nat) (d : Directive)
+    (p : Program) :
+    ⦃ fun labels st => wp ((d, layout.size n) :: Layout.frag (n + 1) p) Q E labels st ⦄
+      (Layout.frag n (d :: p))
+    ⦃ Q; E ⦄ :=
+  Triple.intro fun _ _ h => by rw [Layout.frag_cons]; exact h
+
+@[spec] theorem Directives.frag_append_spec [Layout] (n : Nat) (as bs : Program) :
+    ⦃ fun labels st => wp (Layout.frag n as ++ Layout.frag (n + as.length) bs) Q E labels st ⦄
+      (Layout.frag n (as ++ bs))
+    ⦃ Q; E ⦄ :=
+  Triple.intro fun _ _ h => by rw [Layout.frag_append]; exact h
+
 /-- The sequential-composition rule, the analogue of the `Bind.bind` spec: the
 precondition is the wp of the first piece, continuing into the wp of the
 second, with the jump postcondition passed through. -/
