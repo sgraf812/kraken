@@ -299,6 +299,15 @@ theorem straightlineStep_of_wp [Layout] {e : Executable} {s : MachineData} {pc :
   letI := e.labels
   Directives.wpE_sound (fun _ h => h) (fun _ h => h) (e.directivesFromAddress pc) (s, pc) h
 
+/-- Enter a segment through the lemma that extracts it: what the run from `pc`
+does is what the weakest precondition of the extracted directives says. -/
+theorem straightlineStep_of_seg [Layout] {e : Executable} {s : MachineData} {pc : Int64}
+    {seg : List (Directive × Nat)} {post : MachineState → Prop}
+    (hseg : e.directivesFromAddress pc = seg)
+    (h : wp seg (fun _ _ => post) post e.labels (s, pc)) :
+    straightlineStep e (s, pc) post :=
+  straightlineStep_of_wp (hseg ▸ h)
+
 /- `straightlineStep` is the API boundary: every proof enters through
 `apply straightlineStep_of_wp`. Sealing it keeps that apply fast: whenever a
 goal or expected type is headed by `straightlineStep` of a concrete
@@ -318,32 +327,44 @@ symbolic layout. Its API is the extraction equations
 set_option allowUnsafeReducibility true in
 attribute [irreducible] Executable.directivesFromAddress
 
-/-- A loop verified at its header address `e.labels.label l`: the body
-traversal re-enters the header with the invariant at the next index down, and
-the invariant at zero discharges the rest of the run. The back jump is not
-assumed anywhere; it is what the body's jump postcondition demands. -/
+/-- A loop verified at its header address `e.labels.label l`: a run that reaches
+the header with `k` iterations left reaches `post`. The back jump is not assumed
+anywhere; it is what the body's jump postcondition demands.
+
+The body is specified once, for every `k`: it never falls off its segment, and
+each jump exit either returns to the header with one iteration accounted for or,
+at zero, satisfies `Exit`. `hexit` takes the run from there. -/
 theorem Eventually.loop [Layout] {e : Executable} {l : Label}
-    {seg : List (Directive × Nat)} {I : Nat → MachineData → Prop} {post : @Post MachineState}
+    {seg : List (Directive × Nat)} {I : Nat → MachineData → Prop}
+    {Exit : MachineState → Prop} {post : @Post MachineState}
     (hseg : e.directivesFromAddress (e.labels.label l) = seg)
-    (hbody : ∀ k, k ≠ 0 →
+    (hbody : ∀ k,
       ⦃ fun labels st => labels = e.labels ∧ st.2 = e.labels.label l ∧ I k st.1 ⦄
         seg
-      ⦃ fun _ _ _ => False; fun st => st.2 = e.labels.label l ∧ I (k - 1) st.1 ⦄)
-    (hexit : ∀ s, I 0 s → Eventually (straightlineStep e) post (s, e.labels.label l)) :
+      ⦃ fun _ _ _ => False;
+        fun st => (k ≠ 0 ∧ st.2 = e.labels.label l ∧ I (k - 1) st.1) ∨ (k = 0 ∧ Exit st) ⦄)
+    (hexit : ∀ st, Exit st → Eventually (straightlineStep e) post st) :
     ∀ k s, I k s → Eventually (straightlineStep e) post (s, e.labels.label l) := by
+  have hstep : ∀ k s, I k s → straightlineStep e (s, e.labels.label l)
+      (fun st => (k ≠ 0 ∧ st.2 = e.labels.label l ∧ I (k - 1) st.1) ∨ (k = 0 ∧ Exit st)) := by
+    intro k s hI
+    apply straightlineStep_of_wp
+    rw [hseg]
+    exact @Directives.wpE_mono e.labels _ _ _ _ (fun st h => h.elim) (fun st h => h) seg _
+      ((hbody k).le_wp e.labels (s, e.labels.label l) ⟨rfl, rfl, hI⟩)
   intro k
   induction k with
-  | zero => exact hexit
+  | zero =>
+    intro s hI
+    refine Eventually.step _ _ (hstep 0 s hI) ?_
+    rintro st (⟨h0, -⟩ | ⟨-, hx⟩)
+    · exact absurd rfl h0
+    · exact hexit st hx
   | succ n ih =>
     intro s hI
-    refine Eventually.step _ (fun st => st.2 = e.labels.label l ∧ I n st.1) ?_ ?_
-    · apply straightlineStep_of_wp
-      have hb := (hbody (n + 1) (by omega)).le_wp e.labels
-        (s, e.labels.label l) ⟨rfl, rfl, hI⟩
-      rw [hseg]
-      exact @Directives.wpE_mono e.labels _ _ _ _
-        (fun st h => h.elim) (fun st h => h) seg _ hb
-    · rintro ⟨m, pc⟩ ⟨hpc, hIm⟩
-      simp only at hpc hIm
+    refine Eventually.step _ _ (hstep (n + 1) s hI) ?_
+    rintro ⟨m, pc⟩ (⟨-, hpc, hIm⟩ | ⟨h0, -⟩)
+    · simp only at hpc hIm
       subst hpc
       exact ih m hIm
+    · exact absurd h0 (by omega)
