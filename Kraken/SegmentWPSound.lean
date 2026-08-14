@@ -1,9 +1,9 @@
 /-
 Soundness of the segment weakest precondition against the closed straightline
-judgment. `Directive.wp1_sound` transports each `wp1` disjunct into the
-baseline fold with real continuations, by a per-primitive dictionary and one
-case analysis over the instruction set; `straightlineStep_of_wp` then
-recovers `straightlineStep` as the diagonal `Q := E` of `Directives.wpE`.
+judgment. `Directive.interp_sound` transports each `Directive.wp` disjunct
+into the baseline interpreter with real continuations, by a per-primitive
+dictionary and one case analysis over the instruction set;
+`Program.straightlineStep_of_wp` folds it over a sized segment.
 -/
 import Kraken.SegmentWP
 import Kraken.SegmentExtract
@@ -243,15 +243,17 @@ section WP1Sound
 
 open SegmentWPSound
 
-/-- Transport one directive's `wp1` into the baseline interpreter with real
-continuations. -/
-theorem Directive.wp1_sound [Labels] {P : MachineState → Prop}
+/-- Transport one directive's transformer disjunction into the baseline
+interpreter with real continuations. -/
+theorem Directive.interp_sound [Labels] {P : MachineState → Prop}
     {d : Directive} {p : Std.Rco Int64} {s : MachineData}
     {next : MachineData → Prop} {jmp : MachineState → Prop} {k : MachineData → Effects}
     (hnext : ∀ s', next s' → (k s').All P) (hjmp : ∀ st, jmp st → P st)
-    (h : d.wp1 p next jmp s) :
+    (h : (d.interp s p (fun s' => .done (s', 0)) (fun _ _ => .unimplemented "jump")).All
+           (fun st => next st.1)
+       ∨ (d.interp s p (fun _ => .unimplemented "fallthrough")
+           (fun pc' s' => .done (s', pc'))).All jmp) :
     (d.interp s p k (fun pc' s' => .done (s', pc'))).All P := by
-  unfold Directive.wp1 Directive.stepFall Directive.stepJump at h
   cases d with
   | label l =>
     simp only [Directive.interp, Effects.All] at h ⊢
@@ -284,29 +286,56 @@ theorem Directive.wp1_sound [Labels] {P : MachineState → Prop}
 
 end WP1Sound
 
-/-- Transport the segment wp into the baseline fold: `Q` and `E` both entail
-the merged exit predicate. -/
-theorem Directives.wpE_sound [Labels] {P : MachineState → Prop} {Q E : MachineState → Prop}
-    (hQ : ∀ st, Q st → P st) (hE : ∀ st, E st → P st) :
-    ∀ (ds : List (Directive × Nat)) (st : MachineState),
-      Directives.wpE ds Q E st →
-      (Directives.interp ds st.1 st.2 (fun pc s => .done (s, pc))).All P
-  | [], st, h => hQ _ h
-  | (d, sz) :: ds, st, h => by
-    simp only [Directives.interp, Directives.wpE] at h ⊢
-    exact Directive.wp1_sound
-      (fun s' h' => wpE_sound hQ hE ds (s', st.2 + .ofNat sz) h')
-      (fun st' h' => hE _ h')
-      h
+/- The fold transport unifies `Directive.interp` applications of a symbolic
+directive; sealing the interpreters keeps that unification a comparison of
+stuck applications instead of a symbolic machine run. -/
+section InterpSealed
 
-/-- A segment triple establishes the omni-semantics straightline judgment as
-the diagonal `Q := E := post`. -/
-theorem straightlineStep_of_wp [Layout] {e : Executable} {s : MachineData} {pc : Int64}
-    {post : MachineState → Prop}
-    (h : wp (e.directivesFromAddress pc) (fun _ _ => post) post e.labels (s, pc)) :
+set_option allowUnsafeReducibility true in
+attribute [local irreducible] Directive.interp Directives.interp
+
+/-- Transport the traversal wp along a sized spelling of its text into the
+baseline fold: `Q` lands at the fall-through past the end, `E` at a jump out,
+resolved to the ambient table's addresses. -/
+theorem Program.wp_sound [Labels] {P : MachineState → Prop}
+    {Q : MachineData → Prop} {E : Label → MachineData → Prop}
+    (hQ : ∀ s' pc', Q s' → P (s', pc'))
+    (hE : ∀ st, (∃ l, st.2 = label l ∧ E l st.1) → P st) :
+    ∀ (ds : List (Directive × Nat)) {q : Program}, ds.map Prod.fst = q →
+      ∀ (s : MachineData) (pc : Int64), Program.wp q Q E s →
+        (Directives.interp ds s pc (fun pc' s' => .done (s', pc'))).All P
+  | [], _, rfl, s, pc, h => by
+    simp only [Directives.interp, Effects.All]
+    exact hQ s pc h
+  | (d, sz) :: ds, _, rfl, s, pc, h => by
+    simp only [List.map_cons, Program.wp, Directive.wp] at h
+    simp only [Directives.interp]
+    rcases h ‹Labels› ⟨pc, pc + .ofNat sz⟩ with hfall | hjump
+    · exact Directive.interp_sound
+        (fun s' h' => Program.wp_sound hQ hE ds rfl s' (pc + .ofNat sz) h')
+        (fun st' h' => hE _ h')
+        (Or.inl hfall)
+    · refine Directive.interp_sound
+        (fun s' h' => Program.wp_sound hQ hE ds rfl s' (pc + .ofNat sz) h')
+        (fun st' h' => hE _ h')
+        (Or.inr (Effects.All.mono ?_ _ hjump))
+      rintro st ⟨l, -, ha, he⟩
+      exact ⟨l, ha, he⟩
+
+/-- The traversal wp of the segment at `pc` establishes the omni-semantics
+straightline judgment. -/
+theorem Program.straightlineStep_of_wp [Layout] {e : Executable} {q : Program}
+    {s : MachineData} {pc : Int64} {Q : MachineData → Prop}
+    {E : Label → MachineData → Prop} {post : MachineState → Prop}
+    (hds : (e.directivesFromAddress pc).map Prod.fst = q)
+    (hQ : ∀ s' pc', Q s' → post (s', pc'))
+    (hE : ∀ st, (∃ l, st.2 = e.labels.label l ∧ E l st.1) → post st)
+    (h : Program.wp q Q E s) :
     straightlineStep e (s, pc) post :=
   letI := e.labels
-  Directives.wpE_sound (fun _ h => h) (fun _ h => h) (e.directivesFromAddress pc) (s, pc) h
+  Program.wp_sound hQ hE _ hds s pc h
+
+end InterpSealed
 
 /- `straightlineStep` is the API boundary: every proof enters through
 `apply straightlineStep_of_wp`. Sealing it keeps that apply fast: whenever a
@@ -440,23 +469,19 @@ private theorem Program.chain_sound [layout : Layout] {p : Program}
   | done st hp => exact fun _ => hp.elim
   | step st mid_p ht _ ih =>
     intro hmem
-    letI : Labels := (layout p).labels
     obtain ⟨j, ls, hls, hseg⟩ := hlab st.2 hmem
-    have hw := Program.wpF_toE (Layout.frag j (ls ++ Program.fromLabel p st.2))
-      (Layout.frag_map_fst _ _) st.1 ((layout p).labels.label st.2)
-      (Program.wpF_label_prefix hls ht)
     refine Eventually.step _
       (fun mid => (Q mid.1 ∨ ∃ l, mid.2 = (layout p).labels.label l ∧ E l mid.1)
         ∨ (∃ l, mid.2 = (layout p).labels.label l
             ∧ Program.fromLabel p l ≠ [] ∧ mid_p (mid.1, l)))
-      (straightlineStep_of_wp ?_) ?_
+      (Program.straightlineStep_of_wp ?_ ?_ ?_ (Program.wp_label_prefix hls ht)) ?_
     · rw [hseg]
-      refine Directives.wpE_mono (fun mid hq => ?_) (fun mid hx => ?_) _ _ hw
-      · exact Or.inl (Or.inl hq)
-      · obtain ⟨l, ha, he⟩ := hx
-        rcases he with he | ⟨hm, hmid⟩
-        · exact Or.inl (Or.inr ⟨l, ha, he⟩)
-        · exact Or.inr ⟨l, ha, hm, hmid⟩
+      exact Layout.frag_map_fst _ _
+    · exact fun s' pc' hq => Or.inl (Or.inl hq)
+    · rintro st' ⟨l, ha, he⟩
+      rcases he with he | ⟨hm, hmid⟩
+      · exact Or.inl (Or.inr ⟨l, ha, he⟩)
+      · exact Or.inr ⟨l, ha, hm, hmid⟩
     · rintro mid (hdone | ⟨l, ha, hm, hmid⟩)
       · exact Eventually.done _ hdone
       · have hb := ih (mid.1, l) hmid hm
@@ -469,7 +494,8 @@ a label whose exit assertion holds. -/
 theorem Program.sound [layout : Layout] {p : Program}
     [hv : Executable.ValidLayout (layout p)]
     {Q : MachineData → Prop} {E : Label → MachineData → Prop} {s : MachineData}
-    (h : Program.wpR p Q E s) (hwf : Program.WF p := by decide) :
+    (h : Program.wp p Q (Program.exitsTo p Q E) s)
+    (hwf : Program.WF p := by decide) :
     Eventually (straightlineStep (layout p))
       (fun mid => Q mid.1 ∨ ∃ l, mid.2 = (layout p).labels.label l ∧ E l mid.1)
       (s, layout.start) := by
@@ -479,20 +505,18 @@ theorem Program.sound [layout : Layout] {p : Program}
         (layout p).directivesFromAddress ((layout p).labels.label l)
           = Layout.frag j (ls ++ Program.fromLabel p l) :=
     fun l hne => Program.extract hwf hne
-  letI : Labels := (layout p).labels
-  have hw := Program.wpF_toE (Layout.frag 0 p) (Layout.frag_map_fst 0 p) s layout.start h
   refine Eventually.step _
     (fun mid => (Q mid.1 ∨ ∃ l, mid.2 = (layout p).labels.label l ∧ E l mid.1)
       ∨ (∃ l, mid.2 = (layout p).labels.label l ∧ Program.fromLabel p l ≠ []
           ∧ Eventually (Program.runStep p Q E) (fun _ => False) (mid.1, l)))
-    (straightlineStep_of_wp ?_) ?_
+    (Program.straightlineStep_of_wp ?_ ?_ ?_ h) ?_
   · rw [hentry]
-    refine Directives.wpE_mono (fun mid hq => ?_) (fun mid hx => ?_) _ _ hw
-    · exact Or.inl (Or.inl hq)
-    · obtain ⟨l, ha, he⟩ := hx
-      rcases he with he | ⟨hm, hch⟩
-      · exact Or.inl (Or.inr ⟨l, ha, he⟩)
-      · exact Or.inr ⟨l, ha, hm, hch⟩
+    exact Layout.frag_map_fst 0 p
+  · exact fun s' pc' hq => Or.inl (Or.inl hq)
+  · rintro st' ⟨l, ha, he⟩
+    rcases he with he | ⟨hm, hch⟩
+    · exact Or.inl (Or.inr ⟨l, ha, he⟩)
+    · exact Or.inr ⟨l, ha, hm, hch⟩
   · rintro mid (hdone | ⟨l, ha, hm, hch⟩)
     · exact Eventually.done _ hdone
     · have hb := Program.chain_sound hlab (mid.1, l) hm hch
