@@ -939,10 +939,18 @@ def Program.nextLabel : Program → Option Label
   | .label l :: _ => some l
   | _ :: p => Program.nextLabel p
 
+/-- A basic block: its label, its straight-line body, and the label it falls
+into, when one follows. -/
+structure Program.Block where
+  label : Label
+  body : Program
+  next : Option Label
+  deriving DecidableEq, Repr
+
 /-- The labeled blocks of the text, in order. -/
-def Program.blocks : Program → List (Label × Program × Option Label)
+def Program.blocks : Program → List Program.Block
   | [] => []
-  | .label l :: p => (l, Program.blockBody p, Program.nextLabel p) :: Program.blocks p
+  | .label l :: p => ⟨l, Program.blockBody p, Program.nextLabel p⟩ :: Program.blocks p
   | _ :: p => Program.blocks p
 
 /-- A block body carries no label cell. -/
@@ -955,7 +963,7 @@ theorem Program.blockBody_fromLabel (p : Program) (lx : Label) :
 
 /-- A label has a scope suffix exactly when it heads a block. -/
 theorem Program.fromLabel_ne_nil_iff (p : Program) (l : Label) :
-    Program.fromLabel p l ≠ [] ↔ l ∈ (Program.blocks p).map (·.1) := by
+    Program.fromLabel p l ≠ [] ↔ l ∈ (Program.blocks p).map (·.label) := by
   induction p with
   | nil => simp [Program.blocks]
   | cons d p ih =>
@@ -985,14 +993,14 @@ theorem Program.fromLabel_ne_nil_iff (p : Program) (l : Label) :
 /-- A label with a scope suffix has a block. -/
 theorem Program.block_of_fromLabel {p : Program} {l : Label}
     (h : Program.fromLabel p l ≠ []) :
-    ∃ b next, (l, b, next) ∈ Program.blocks p := by
+    ∃ b next, Program.Block.mk l b next ∈ Program.blocks p := by
   obtain ⟨⟨l', b, next⟩, hmem, hfst⟩ :=
     List.mem_map.mp ((Program.fromLabel_ne_nil_iff p l).mp h)
   exact ⟨b, next, hfst ▸ hmem⟩
 
 /-- The label a block falls into heads a block itself. -/
 theorem Program.nextLabel_mem {p : Program} {l : Label}
-    (h : Program.nextLabel p = some l) : l ∈ (Program.blocks p).map (·.1) := by
+    (h : Program.nextLabel p = some l) : l ∈ (Program.blocks p).map (·.label) := by
   induction p with
   | nil => cases h
   | cons d p ih =>
@@ -1006,18 +1014,17 @@ theorem Program.nextLabel_mem {p : Program} {l : Label}
 
 /-- Every block body is label-free. -/
 theorem Program.blocks_body_fromLabel :
-    ∀ (p : Program) {l b next}, (l, b, next) ∈ Program.blocks p →
-      ∀ lx, Program.fromLabel b lx = [] := by
+    ∀ (p : Program) {blk : Program.Block}, blk ∈ Program.blocks p →
+      ∀ lx, Program.fromLabel blk.body lx = [] := by
   intro p
   induction p with
-  | nil => intro _ _ _ h; cases h
+  | nil => intro _ h; cases h
   | cons d p ih =>
-    intro l b next hmem lx
+    intro blk hmem lx
     cases d with
     | label l₁ =>
       rcases List.mem_cons.mp hmem with heq | hmem'
-      · obtain ⟨-, rfl, -⟩ : l = l₁ ∧ b = Program.blockBody p ∧ next = Program.nextLabel p := by
-          simpa [Prod.ext_iff] using heq
+      · rw [heq]
         exact Program.blockBody_fromLabel p lx
       · exact ih hmem' lx
     | instr i => exact ih hmem lx
@@ -1025,8 +1032,8 @@ theorem Program.blocks_body_fromLabel :
 
 /-- The label a block falls into heads a block. -/
 theorem Program.blocks_next_mem :
-    ∀ (p : Program) {l b l''}, (l, b, some l'') ∈ Program.blocks p →
-      l'' ∈ (Program.blocks p).map (·.1) := by
+    ∀ (p : Program) {l b l''}, Program.Block.mk l b (some l'') ∈ Program.blocks p →
+      l'' ∈ (Program.blocks p).map (·.label) := by
   intro p
   induction p with
   | nil => intro _ _ _ h; cases h
@@ -1035,8 +1042,9 @@ theorem Program.blocks_next_mem :
     cases d with
     | label l₁ =>
       rcases List.mem_cons.mp hmem with heq | hmem'
-      · obtain ⟨-, -, hn⟩ : l = l₁ ∧ b = Program.blockBody p ∧ some l'' = Program.nextLabel p := by
-          simpa [Prod.ext_iff] using heq
+      · obtain ⟨-, -, hn⟩ :
+            l = l₁ ∧ b = Program.blockBody p ∧ some l'' = Program.nextLabel p := by
+          simpa [Program.Block.mk.injEq] using heq
         simp only [Program.blocks, List.map_cons, List.mem_cons]
         exact Or.inr (Program.nextLabel_mem hn.symm)
       · simp only [Program.blocks, List.map_cons, List.mem_cons]
@@ -1046,7 +1054,7 @@ theorem Program.blocks_next_mem :
 
 /-- The text is its first block followed by the next label's scope suffix. -/
 theorem Program.eq_blockBody_append :
-    ∀ (p : Program), ((Program.blocks p).map (·.1)).Nodup →
+    ∀ (p : Program), ((Program.blocks p).map (·.label)).Nodup →
       p = Program.blockBody p ++ (match Program.nextLabel p with
         | some l' => Program.fromLabel p l' | none => []) := by
   intro p
@@ -1089,8 +1097,8 @@ theorem Program.eq_blockBody_append :
 /-- A block's scope suffix: its label cell, its body, and the next label's
 scope suffix. -/
 theorem Program.fromLabel_block :
-    ∀ (p : Program), ((Program.blocks p).map (·.1)).Nodup →
-      ∀ {l b next}, (l, b, next) ∈ Program.blocks p →
+    ∀ (p : Program), ((Program.blocks p).map (·.label)).Nodup →
+      ∀ {l b next}, Program.Block.mk l b next ∈ Program.blocks p →
       Program.fromLabel p l = Directive.label l :: (b ++ (match next with
         | some l' => Program.fromLabel p l' | none => [])) := by
   intro p
@@ -1106,7 +1114,7 @@ theorem Program.fromLabel_block :
       rcases List.mem_cons.mp hmem with heq | hmem'
       · obtain ⟨rfl, rfl, rfl⟩ :
             l = l₁ ∧ b = Program.blockBody p ∧ next = Program.nextLabel p := by
-          simpa [Prod.ext_iff] using heq
+          simpa [Program.Block.mk.injEq] using heq
         have hnil : Program.fromLabel p l = [] := by
           by_cases hne : Program.fromLabel p l = []
           · exact hne
@@ -1170,7 +1178,7 @@ theorem Program.wpR_label_free {b : Program} (hb : ∀ lx, Program.fromLabel b l
     {Q : MachineData → Prop} {E : Label → MachineData → Prop} {s : MachineData}
     (h : Program.wpR b Q E s) : Program.wpF b Q E s :=
   Program.wpF_mono (fun _ h => h)
-    (fun lx sx hx => hx.elim id (fun ⟨hm, _⟩ => absurd (hb lx) hm)) b s h
+    (fun lx _sx hx => hx.elim id (fun ⟨hm, _⟩ => absurd (hb lx) hm)) b s h
 
 /-- The control-flow rule: one spec table `T`, one variant `var`, one triple
 per block. A block is entered with its table entry and the variant
@@ -1181,15 +1189,15 @@ distinct, and `htab` confines the table to the text. -/
 theorem Program.cfg {p p' : Program} {Q : Unit → MachineData → Prop} (l₀ : Label)
     (hp : p = Directive.label l₀ :: p')
     (T : Label → MachineData → Prop) (var : Label → MachineData → Nat)
-    (hnd : ((Program.blocks p).map (·.1)).Nodup)
+    (hnd : ((Program.blocks p).map (·.label)).Nodup)
     (htab : ∀ l s, T l s → Program.fromLabel p l ≠ [])
-    (hblocks : ∀ lbn ∈ Program.blocks p, ∀ n : Nat,
-      ⦃ fun s => T lbn.1 s ∧ var lbn.1 s = n ⦄ lbn.2.1
-      ⦃ (match lbn.2.2 with
+    (hblocks : ∀ blk ∈ Program.blocks p, ∀ n : Nat,
+      ⦃ fun s => T blk.label s ∧ var blk.label s = n ⦄ blk.body
+      ⦃ (match blk.next with
          | some l' => fun _ s => T l' s ∧ var l' s ≤ n
          | none => Q);
         fun l' s => T l' s ∧ (var l' s < n ∨ (var l' s = n ∧
-          (Program.fromLabel p l').length < (Program.fromLabel p lbn.1).length)) ⦄) :
+          (Program.fromLabel p l').length < (Program.fromLabel p blk.label).length)) ⦄) :
     ⦃ T l₀ ⦄ p ⦃ Q; fun _ _ => False ⦄ := by
   have hnd' := hnd
   rw [hp] at hnd'
@@ -1200,10 +1208,11 @@ theorem Program.cfg {p p' : Program} {Q : Unit → MachineData → Prop} (l₀ :
     · exact absurd ((Program.fromLabel_ne_nil_iff p' l₀).mp hne) hnd'.1
   have hfl₀ : Program.fromLabel p l₀ = p := by
     rw [hp, Program.fromLabel_cons, if_pos ⟨hnil₀, rfl⟩]
-  have hmem₀ : (l₀, Program.blockBody p', Program.nextLabel p') ∈ Program.blocks p := by
+  have hmem₀ :
+      Program.Block.mk l₀ (Program.blockBody p') (Program.nextLabel p') ∈ Program.blocks p := by
     rw [hp]
     exact List.mem_cons_self
-  have main : ∀ m : Nat, ∀ l b next, (l, b, next) ∈ Program.blocks p → ∀ s, T l s →
+  have main : ∀ m : Nat, ∀ l b next, Program.Block.mk l b next ∈ Program.blocks p → ∀ s, T l s →
       var l s * (p.length + 1) + (Program.fromLabel p l).length = m →
       Program.wpF (Program.fromLabel p l) (Q ())
         (Program.exitsTo p (Q ()) (fun _ _ => False)) s := by
@@ -1217,7 +1226,7 @@ theorem Program.cfg {p p' : Program} {Q : Unit → MachineData → Prop} (l₀ :
       wpF_step
       rw [Program.wpF_append]
       have hb := Program.wpR_label_free (Program.blocks_body_fromLabel p hmem)
-        ((hblocks (l, b, next) hmem (var l s)).le_wp s ⟨hT, rfl⟩)
+        ((hblocks ⟨l, b, next⟩ hmem (var l s)).le_wp s ⟨hT, rfl⟩)
       refine Program.wpF_mono (fun sx hq => ?_) (fun lx sx hx => ?_) _ _ hb
       · cases hnx : next with
         | some l' =>
