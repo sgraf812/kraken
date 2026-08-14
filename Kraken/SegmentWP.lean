@@ -655,6 +655,17 @@ theorem Program.fromLabel_head :
     · rw [if_neg hc] at h ⊢
       exact ih h
 
+/-- The closed wp opens at any channel that absorbs the exit dispatch. The
+label-free bridge `Program.wpOpen_of_wpClosed` is the instance where the
+dispatch is `E` itself; a component with internal labels supplies the chain
+absorption instead. -/
+theorem Program.wpOpen_of_wpClosed' {x : Program} {Q : MachineData → Prop}
+    {E E' : Label → MachineData → Prop} {s : MachineData}
+    (h : Program.wpClosed x Q E s)
+    (habs : ∀ l s', Program.exitsTo x Q E l s' → E' l s') :
+    Program.wpOpen x Q E' s :=
+  Program.wpOpen_mono (fun _ h => h) habs x s h
+
 /-- On a label-free fragment the dispatch closes nothing, and the closed wp
 comes back to the open one. -/
 theorem Program.wpOpen_of_wpClosed {b : Program} (hb : ∀ lx, Program.fromLabel b lx = [])
