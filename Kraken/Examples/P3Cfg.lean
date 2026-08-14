@@ -25,7 +25,7 @@ so the rewrite cannot feed itself. -/
   rw [show r - b + 1 = r - (b - 1) from by omega]
 
 /-- The squared invariant stays below the word size. -/
-@[grind] private theorem sq_lt (r b : Nat) (hbound : 2 ^ 2 ^ r < 2 ^ 64)
+@[grind .] private theorem sq_lt (r b : Nat) (hbound : 2 ^ 2 ^ r < 2 ^ 64)
     (hb : b ≠ 0) (hle : b ≤ r) :
     2 ^ 2 ^ (r - b) * 2 ^ 2 ^ (r - b) < 2 ^ 64 := by
   rw [sq_pow r b hb hle]
@@ -35,7 +35,7 @@ so the rewrite cannot feed itself. -/
     _ < 2 ^ 64 := hbound
 
 /-- The forward edge of the loop: `_end` sits later in the text than `start`. -/
-@[grind] private theorem len_end_lt_start :
+@[grind .] private theorem len_end_lt_start :
     (Program.fromLabel p3 "_end").length < (Program.fromLabel p3 "start").length := by
   decide
 
@@ -49,23 +49,9 @@ private abbrev p3_table (d : MachineData) : Label → MachineData → Prop
   | "_end", s => s.regs.rdx.toNat = 2 ^ 2 ^ d.regs.rbx.toNat ∧ s.regs.rax = 0
   | _, _ => False
 
-/-- The labels of `p3`. -/
-private theorem p3_labels :
-    (Program.blocks p3).map (·.label) = ["init", "start", "_end"] := by decide
-
-/-- The block map of `p3`, one equation per label. -/
-private theorem p3_blockAt_init :
-    Program.blockAt p3 "init" = some ⟨"init", p3.entry.tail, some "start"⟩ := by decide
-
-private theorem p3_blockAt_start :
-    Program.blockAt p3 "start" = some ⟨"start", p3.body, some "_end"⟩ := by decide
-
-private theorem p3_blockAt_end :
-    Program.blockAt p3 "_end" = some ⟨"_end", p3.exit.tail, none⟩ := by decide
-
 /-- The jump targets of `p3` are mapped. -/
-@[grind] private theorem p3_start_isSome : (Program.blockAt p3 "start").isSome := by decide
-@[grind] private theorem p3_end_isSome : (Program.blockAt p3 "_end").isSome := by decide
+@[grind .] private theorem p3_start_isSome : (Program.blockAt p3 "start").isSome := by decide
+@[grind .] private theorem p3_end_isSome : (Program.blockAt p3 "_end").isSome := by decide
 
 theorem p3_correct (d : MachineData) (h_bounds : p3_spec d < 2 ^ 64)
     (h_rax : d.regs.rax = 0) :
@@ -73,30 +59,11 @@ theorem p3_correct (d : MachineData) (h_bounds : p3_spec d < 2 ^ 64)
       p3
     ⦃ fun _ s => s.regs.rdx.toNat = p3_spec d ∧ s.regs.rax = 0 ⦄ := by
   simp only [p3_spec] at h_bounds ⊢
-  refine Program.cfg (p := p3) (p3_table d) (fun _ s => s.regs.rbx.toNat)
-    (by decide) ?_ ?_
-  · -- the entry code, before the first label
-    simp only [show Program.blockBody p3 = [] from rfl,
-      show Program.nextLabel p3 = some "init" from rfl]
-    vcgen simplifying_assumptions with finish
-  · -- one obligation per mapped block
-    intro l blk hblk n
-    have hl := (Program.fromLabel_ne_nil_iff p3 l).mp (Program.blockAt_ne hblk)
-    rw [p3_labels] at hl
-    simp only [List.mem_cons, List.not_mem_nil, or_false] at hl
-    rcases hl with rfl | rfl | rfl
-    · rw [p3_blockAt_init] at hblk
-      obtain rfl := Option.some.inj hblk
-      simp only [List.tail_cons]
-      vcgen simplifying_assumptions with finish
-    · rw [p3_blockAt_start] at hblk
-      obtain rfl := Option.some.inj hblk
-      dsimp only
-      vcgen simplifying_assumptions with finish
-    · rw [p3_blockAt_end] at hblk
-      obtain rfl := Option.some.inj hblk
-      simp only [List.tail_cons]
-      vcgen simplifying_assumptions with finish
+  refine Program.cfg (p := p3) (p3_table d) (fun _ s => s.regs.rbx.toNat) ?_
+  cfg_cases [p3, p3.entry, p3.loop, p3.body, p3.exit]
+  · vcgen simplifying_assumptions with finish
+  · vcgen simplifying_assumptions with finish
+  · vcgen simplifying_assumptions with finish
 
 variable [layout : Layout] [hv : Executable.ValidLayout (layout p3)]
 

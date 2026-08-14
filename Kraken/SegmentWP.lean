@@ -1371,6 +1371,23 @@ theorem Program.blockAt_next_ne {p : Program} {l : Label} {blk : Program.Block} 
       ((hsub.sublist.map (·.label)).subset hmem)
   · cases h
 
+/-- The labels of the text, in order. -/
+def Program.labels : Program → List Label
+  | [] => []
+  | .label l :: p => l :: Program.labels p
+  | _ :: p => Program.labels p
+
+/-- The labels are the block labels. -/
+theorem Program.labels_eq_blocks (p : Program) :
+    Program.labels p = (Program.blocks p).map (·.label) := by
+  induction p with
+  | nil => rfl
+  | cons d p ih =>
+    cases d with
+    | label l => simp only [Program.labels, Program.blocks, List.map_cons, ih]
+    | instr i => exact ih
+    | byteArray a => exact ih
+
 /-- The empty label context holds nowhere. -/
 theorem Program.bot_elim {l : Label} {s : MachineData} {C : Prop}
     (h : (⊥ : Label → MachineData → Prop) l s) : C :=
@@ -1386,29 +1403,25 @@ abbrev Program.EdgeLt (p : Program) (var : Label → MachineData → Nat)
     (Program.fromLabel p l').length < (Program.fromLabel p l).length)
 
 /-- The control-flow rule: one spec table `T`, one variant `var`, one triple
-per block of the map `Program.blockAt`. The entry code runs first and reaches
-a table entry with no obligation on the measure. Each block is entered with
-its table entry and the variant snapshotted; it falls into the next block with
-the entry there and the variant not increased, and a jump exit lands on a
-mapped table entry with the variant decreased, or unchanged at a textually
-later label. The run never pauses: the label context of the conclusion is
-`⊥`. -/
-theorem Program.cfg {p : Program} {P : MachineData → Prop} {Q : Unit → MachineData → Prop}
+per block of the map `Program.blockAt`. Each block is entered with its table
+entry and the variant snapshotted; it falls into the next block with the entry
+there and the variant not increased, and a jump exit lands on a mapped table
+entry along `Program.EdgeLt`. The run never pauses: the label context of the
+conclusion is `⊥`. The text starts with the entry label, and its labels are
+distinct; both side conditions discharge themselves. -/
+theorem Program.cfg {p p' : Program} {Q : Unit → MachineData → Prop} {l₀ : Label}
     (T : Label → MachineData → Prop) (var : Label → MachineData → Nat)
-    (hnd : ((Program.blocks p).map (·.label)).Nodup)
-    (hentry : ⦃ P ⦄ Program.blockBody p
-      ⦃ (match Program.nextLabel p with
-         | some l' => fun _ s => T l' s
-         | none => Q);
-        fun l' s => (Program.blockAt p l').isSome ∧ T l' s ⦄)
     (hblocks : ∀ l blk, Program.blockAt p l = some blk → ∀ n : Nat,
       ⦃ fun s => T l s ∧ var l s = n ⦄ blk.body
       ⦃ (match blk.next with
          | some l' => fun _ s => T l' s ∧ var l' s ≤ n
          | none => Q);
         fun l' s => (Program.blockAt p l').isSome ∧ T l' s
-          ∧ Program.EdgeLt p var l n l' s ⦄) :
-    ⦃ P ⦄ p ⦃ Q ⦄ := by
+          ∧ Program.EdgeLt p var l n l' s ⦄)
+    (hp : p = Directive.label l₀ :: p' := by rfl)
+    (hnd : (Program.labels p).Nodup := by decide) :
+    ⦃ T l₀ ⦄ p ⦃ Q ⦄ := by
+  rw [Program.labels_eq_blocks] at hnd
   have main : ∀ m : Nat, ∀ l blk, Program.blockAt p l = some blk → ∀ s, T l s →
       var l s * (p.length + 1) + (Program.fromLabel p l).length = m →
       Program.wpF (Program.fromLabel p l) (Q ())
@@ -1471,28 +1484,42 @@ theorem Program.cfg {p : Program} {P : MachineData → Prop} {Q : Unit → Machi
               < var l s * (p.length + 1) + (Program.fromLabel p l).length :=
                 Nat.add_lt_add_left hlenlt _
             _ = m := hμ
-  refine Triple.intro fun s hp => ?_
-  have hgoal : Program.wpF (Program.blockBody p ++ Program.tailOf p (Program.nextLabel p))
-      (Q ()) (Program.exitsTo p (Q ()) ⊥) s := by
-    rw [Program.wpF_append]
-    have hb := Program.wpR_label_free (Program.blockBody_fromLabel p)
-      (hentry.le_wp s hp)
-    refine Program.wpF_mono (fun sx hq => ?_) (fun lx sx hx => ?_) _ _ hb
-    · cases hnl : Program.nextLabel p with
-      | some l' =>
-        rw [hnl] at hq
-        have hne' : Program.fromLabel p l' ≠ [] :=
-          (Program.fromLabel_ne_nil_iff p l').mpr (Program.nextLabel_mem hnl)
-        obtain ⟨blk', hblk'⟩ := Program.blockAt_isSome hne'
-        exact main _ l' blk' hblk' sx hq rfl
-      | none =>
-        simp only [hnl] at hq
-        exact hq
-    · obtain ⟨hsome, hT'⟩ := hx
-      obtain ⟨blk'', hblk''⟩ := Option.isSome_iff_exists.mp hsome
-      refine Or.inr ⟨Program.blockAt_ne hblk'', step_cps _ _ _ ?_⟩
-      show Program.wpF (Program.fromLabel p lx) _ _ sx
-      exact main _ lx blk'' hblk'' sx hT' rfl
-  rwa [← Program.eq_blockBody_append p hnd] at hgoal
+  have hnd' := hnd
+  rw [hp] at hnd'
+  simp only [Program.blocks, List.map_cons, List.nodup_cons] at hnd'
+  have hnil₀ : Program.fromLabel p' l₀ = [] := by
+    by_cases hne : Program.fromLabel p' l₀ = []
+    · exact hne
+    · exact absurd ((Program.fromLabel_ne_nil_iff p' l₀).mp hne) hnd'.1
+  have hfl₀ : Program.fromLabel p l₀ = p := by
+    rw [hp, Program.fromLabel_cons, if_pos ⟨hnil₀, rfl⟩]
+  obtain ⟨blk₀, hblk₀⟩ := Program.blockAt_isSome (p := p) (l := l₀) (by rw [hfl₀, hp]; exact List.cons_ne_nil _ _)
+  refine Triple.intro fun s hT => ?_
+  have h := main _ l₀ blk₀ hblk₀ s hT rfl
+  rwa [hfl₀] at h
+
+set_option hygiene false in
+/-- Split the control-flow obligations into one goal per block: enumerate the
+labels, substitute each, and compute its block from the map. The bracket lists
+the program's definitional unfoldings. -/
+macro "cfg_cases" "[" ids:Lean.Parser.Tactic.simpLemma,* "]" : tactic =>
+  `(tactic|
+    (intro l blk hblk n
+     have hl := (Program.fromLabel_ne_nil_iff _ l).mp (Program.blockAt_ne hblk)
+     simp only [$ids,*, Program.blocks, Program.blockBody, Program.nextLabel,
+       List.cons_append, List.nil_append, List.map_cons, List.map_nil,
+       List.mem_cons, List.not_mem_nil, or_false] at hl
+     repeat' first
+       | (obtain rfl | hl := hl)
+       | (obtain rfl := hl)
+     all_goals
+       simp only [$ids,*, Program.blockAt, Program.fromLabel_cons,
+         Program.fromLabel_nil, Program.blockBody, Program.nextLabel,
+         List.cons_append, List.nil_append, Option.some.injEq,
+         Directive.label.injEq, String.reduceEq, eq_self_iff_true,
+         and_true, true_and, and_false, false_and, if_true, if_false,
+         reduceIte, reduceCtorEq] at hblk
+     all_goals subst hblk
+     all_goals dsimp only))
 
 end ProgramSpecs
