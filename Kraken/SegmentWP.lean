@@ -356,6 +356,28 @@ def Layout.frag [layout : Layout] (n : Nat) (p : Program) : List (Directive × N
     Layout.frag n (d :: ds) = (d, layout.size n) :: Layout.frag (n + 1) ds := by
   simp [Layout.frag, List.mapIdx_cons, Nat.add_assoc, Nat.add_comm 1]
 
+theorem Layout.frag_getElem? [layout : Layout] (n : Nat) (p : Program) (i : Nat) :
+    (Layout.frag n p)[i]? = (p[i]?).map (fun d => (d, layout.size (n + i))) := by
+  induction p generalizing n i with
+  | nil => simp
+  | cons d ds ih =>
+    cases i with
+    | zero => simp
+    | succ j =>
+      rw [show n + (j + 1) = n + 1 + j from by omega]
+      simp only [Layout.frag_cons, List.getElem?_cons_succ, ih (n + 1) j]
+
+theorem Layout.frag_mem [Layout] {n : Nat} {p : Program} {dz : Directive × Nat}
+    (h : dz ∈ Layout.frag n p) : dz.1 ∈ p := by
+  induction p generalizing n with
+  | nil => cases h
+  | cons d ds ih =>
+    rw [Layout.frag_cons] at h
+    rcases List.mem_cons.mp h with heq | hmem
+    · rw [heq]
+      exact List.mem_cons_self
+    · exact List.mem_cons_of_mem _ (ih hmem)
+
 @[simp] theorem Layout.frag_map_fst [Layout] (n : Nat) (p : Program) :
     (Layout.frag n p).map Prod.fst = p := by
   induction p generalizing n with
@@ -1193,6 +1215,18 @@ theorem Program.blocks_suffix : ∀ {q p : Program}, q <:+ p →
       | instr i => exact hs
       | byteArray a => exact hs
 
+/-- A label has a block exactly when it is in the text. -/
+theorem Program.blockAt_isSome_iff (p : Program) (l : Label) :
+    (Program.blockAt p l).isSome ↔ Program.fromLabel p l ≠ [] := by
+  constructor
+  · intro h hnil
+    rw [Program.blockAt, hnil] at h
+    cases h
+  · intro hne
+    obtain ⟨rest, hr⟩ := Program.fromLabel_head p hne
+    rw [Program.blockAt, hr]
+    rfl
+
 /-- A label in the text has a block. -/
 theorem Program.blockAt_isSome {p : Program} {l : Label}
     (h : Program.fromLabel p l ≠ []) : ∃ blk, Program.blockAt p l = some blk := by
@@ -1251,6 +1285,87 @@ theorem Program.labels_eq_blocks (p : Program) :
     | label l => simp only [Program.labels, Program.blocks, List.map_cons, ih]
     | instr i => exact ih
     | byteArray a => exact ih
+
+theorem Program.labels_append (a b : Program) :
+    Program.labels (a ++ b) = Program.labels a ++ Program.labels b := by
+  induction a with
+  | nil => rfl
+  | cons d t ih =>
+    cases d with
+    | label l => simp only [List.cons_append, Program.labels, ih]
+    | instr i => exact ih
+    | byteArray a' => exact ih
+
+theorem Program.mem_labels_of_cell {t : Program} {l : Label}
+    (h : Directive.label l ∈ t) : l ∈ Program.labels t := by
+  induction t with
+  | nil => cases h
+  | cons d t ih =>
+    rcases List.mem_cons.mp h with heq | hmem
+    · rw [← heq]
+      exact List.mem_cons_self
+    · cases d with
+      | label l' => exact List.mem_cons_of_mem _ (ih hmem)
+      | instr i => exact ih hmem
+      | byteArray a => exact ih hmem
+
+def Directive.isLabel : Directive → Bool
+  | .label _ => true
+  | _ => false
+
+/-- No label cell directly follows a label cell, so every label's address is
+distinct from its predecessors' addresses. -/
+def Program.sepLabels : Program → Bool
+  | [] => true
+  | d :: rest =>
+    (match d, rest with
+     | Directive.label _, Directive.label _ :: _ => false
+     | _, _ => true) && Program.sepLabels rest
+
+theorem Program.sepLabels_spec :
+    ∀ {p : Program}, Program.sepLabels p = true →
+      ∀ i l, p[i + 1]? = some (Directive.label l) →
+        ∀ l', p[i]? ≠ some (Directive.label l') := by
+  intro p
+  induction p with
+  | nil => intro _ i l h; simp at h
+  | cons d p ih =>
+    intro hsep i l hnext l'
+    cases p with
+    | nil => simp at hnext
+    | cons d' rest =>
+      simp only [Program.sepLabels, Bool.and_eq_true] at hsep
+      obtain ⟨hpair, hsep'⟩ := hsep
+      cases i with
+      | zero =>
+        intro hd
+        simp only [List.getElem?_cons_succ, List.getElem?_cons_zero,
+          Option.some.injEq] at hnext hd
+        subst hnext hd
+        simp at hpair
+      | succ j =>
+        have hs : Program.sepLabels (d' :: rest) = true := by
+          simp only [Program.sepLabels, Bool.and_eq_true]
+          exact hsep'
+        exact ih hs j l (by simpa using hnext) l' ∘ (by simpa using ·)
+
+/-- The split of the text at a present label: the fresh prefix, the label
+cell, and the rest. -/
+theorem Program.fromLabel_split {p : Program} {l : Label}
+    (hnd : (Program.labels p).Nodup) (hne : Program.fromLabel p l ≠ []) :
+    ∃ t rest, p = t ++ (Directive.label l :: rest)
+      ∧ Program.fromLabel p l = Directive.label l :: rest
+      ∧ l ∉ Program.labels t
+      ∧ t.length = p.length - (Program.fromLabel p l).length := by
+  obtain ⟨rest, hr⟩ := Program.fromLabel_head p hne
+  obtain ⟨t, ht⟩ := Program.fromLabel_suffix p l
+  refine ⟨t, rest, by rw [← ht, hr], hr, ?_, ?_⟩
+  · intro hmem
+    rw [← ht, Program.labels_append, hr] at hnd
+    exact (List.nodup_append.mp hnd).2.2 l hmem l List.mem_cons_self rfl
+  · have hlen := congrArg List.length ht
+    simp only [List.length_append] at hlen
+    omega
 
 /-- The empty label context holds nowhere. -/
 theorem Program.bot_elim {l : Label} {s : MachineData} {C : Prop}

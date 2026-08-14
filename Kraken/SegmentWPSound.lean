@@ -6,6 +6,7 @@ case analysis over the instruction set; `straightlineStep_of_wp` then
 recovers `straightlineStep` as the diagonal `Q := E` of `Directives.wpE`.
 -/
 import Kraken.SegmentWP
+import Kraken.SegmentExtract
 
 open Std.Internal.Do
 
@@ -331,8 +332,71 @@ attribute [irreducible] Executable.directivesFromAddress
 `Program.sound` reads a run triple back as the baseline judgment: from the
 entry address, the machine eventually satisfies the run's fall-through
 postcondition, or sits at the address of a label whose exit assertion holds.
-Its hypotheses are the extraction facts of the program: the segment at a
-label's address is that label's scope suffix, laid out. -/
+`Program.extract` supplies the segment at each label's address; its
+side conditions are decidable, so `Program.sound` discharges them by
+`decide`. -/
+
+/-- The segment at the start of the text: a run from `layout.start` traverses
+the whole program. -/
+theorem Program.extract_entry [layout : Layout] (p : Program) :
+    (layout p).directivesFromAddress layout.start = Layout.frag 0 p := by
+  have h := Executable.directivesFromAddress_addrOf (layout p) 0 (Nat.zero_le _)
+    (fun k hk => absurd hk (Nat.not_lt_zero k))
+  rw [← Layout.apply_snd]
+  simpa [Layout.apply_fst] using h
+
+/-- The segment at a label's address: the label's scope suffix, laid out at
+its position. The side conditions: labels are unique, and no label cell
+directly follows a label cell, so the label's address differs from every
+earlier cut point. -/
+theorem Program.extract [layout : Layout] {p : Program}
+    [hv : Executable.ValidLayout (layout p)]
+    (hnd : (Program.labels p).Nodup) (hsep : Program.sepLabels p = true)
+    {l : Label} (hne : Program.fromLabel p l ≠ []) :
+    (layout p).directivesFromAddress ((layout p).labels.label l)
+      = Layout.frag (p.length - (Program.fromLabel p l).length) (Program.fromLabel p l) := by
+  obtain ⟨t, rest, hp, hfl, hfresh, hlen⟩ := Program.fromLabel_split hnd hne
+  have hcell : p[t.length]? = some (Directive.label l) := by
+    rw [hp, List.getElem?_append_right (Nat.le_refl _), Nat.sub_self]
+    rfl
+  have hlay : (layout p).2[t.length]? = some (Directive.label l, layout.size t.length) := by
+    rw [Layout.apply_snd, Layout.frag_getElem?, hcell]
+    simp
+  have haddr : (layout p).labels.label l = (layout p).addrOf t.length := by
+    apply Executable.label_addrOf
+    · rw [hlay, hv.label_size _ _ _ hlay]
+    · have htake : ((layout p).2).take t.length = Layout.frag 0 t := by
+        rw [Layout.apply_snd, hp, Layout.frag_append]
+        exact List.take_left' (Layout.frag_length 0 t)
+      intro dz hdz heq
+      rw [htake] at hdz
+      exact hfresh (Program.mem_labels_of_cell (heq ▸ Layout.frag_mem hdz))
+  have hle : t.length ≤ (layout p).2.length := by
+    rw [Layout.apply_snd, Layout.frag_length, hp]
+    simp
+  have hinj : ∀ k, k < t.length → (layout p).addrOf k ≠ (layout p).addrOf t.length := by
+    intro k hk
+    have hlt : t.length - 1 < p.length := by
+      rw [hp]
+      simp only [List.length_append, List.length_cons]
+      omega
+    apply Executable.addrOf_ne_of_valid (layout p) hk
+    · rw [Layout.apply_snd, Layout.frag_getElem?]
+      simp [List.getElem?_eq_getElem hlt]
+    · intro l' z hzeq
+      rw [Layout.apply_snd, Layout.frag_getElem?] at hzeq
+      have hp' : p[t.length - 1]? = some (Directive.label l') := by
+        cases hpp : p[t.length - 1]? with
+        | none => rw [hpp] at hzeq; cases hzeq
+        | some d =>
+          rw [hpp] at hzeq
+          simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hzeq
+          rw [hzeq.1]
+      have hk1 : t.length - 1 + 1 = t.length := by omega
+      exact Program.sepLabels_spec hsep (t.length - 1) l (hk1 ▸ hcell) l' hp'
+  have hdfa := Executable.directivesFromAddress_addrOf (layout p) t.length hle hinj
+  rw [haddr, hdfa, ← hlen, hfl, hp]
+  with_reducible exact Layout.apply_drop t (Directive.label l :: rest)
 
 private theorem Program.chain_sound [layout : Layout] {p : Program}
     {Q : MachineData → Prop} {E : Label → MachineData → Prop}
@@ -376,17 +440,21 @@ private theorem Program.chain_sound [layout : Layout] {p : Program}
 eventually satisfies the fall-through postcondition, or sits at the address of
 a label whose exit assertion holds. -/
 theorem Program.sound [layout : Layout] {p : Program}
-    {Q : MachineData → Prop} {E : Label → MachineData → Prop} {s : MachineData} {pc : Int64}
-    (hentry : (layout p).directivesFromAddress pc = Layout.frag 0 p)
-    (hlab : ∀ l, Program.fromLabel p l ≠ [] →
-      (layout p).directivesFromAddress ((layout p).labels.label l)
-        = Layout.frag (p.length - (Program.fromLabel p l).length) (Program.fromLabel p l))
-    (h : Program.wpR p Q E s) :
+    [hv : Executable.ValidLayout (layout p)]
+    {Q : MachineData → Prop} {E : Label → MachineData → Prop} {s : MachineData}
+    (h : Program.wpR p Q E s)
+    (hnd : (Program.labels p).Nodup := by decide)
+    (hsep : Program.sepLabels p = true := by decide) :
     Eventually (straightlineStep (layout p))
       (fun mid => Q mid.1 ∨ ∃ l, mid.2 = (layout p).labels.label l ∧ E l mid.1)
-      (s, pc) := by
+      (s, layout.start) := by
+  have hentry := Program.extract_entry (layout := layout) p
+  have hlab : ∀ l, Program.fromLabel p l ≠ [] →
+      (layout p).directivesFromAddress ((layout p).labels.label l)
+        = Layout.frag (p.length - (Program.fromLabel p l).length) (Program.fromLabel p l) :=
+    fun l hne => Program.extract hnd hsep hne
   letI : Labels := (layout p).labels
-  have hw := Program.wpF_toE (Layout.frag 0 p) (Layout.frag_map_fst 0 p) s pc h
+  have hw := Program.wpF_toE (Layout.frag 0 p) (Layout.frag_map_fst 0 p) s layout.start h
   refine Eventually.step _
     (fun mid => (Q mid.1 ∨ ∃ l, mid.2 = (layout p).labels.label l ∧ E l mid.1)
       ∨ (∃ l, mid.2 = (layout p).labels.label l ∧ Program.fromLabel p l ≠ []

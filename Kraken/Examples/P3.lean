@@ -6,8 +6,7 @@ proved through the control-flow rule: `p3_table` gives the assertion at each
 label, `rbx` is the variant, and `Program.cfg` with `cfg_cases` produces one
 `vcgen` obligation per basic block. The loop arithmetic lives in two `grind`
 lemmas keyed on the square of the invariant's power. `Program.sound` reads the
-triple back as the baseline judgment (`p3_correct_run`), fed by the extraction
-facts `p3_hlab`.
+triple back as the baseline judgment (`p3_correct_run`).
 -/
 import Kraken.Parser
 import Kraken.SegmentExtract
@@ -54,107 +53,8 @@ def p3 : Program := p3.entry ++ p3.loop ++ p3.exit
     ⦃ fun s => wp (p3.entry ++ p3.loop ++ p3.exit) Q E s ⦄ p3 ⦃ Q; E ⦄ :=
   Triple.intro fun _ h => h
 
-/-- The split at the loop header. -/
-private theorem p3_eq_entry_append : p3 = p3.entry ++ (p3.loop ++ p3.exit) := by simp [p3]
-
-/-- The split at the exit label. -/
-private theorem p3_eq_loop_append : p3 = (p3.entry ++ p3.loop) ++ p3.exit := by simp [p3]
-
 /-- What a run of `p3` computes from the machine it starts on. -/
 def p3_spec (d : MachineData) : Nat := 2 ^ 2 ^ d.regs.rbx.toNat
-
-/-! ## Segment extraction
-
-One fact per label: the segment at the label's address is the label's scope
-suffix, laid out at its position. `Program.sound` consumes these through
-`p3_hlab`. -/
-
-section Extraction
-
-attribute [local simp] p3 Layout.apply_fst Layout.apply_snd
-
-variable [layout : Layout]
-
-/-- From the start of the text the run traverses the whole program. -/
-theorem p3_entry_segment :
-    (layout p3).directivesFromAddress layout.start = Layout.frag 0 p3 := by
-  have h := Executable.directivesFromAddress_addrOf (layout p3) 0 (Nat.zero_le _)
-    (fun k hk => absurd hk (Nat.not_lt_zero k))
-  rw [← Layout.apply_snd]
-  simpa using h
-
-variable [hv : Executable.ValidLayout (layout p3)]
-
-theorem p3_init_addr :
-    (layout p3).labels.label "init" = (layout p3).addrOf 0 := by
-  have h0 : (layout p3).2[0]? = some (.label "init", layout.size 0) := by
-    simp
-  with_reducible apply Executable.label_addrOf
-  · rw [h0, hv.label_size _ "init" _ h0]
-  · simp
-
-theorem p3_start_addr :
-    (layout p3).labels.label "start" = (layout p3).addrOf p3.entry.length := by
-  have h2 : (layout p3).2[p3.entry.length]? = some (.label "start", layout.size p3.entry.length) := by
-    simp
-  with_reducible apply Executable.label_addrOf
-  · rw [h2, hv.label_size _ "start" _ h2]
-  · simp
-
-theorem p3_start_segment :
-    (layout p3).directivesFromAddress ((layout p3).labels.label "start")
-      = Layout.frag p3.entry.length (p3.loop ++ p3.exit) := by
-  rw [p3_start_addr, Executable.directivesFromAddress_addrOf]
-  · rw [p3_eq_entry_append]
-    with_reducible exact Layout.apply_drop p3.entry (p3.loop ++ p3.exit)
-  · simp
-  · intro k hk
-    with_reducible apply Executable.addrOf_ne_of_valid (layout p3) hk <;>
-      simp
-
-theorem p3_end_addr :
-    (layout p3).labels.label "_end" = (layout p3).addrOf (p3.entry ++ p3.loop).length := by
-  have h8 : (layout p3).2[(p3.entry ++ p3.loop).length]?
-      = some (.label "_end", layout.size (p3.entry ++ p3.loop).length) := by
-    simp
-  with_reducible apply Executable.label_addrOf
-  · rw [h8, hv.label_size _ "_end" _ h8]
-  · simp
-
-theorem p3_end_segment :
-    (layout p3).directivesFromAddress ((layout p3).labels.label "_end")
-      = Layout.frag (p3.entry ++ p3.loop).length p3.exit := by
-  rw [p3_end_addr, Executable.directivesFromAddress_addrOf]
-  · rw [p3_eq_loop_append]
-    with_reducible exact Layout.apply_drop (p3.entry ++ p3.loop) p3.exit
-  · simp
-  · intro k hk
-    with_reducible apply Executable.addrOf_ne_of_valid (layout p3) hk <;>
-      simp
-
-/-- The extraction facts, keyed the way `Program.sound` consumes them: every
-label with a scope suffix sits in the text, and the segment at its address is
-that suffix, laid out at its position. -/
-theorem p3_hlab : ∀ l, Program.fromLabel p3 l ≠ [] →
-    (layout p3).directivesFromAddress ((layout p3).labels.label l)
-      = Layout.frag (p3.length - (Program.fromLabel p3 l).length) (Program.fromLabel p3 l) := by
-  intro l hl
-  have hmem := Program.fromLabel_mem hl
-  simp only [p3, p3.entry, p3.loop, p3.exit, List.mem_append, List.mem_cons,
-    List.not_mem_nil, or_false, Directive.label.injEq, reduceCtorEq] at hmem
-  rcases hmem with (h | h) | h <;> subst h
-  · rw [show Program.fromLabel p3 "init" = p3 by decide,
-      show p3.length - p3.length = 0 from Nat.sub_self _,
-      p3_init_addr, Executable.addrOf_zero, Layout.apply_fst]
-    exact p3_entry_segment
-  · rw [show Program.fromLabel p3 "start" = p3.loop ++ p3.exit by decide,
-      show p3.length - (p3.loop ++ p3.exit).length = p3.entry.length by decide]
-    exact p3_start_segment
-  · rw [show Program.fromLabel p3 "_end" = p3.exit by decide,
-      show p3.length - p3.exit.length = (p3.entry ++ p3.loop).length by decide]
-    exact p3_end_segment
-
-end Extraction
 
 /-! ## The proof -/
 
@@ -181,6 +81,10 @@ so the rewrite cannot feed itself. -/
     (Program.fromLabel p3 "_end").length < (Program.fromLabel p3 "start").length := by
   decide
 
+/-- The jump targets of `p3` are mapped. -/
+@[grind .] private theorem p3_start_isSome : (Program.blockAt p3 "start").isSome := by decide
+@[grind .] private theorem p3_end_isSome : (Program.blockAt p3 "_end").isSome := by decide
+
 /-- The spec table: the machine at each label of `p3`, for a run that started
 on `d`. At `start` it is the loop invariant. -/
 private abbrev p3_table (d : MachineData) : Label → MachineData → Prop
@@ -190,10 +94,6 @@ private abbrev p3_table (d : MachineData) : Label → MachineData → Prop
       ∧ s.regs.rbx.toNat ≤ d.regs.rbx.toNat ∧ s.regs.rax = 0
   | "_end", s => s.regs.rdx.toNat = 2 ^ 2 ^ d.regs.rbx.toNat ∧ s.regs.rax = 0
   | _, _ => False
-
-/-- The jump targets of `p3` are mapped. -/
-@[grind .] private theorem p3_start_isSome : (Program.blockAt p3 "start").isSome := by decide
-@[grind .] private theorem p3_end_isSome : (Program.blockAt p3 "_end").isSome := by decide
 
 theorem p3_correct (d : MachineData) (h_bounds : p3_spec d < 2 ^ 64)
     (h_rax : d.regs.rax = 0) :
@@ -216,7 +116,7 @@ theorem p3_correct_run (d : MachineData) (h_bounds : p3_spec d < 2 ^ 64)
       (fun s => s.1.regs.rdx.toNat = p3_spec d ∧ s.1.regs.rax = 0)
       (d, layout.start) := by
   have h := (p3_correct d h_bounds h_rax).le_wp d rfl
-  refine (Program.sound p3_entry_segment p3_hlab h).mono (fun _ _ h => h) ?_
+  refine (Program.sound h).mono (fun _ _ h => h) ?_
   rintro mid (hq | ⟨l, -, hf⟩)
   · exact hq
   · exact Program.bot_elim hf
