@@ -15,6 +15,7 @@ import Kraken.SegmentWPSound
 
 open Kraken.Parser
 open Std.Internal.Do
+open Program.ClosedWP
 open Lean.Order
 
 set_option mvcgen.warning false

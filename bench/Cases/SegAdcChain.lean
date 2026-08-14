@@ -7,6 +7,7 @@ cost of the same verification through the two encodings.
 import Kraken.SegmentWP
 
 open Std.Internal.Do
+open Program.ClosedWP
 
 namespace SegAdcChain
 

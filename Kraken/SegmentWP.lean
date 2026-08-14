@@ -355,18 +355,38 @@ def Program.wpTrans (p : Program) :
     PredTrans (MachineData → Prop) (Label → MachineData → Prop) Unit :=
   ⟨fun Q E s => Program.wpClosed p (Q ()) E s⟩
 
-/-- The run: the traversal, with jump exits resolved through the dispatch. -/
-instance instWPProgram :
+namespace Program.ClosedWP
+
+/-- A triple on a program states the run wp. -/
+scoped instance instWP :
     WP Program Unit (MachineData → Prop) (Label → MachineData → Prop) where
   wpTrans := Program.wpTrans
   wp_trans_monotone _ _ _ _ _ hE hQ := fun s =>
     Program.wpOpen_mono (fun s' => hQ () s')
       (Program.exitsTo_mono (fun s' => hQ () s') hE) _ s
 
-/-- Unfold the run wp into the traversal with its exit dispatch. -/
-theorem Program.wp_eq (p : Program) (Q : Unit → MachineData → Prop)
+/-- Unfold the run wp into its transformer. -/
+theorem wp_eq (p : Program) (Q : Unit → MachineData → Prop)
     (E : Label → MachineData → Prop) (s : MachineData) :
-    WP.wp p Q E s = Program.wpOpen p (Q ()) (Program.exitsTo p (Q ()) E) s := rfl
+    WP.wp p Q E s = Program.wpClosed p (Q ()) E s := rfl
+
+end Program.ClosedWP
+
+namespace Program.OpenWP
+
+/-- A triple on a program states the traversal: every jump lands in `E`. -/
+scoped instance instWP :
+    WP Program Unit (MachineData → Prop) (Label → MachineData → Prop) where
+  wpTrans p := ⟨fun Q E s => Program.wpOpen p (Q ()) E s⟩
+  wp_trans_monotone _ _ _ _ _ hE hQ := fun s =>
+    Program.wpOpen_mono (fun s' => hQ () s') hE _ s
+
+/-- Unfold the traversal wp into its transformer. -/
+theorem wp_eq (p : Program) (Q : Unit → MachineData → Prop)
+    (E : Label → MachineData → Prop) (s : MachineData) :
+    WP.wp p Q E s = Program.wpOpen p (Q ()) E s := rfl
+
+end Program.OpenWP
 
 /-! ### Per-instruction specs
 
@@ -378,10 +398,12 @@ the tail's exit dispatch. -/
 
 section ProgramSpecs
 
+open Program.ClosedWP
+
 variable {Q : Unit → MachineData → Prop} {E : Label → MachineData → Prop} {p : Program}
 
 local macro "wp_step" : tactic =>
-  `(tactic| simp only [Program.wp_eq, Directive.wp_eq, Program.wpOpen, Directive.wp,
+  `(tactic| simp only [Program.ClosedWP.wp_eq, Directive.wp_eq, Program.wpOpen, Directive.wp,
       Directive.interp, Instr.interp,
       Operation.interp, Operand.interp, RegOrMem.interp, RelRegOrMem.interp, ConstExpr.interp,
       MachineData.set, MachineData.setReg, Reg64s.get_low64, Reg64s.set_low64, Effects.All,
