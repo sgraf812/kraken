@@ -1052,11 +1052,21 @@ theorem Program.blocks_next_mem :
     | instr i => exact ih hmem
     | byteArray a => exact ih hmem
 
+/-- The text behind a block: the next label's scope suffix, or nothing. -/
+def Program.tailOf (p : Program) : Option Label → Program
+  | some l' => Program.fromLabel p l'
+  | none => []
+
+@[simp] theorem Program.tailOf_some (p : Program) (l' : Label) :
+    Program.tailOf p (some l') = Program.fromLabel p l' := rfl
+
+@[simp] theorem Program.tailOf_none (p : Program) :
+    Program.tailOf p none = [] := rfl
+
 /-- The text is its first block followed by the next label's scope suffix. -/
 theorem Program.eq_blockBody_append :
     ∀ (p : Program), ((Program.blocks p).map (·.label)).Nodup →
-      p = Program.blockBody p ++ (match Program.nextLabel p with
-        | some l' => Program.fromLabel p l' | none => []) := by
+      p = Program.blockBody p ++ Program.tailOf p (Program.nextLabel p) := by
   intro p
   induction p with
   | nil => intro _; rfl
@@ -1071,16 +1081,16 @@ theorem Program.eq_blockBody_append :
         by_cases hne : Program.fromLabel p l₂ = []
         · exact hne
         · exact absurd ((Program.fromLabel_ne_nil_iff p l₂).mp hne) hnotin
-      simp only [Program.blockBody, Program.nextLabel, List.nil_append]
+      simp only [Program.blockBody, Program.nextLabel, List.nil_append, Program.tailOf]
       rw [Program.fromLabel_cons, if_pos ⟨hnil, rfl⟩]
     | instr i =>
       have hih := ih hnd
       simp only [Program.blockBody, Program.nextLabel, List.cons_append]
       congr 1
       cases hnl : Program.nextLabel p with
-      | none => simpa [hnl] using hih
+      | none => simpa [hnl, Program.tailOf] using hih
       | some l' =>
-        simp only [hnl] at hih ⊢
+        simp only [hnl, Program.tailOf] at hih ⊢
         rw [Program.fromLabel_cons, if_neg (by rintro ⟨-, h⟩; cases h)]
         exact hih
     | byteArray a =>
@@ -1088,9 +1098,9 @@ theorem Program.eq_blockBody_append :
       simp only [Program.blockBody, Program.nextLabel, List.cons_append]
       congr 1
       cases hnl : Program.nextLabel p with
-      | none => simpa [hnl] using hih
+      | none => simpa [hnl, Program.tailOf] using hih
       | some l' =>
-        simp only [hnl] at hih ⊢
+        simp only [hnl, Program.tailOf] at hih ⊢
         rw [Program.fromLabel_cons, if_neg (by rintro ⟨-, h⟩; cases h)]
         exact hih
 
@@ -1099,8 +1109,7 @@ scope suffix. -/
 theorem Program.fromLabel_block :
     ∀ (p : Program), ((Program.blocks p).map (·.label)).Nodup →
       ∀ {l b next}, Program.Block.mk l b next ∈ Program.blocks p →
-      Program.fromLabel p l = Directive.label l :: (b ++ (match next with
-        | some l' => Program.fromLabel p l' | none => [])) := by
+      Program.fromLabel p l = Directive.label l :: (b ++ Program.tailOf p next) := by
   intro p
   induction p with
   | nil => intro _ _ _ _ h; cases h
@@ -1123,12 +1132,12 @@ theorem Program.fromLabel_block :
         congr 1
         have hbase := Program.eq_blockBody_append p hndp
         cases hnl : Program.nextLabel p with
-        | none => simpa [hnl] using hbase
+        | none => simpa [hnl, Program.tailOf] using hbase
         | some l' =>
           have hl' := Program.nextLabel_mem hnl
           have hne' : Program.fromLabel p l' ≠ [] :=
             (Program.fromLabel_ne_nil_iff p l').mpr hl'
-          simp only [hnl] at hbase ⊢
+          simp only [hnl, Program.tailOf] at hbase ⊢
           rw [Program.fromLabel_cons, if_neg (by rintro ⟨hn, -⟩; exact hne' hn)]
           exact hbase
       · have hlmem : l ∈ (Program.blocks p).map (·.1) := List.mem_map.mpr ⟨_, hmem', rfl⟩
@@ -1137,26 +1146,25 @@ theorem Program.fromLabel_block :
         rw [Program.fromLabel_cons, if_neg (by rintro ⟨hn, -⟩; exact hlne hn)]
         have hih := ih hndp hmem'
         cases hnx : next with
-        | none => simpa [hnx] using hih
+        | none => simpa [hnx, Program.tailOf] using hih
         | some l'' =>
           have hl'' := Program.blocks_next_mem p (hnx ▸ hmem')
           have hne'' : Program.fromLabel p l'' ≠ [] :=
             (Program.fromLabel_ne_nil_iff p l'').mpr hl''
-          simp only [hnx] at hih ⊢
+          simp only [hnx, Program.tailOf] at hih ⊢
           rw [Program.fromLabel_cons, if_neg (by rintro ⟨hn, -⟩; exact hne'' hn)]
           exact hih
     | instr i =>
       have hih := ih hnd hmem
       rw [Program.fromLabel_cons,
         if_neg (by rintro ⟨-, h⟩; cases h)]
-      have hlne : True := trivial
       cases hnx : next with
-      | none => simpa [hnx] using hih
+      | none => simpa [hnx, Program.tailOf] using hih
       | some l'' =>
         have hl'' := Program.blocks_next_mem p (hnx ▸ hmem)
         have hne'' : Program.fromLabel p l'' ≠ [] :=
           (Program.fromLabel_ne_nil_iff p l'').mpr hl''
-        simp only [hnx] at hih ⊢
+        simp only [hnx, Program.tailOf] at hih ⊢
         rw [Program.fromLabel_cons, if_neg (by rintro ⟨hn, -⟩; exact hne'' hn)]
         exact hih
     | byteArray a =>
@@ -1164,12 +1172,12 @@ theorem Program.fromLabel_block :
       rw [Program.fromLabel_cons,
         if_neg (by rintro ⟨-, h⟩; cases h)]
       cases hnx : next with
-      | none => simpa [hnx] using hih
+      | none => simpa [hnx, Program.tailOf] using hih
       | some l'' =>
         have hl'' := Program.blocks_next_mem p (hnx ▸ hmem)
         have hne'' : Program.fromLabel p l'' ≠ [] :=
           (Program.fromLabel_ne_nil_iff p l'').mpr hl''
-        simp only [hnx] at hih ⊢
+        simp only [hnx, Program.tailOf] at hih ⊢
         rw [Program.fromLabel_cons, if_neg (by rintro ⟨hn, -⟩; exact hne'' hn)]
         exact hih
 
@@ -1180,66 +1188,255 @@ theorem Program.wpR_label_free {b : Program} (hb : ∀ lx, Program.fromLabel b l
   Program.wpF_mono (fun _ h => h)
     (fun lx _sx hx => hx.elim id (fun ⟨hm, _⟩ => absurd (hb lx) hm)) b s h
 
+/-- The block of the text at label `l`: the partial map the control-flow rule
+reads. Lookup follows `Program.fromLabel`, so a re-declared label denotes its
+last block. -/
+def Program.blockAt (p : Program) (l : Label) : Option Program.Block :=
+  match Program.fromLabel p l with
+  | .label _ :: rest => some ⟨l, Program.blockBody rest, Program.nextLabel rest⟩
+  | _ => none
+
+/-- A nonempty scope suffix starts with its own label cell. -/
+theorem Program.fromLabel_head :
+    ∀ (p : Program) {l : Label}, Program.fromLabel p l ≠ [] →
+      ∃ rest, Program.fromLabel p l = Directive.label l :: rest := by
+  intro p
+  induction p with
+  | nil => intro l h; exact absurd rfl h
+  | cons d p ih =>
+    intro l h
+    rw [Program.fromLabel_cons] at h ⊢
+    by_cases hc : Program.fromLabel p l = [] ∧ d = Directive.label l
+    · rw [if_pos hc]
+      exact ⟨p, by rw [hc.2]⟩
+    · rw [if_neg hc] at h ⊢
+      exact ih h
+
+/-- A label-free prefix contributes itself to the block body. -/
+theorem Program.blockBody_append {b tail : Program}
+    (hb : ∀ lx, Program.fromLabel b lx = [])
+    (htail : tail = [] ∨ ∃ l' t, tail = Directive.label l' :: t) :
+    Program.blockBody (b ++ tail) = b := by
+  induction b with
+  | nil => rcases htail with rfl | ⟨l', t, rfl⟩ <;> simp [Program.blockBody]
+  | cons d bb ih =>
+    have hb' : ∀ lx, Program.fromLabel bb lx = [] := by
+      intro lx
+      have h := hb lx
+      rw [Program.fromLabel_cons] at h
+      by_cases hc : Program.fromLabel bb lx = [] ∧ d = Directive.label lx
+      · exact hc.1
+      · rwa [if_neg hc] at h
+    have hd : ∀ lx, d ≠ Directive.label lx := by
+      intro lx hdl
+      have h := hb lx
+      rw [Program.fromLabel_cons, if_pos ⟨hb' lx, hdl⟩] at h
+      exact absurd h (List.cons_ne_nil _ _)
+    cases d with
+    | label lx => exact absurd rfl (hd lx)
+    | instr i => simp only [List.cons_append, Program.blockBody, ih hb']
+    | byteArray a => simp only [List.cons_append, Program.blockBody, ih hb']
+
+/-- A label-free prefix is invisible to the next label. -/
+theorem Program.nextLabel_append {b tail : Program}
+    (hb : ∀ lx, Program.fromLabel b lx = []) :
+    Program.nextLabel (b ++ tail) = Program.nextLabel tail := by
+  induction b with
+  | nil => rfl
+  | cons d bb ih =>
+    have hb' : ∀ lx, Program.fromLabel bb lx = [] := by
+      intro lx
+      have h := hb lx
+      rw [Program.fromLabel_cons] at h
+      by_cases hc : Program.fromLabel bb lx = [] ∧ d = Directive.label lx
+      · exact hc.1
+      · rwa [if_neg hc] at h
+    have hd : ∀ lx, d ≠ Directive.label lx := by
+      intro lx hdl
+      have h := hb lx
+      rw [Program.fromLabel_cons, if_pos ⟨hb' lx, hdl⟩] at h
+      exact absurd h (List.cons_ne_nil _ _)
+    cases d with
+    | label lx => exact absurd rfl (hd lx)
+    | instr i => simp only [List.cons_append, Program.nextLabel, ih hb']
+    | byteArray a => simp only [List.cons_append, Program.nextLabel, ih hb']
+
+/-- The tail behind a block is empty or a label-led suffix. -/
+private theorem Program.tail_shape {p : Program} :
+    ∀ (next : Option Label), (∀ l', next = some l' → Program.fromLabel p l' ≠ []) →
+      Program.tailOf p next = [] ∨ ∃ l' t, Program.tailOf p next = Directive.label l' :: t
+  | none, _ => Or.inl rfl
+  | some l', h => by
+      obtain ⟨t, ht⟩ := Program.fromLabel_head p (h l' rfl)
+      exact Or.inr ⟨l', t, by rw [Program.tailOf_some]; exact ht⟩
+
+/-- The tail behind a block starts with the block's next label. -/
+private theorem Program.nextLabel_tail {p : Program} :
+    ∀ (next : Option Label), (∀ l', next = some l' → Program.fromLabel p l' ≠ []) →
+      Program.nextLabel (Program.tailOf p next) = next
+  | none, _ => rfl
+  | some l', h => by
+      obtain ⟨t, ht⟩ := Program.fromLabel_head p (h l' rfl)
+      rw [Program.tailOf_some, ht]
+      rfl
+
+/-- The scope suffix at `l`, seen through the block map: the label cell, the
+block's body, and the next label's scope suffix. -/
+theorem Program.blockAt_decomp {p : Program}
+    (hnd : ((Program.blocks p).map (·.label)).Nodup)
+    {l : Label} {blk : Program.Block} (h : Program.blockAt p l = some blk) :
+    Program.fromLabel p l = Directive.label l :: (blk.body ++ Program.tailOf p blk.next) := by
+  have hne : Program.fromLabel p l ≠ [] := by
+    intro hnil
+    rw [Program.blockAt, hnil] at h
+    cases h
+  obtain ⟨b, next, hmem⟩ := Program.block_of_fromLabel hne
+  have hself := Program.fromLabel_block p hnd hmem
+  have hbfree := Program.blocks_body_fromLabel p hmem
+  have hnexts : ∀ l', next = some l' → Program.fromLabel p l' ≠ [] := fun l' hnx =>
+    (Program.fromLabel_ne_nil_iff p l').mpr (Program.blocks_next_mem p (hnx ▸ hmem))
+  obtain ⟨rest, hrest⟩ := Program.fromLabel_head p hne
+  have hrb : rest = b ++ Program.tailOf p next := by
+    have h2 := hrest.symm.trans hself
+    exact (List.cons.inj h2).2
+  rw [Program.blockAt, hrest] at h
+  have hblk := Option.some.inj h
+  have hbody : Program.blockBody rest = b := by
+    rw [hrb]
+    exact Program.blockBody_append hbfree (Program.tail_shape next hnexts)
+  have hnext : Program.nextLabel rest = next := by
+    rw [hrb, Program.nextLabel_append hbfree]
+    exact Program.nextLabel_tail next hnexts
+  rw [← hblk]
+  simp only [hbody, hnext]
+  exact hself
+
+/-- A scope suffix's blocks sit inside the host's blocks. -/
+theorem Program.blocks_suffix : ∀ {q p : Program}, q <:+ p →
+    Program.blocks q <:+ Program.blocks p := by
+  intro q p h
+  induction p with
+  | nil =>
+    rw [List.suffix_nil.mp h]
+    exact List.suffix_rfl
+  | cons d p ih =>
+    rcases List.suffix_cons_iff.mp h with heq | h'
+    · rw [heq]
+      exact List.suffix_rfl
+    · have hs := ih h'
+      cases d with
+      | label l₁ => exact hs.trans (List.suffix_cons _ _)
+      | instr i => exact hs
+      | byteArray a => exact hs
+
+/-- A label in the text has a block. -/
+theorem Program.blockAt_isSome {p : Program} {l : Label}
+    (h : Program.fromLabel p l ≠ []) : ∃ blk, Program.blockAt p l = some blk := by
+  obtain ⟨rest, hr⟩ := Program.fromLabel_head p h
+  exact ⟨_, by rw [Program.blockAt, hr]⟩
+
+/-- A label with a block is in the text. -/
+theorem Program.blockAt_ne {p : Program} {l : Label} {blk : Program.Block}
+    (h : Program.blockAt p l = some blk) : Program.fromLabel p l ≠ [] := by
+  intro hnil
+  rw [Program.blockAt, hnil] at h
+  cases h
+
+/-- A block's body is label-free. -/
+theorem Program.blockAt_body_free {p : Program} {l : Label} {blk : Program.Block}
+    (h : Program.blockAt p l = some blk) :
+    ∀ lx, Program.fromLabel blk.body lx = [] := by
+  rw [Program.blockAt] at h
+  split at h
+  · cases h
+    exact fun lx => Program.blockBody_fromLabel _ lx
+  · cases h
+
+/-- The label a block falls into is in the text. -/
+theorem Program.blockAt_next_ne {p : Program} {l : Label} {blk : Program.Block} {l' : Label}
+    (h : Program.blockAt p l = some blk) (hn : blk.next = some l') :
+    Program.fromLabel p l' ≠ [] := by
+  rw [Program.blockAt] at h
+  split at h
+  · rename_i rest heq
+    cases h
+    simp only at hn
+    have hmem := Program.nextLabel_mem hn
+    have hsub : Program.blocks rest <:+ Program.blocks p := by
+      refine Program.blocks_suffix ?_
+      have := Program.fromLabel_suffix p l
+      rw [heq] at this
+      exact (List.suffix_cons _ _).trans this
+    exact (Program.fromLabel_ne_nil_iff p l').mpr
+      ((hsub.sublist.map (·.label)).subset hmem)
+  · cases h
+
+/-- The empty label context holds nowhere. -/
+theorem Program.bot_elim {l : Label} {s : MachineData} {C : Prop}
+    (h : (⊥ : Label → MachineData → Prop) l s) : C :=
+  ((Lean.Order.bot_le (α := Label → MachineData → Prop) (fun _ _ => False)) l s h).elim
+
+/-- The edge order of the control-flow rule, from a block entered at `l` with
+the variant snapshot `n` to a jump target `l'`: the variant decreased, or it
+is unchanged and the target sits later in the text. A forward edge is free
+because the residual text shrinks; a back edge must decrease the variant. -/
+abbrev Program.EdgeLt (p : Program) (var : Label → MachineData → Nat)
+    (l : Label) (n : Nat) (l' : Label) (s : MachineData) : Prop :=
+  var l' s < n ∨ (var l' s = n ∧
+    (Program.fromLabel p l').length < (Program.fromLabel p l).length)
+
 /-- The control-flow rule: one spec table `T`, one variant `var`, one triple
-per block. A block is entered with its table entry and the variant
-snapshotted; it falls into the next block with the entry there and the variant
-not increased, and a jump exit lands on a table entry with the variant
-decreased, or unchanged at a textually later label. `hnd` says the labels are
-distinct, and `htab` confines the table to the text. -/
-theorem Program.cfg {p p' : Program} {Q : Unit → MachineData → Prop} (l₀ : Label)
-    (hp : p = Directive.label l₀ :: p')
+per block of the map `Program.blockAt`. The entry code runs first and reaches
+a table entry with no obligation on the measure. Each block is entered with
+its table entry and the variant snapshotted; it falls into the next block with
+the entry there and the variant not increased, and a jump exit lands on a
+mapped table entry with the variant decreased, or unchanged at a textually
+later label. The run never pauses: the label context of the conclusion is
+`⊥`. -/
+theorem Program.cfg {p : Program} {P : MachineData → Prop} {Q : Unit → MachineData → Prop}
     (T : Label → MachineData → Prop) (var : Label → MachineData → Nat)
     (hnd : ((Program.blocks p).map (·.label)).Nodup)
-    (htab : ∀ l s, T l s → Program.fromLabel p l ≠ [])
-    (hblocks : ∀ blk ∈ Program.blocks p, ∀ n : Nat,
-      ⦃ fun s => T blk.label s ∧ var blk.label s = n ⦄ blk.body
+    (hentry : ⦃ P ⦄ Program.blockBody p
+      ⦃ (match Program.nextLabel p with
+         | some l' => fun _ s => T l' s
+         | none => Q);
+        fun l' s => (Program.blockAt p l').isSome ∧ T l' s ⦄)
+    (hblocks : ∀ l blk, Program.blockAt p l = some blk → ∀ n : Nat,
+      ⦃ fun s => T l s ∧ var l s = n ⦄ blk.body
       ⦃ (match blk.next with
          | some l' => fun _ s => T l' s ∧ var l' s ≤ n
          | none => Q);
-        fun l' s => T l' s ∧ (var l' s < n ∨ (var l' s = n ∧
-          (Program.fromLabel p l').length < (Program.fromLabel p blk.label).length)) ⦄) :
-    ⦃ T l₀ ⦄ p ⦃ Q; fun _ _ => False ⦄ := by
-  have hnd' := hnd
-  rw [hp] at hnd'
-  simp only [Program.blocks, List.map_cons, List.nodup_cons] at hnd'
-  have hnil₀ : Program.fromLabel p' l₀ = [] := by
-    by_cases hne : Program.fromLabel p' l₀ = []
-    · exact hne
-    · exact absurd ((Program.fromLabel_ne_nil_iff p' l₀).mp hne) hnd'.1
-  have hfl₀ : Program.fromLabel p l₀ = p := by
-    rw [hp, Program.fromLabel_cons, if_pos ⟨hnil₀, rfl⟩]
-  have hmem₀ :
-      Program.Block.mk l₀ (Program.blockBody p') (Program.nextLabel p') ∈ Program.blocks p := by
-    rw [hp]
-    exact List.mem_cons_self
-  have main : ∀ m : Nat, ∀ l b next, Program.Block.mk l b next ∈ Program.blocks p → ∀ s, T l s →
+        fun l' s => (Program.blockAt p l').isSome ∧ T l' s
+          ∧ Program.EdgeLt p var l n l' s ⦄) :
+    ⦃ P ⦄ p ⦃ Q ⦄ := by
+  have main : ∀ m : Nat, ∀ l blk, Program.blockAt p l = some blk → ∀ s, T l s →
       var l s * (p.length + 1) + (Program.fromLabel p l).length = m →
       Program.wpF (Program.fromLabel p l) (Q ())
-        (Program.exitsTo p (Q ()) (fun _ _ => False)) s := by
+        (Program.exitsTo p (Q ()) ⊥) s := by
     intro m
     induction m using Nat.strongRecOn with
     | ind m ih =>
-      intro l b next hmem s hT hμ
-      have hself := Program.fromLabel_block p hnd hmem
+      intro l blk hblk s hT hμ
+      have hself := Program.blockAt_decomp hnd hblk
       rw [hself]
       intro labels rco
       wpF_step
       rw [Program.wpF_append]
-      have hb := Program.wpR_label_free (Program.blocks_body_fromLabel p hmem)
-        ((hblocks ⟨l, b, next⟩ hmem (var l s)).le_wp s ⟨hT, rfl⟩)
+      have hb := Program.wpR_label_free (Program.blockAt_body_free hblk)
+        ((hblocks l blk hblk (var l s)).le_wp s ⟨hT, rfl⟩)
       refine Program.wpF_mono (fun sx hq => ?_) (fun lx sx hx => ?_) _ _ hb
-      · cases hnx : next with
+      · cases hnx : blk.next with
         | some l' =>
           rw [hnx] at hq hself
-          have hne' : Program.fromLabel p l' ≠ [] := htab l' sx hq.1
-          obtain ⟨b', next', hmem'⟩ := Program.block_of_fromLabel hne'
+          have hne' := Program.blockAt_next_ne hblk hnx
+          obtain ⟨blk', hblk'⟩ := Program.blockAt_isSome hne'
           have hlt : (Program.fromLabel p l').length < (Program.fromLabel p l).length := by
             rw [hself]
-            simp only [List.length_cons, List.length_append]
+            simp only [Program.tailOf, List.length_cons, List.length_append]
             omega
           have hmono : var l' sx * (p.length + 1) ≤ var l s * (p.length + 1) :=
             Nat.mul_le_mul_right _ hq.2
-          refine ih _ ?_ l' b' next' hmem' sx hq.1 rfl
+          refine ih _ ?_ l' blk' hblk' sx hq.1 rfl
           calc var l' sx * (p.length + 1) + (Program.fromLabel p l').length
               < var l' sx * (p.length + 1) + (Program.fromLabel p l).length :=
                 Nat.add_lt_add_left hlt _
@@ -1249,12 +1446,12 @@ theorem Program.cfg {p p' : Program} {Q : Unit → MachineData → Prop} (l₀ :
         | none =>
           simp only [hnx] at hq
           exact hq
-      · obtain ⟨hT', hdec⟩ := hx
-        have hne' : Program.fromLabel p lx ≠ [] := htab lx sx hT'
-        obtain ⟨b'', next'', hmem''⟩ := Program.block_of_fromLabel hne'
+      · obtain ⟨hsome, hT', hdec⟩ := hx
+        obtain ⟨blk'', hblk''⟩ := Option.isSome_iff_exists.mp hsome
+        have hne' := Program.blockAt_ne hblk''
         refine Or.inr ⟨hne', step_cps _ _ _ ?_⟩
         show Program.wpF (Program.fromLabel p lx) _ _ sx
-        refine ih _ ?_ lx b'' next'' hmem'' sx hT' rfl
+        refine ih _ ?_ lx blk'' hblk'' sx hT' rfl
         have hlen : (Program.fromLabel p lx).length ≤ p.length :=
           (Program.fromLabel_suffix p lx).length_le
         rcases hdec with hlt | ⟨heq, hlenlt⟩
@@ -1274,9 +1471,28 @@ theorem Program.cfg {p p' : Program} {Q : Unit → MachineData → Prop} (l₀ :
               < var l s * (p.length + 1) + (Program.fromLabel p l).length :=
                 Nat.add_lt_add_left hlenlt _
             _ = m := hμ
-  refine Triple.intro fun s hT => ?_
-  have h := main _ l₀ _ _ hmem₀ s hT rfl
-  rw [hfl₀] at h
-  exact h
+  refine Triple.intro fun s hp => ?_
+  have hgoal : Program.wpF (Program.blockBody p ++ Program.tailOf p (Program.nextLabel p))
+      (Q ()) (Program.exitsTo p (Q ()) ⊥) s := by
+    rw [Program.wpF_append]
+    have hb := Program.wpR_label_free (Program.blockBody_fromLabel p)
+      (hentry.le_wp s hp)
+    refine Program.wpF_mono (fun sx hq => ?_) (fun lx sx hx => ?_) _ _ hb
+    · cases hnl : Program.nextLabel p with
+      | some l' =>
+        rw [hnl] at hq
+        have hne' : Program.fromLabel p l' ≠ [] :=
+          (Program.fromLabel_ne_nil_iff p l').mpr (Program.nextLabel_mem hnl)
+        obtain ⟨blk', hblk'⟩ := Program.blockAt_isSome hne'
+        exact main _ l' blk' hblk' sx hq rfl
+      | none =>
+        simp only [hnl] at hq
+        exact hq
+    · obtain ⟨hsome, hT'⟩ := hx
+      obtain ⟨blk'', hblk''⟩ := Option.isSome_iff_exists.mp hsome
+      refine Or.inr ⟨Program.blockAt_ne hblk'', step_cps _ _ _ ?_⟩
+      show Program.wpF (Program.fromLabel p lx) _ _ sx
+      exact main _ lx blk'' hblk'' sx hT' rfl
+  rwa [← Program.eq_blockBody_append p hnd] at hgoal
 
 end ProgramSpecs
