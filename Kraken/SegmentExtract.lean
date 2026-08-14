@@ -79,18 +79,27 @@ private theorem idxOf_eq_of {α} [BEq α] [LawfulBEq α] {l : List α} {a : α} 
       rw [ih (by simpa using hn) (fun k hk => by simpa using hlt (k + 1) (by omega))]
       simp
 
+/-- Cutting the directive list at an address: the segment at the address of
+directive `n` is the directive list from the first index `j` that sits at
+this address. -/
+theorem directivesFromAddress_addrOf_first (e : Executable) (j n : Nat)
+    (hjn : j ≤ n) (hn : n ≤ e.2.length) (hj : e.addrOf j = e.addrOf n)
+    (hfresh : ∀ k, k < j → e.addrOf k ≠ e.addrOf n) :
+    e.directivesFromAddress (e.addrOf n) = e.2.drop j := by
+  unfold directivesFromAddress
+  congr 1
+  apply idxOf_eq_of
+  · rw [List.getElem?_map, getElem?_withAddresses e j (by omega), hj]
+  · intro k hk
+    rw [List.getElem?_map, getElem?_withAddresses e k (by omega)]
+    simpa using hfresh k hk
+
 /-- Cutting the directive list at an index whose address is fresh: the
 segment at the address of directive `n` is the directive list from `n` on. -/
 theorem directivesFromAddress_addrOf (e : Executable) (n : Nat) (hn : n ≤ e.2.length)
     (hfresh : ∀ k, k < n → e.addrOf k ≠ e.addrOf n) :
-    e.directivesFromAddress (e.addrOf n) = e.2.drop n := by
-  unfold directivesFromAddress
-  congr 1
-  apply idxOf_eq_of
-  · rw [List.getElem?_map, getElem?_withAddresses e n hn]
-  · intro k hk
-    rw [List.getElem?_map, getElem?_withAddresses e k (by omega)]
-    simpa using hfresh k hk
+    e.directivesFromAddress (e.addrOf n) = e.2.drop n :=
+  directivesFromAddress_addrOf_first e n n (Nat.le_refl n) hn rfl hfresh
 
 private theorem findSome?_eq_of {α β} {f : α → Option β} {l : List α} :
     ∀ {n : Nat} {b : β}, l[n]?.bind f = some b →
@@ -192,22 +201,14 @@ theorem addrOf_succ (e : Executable) {n : Nat} {d : Directive} {z : Nat}
   unfold addrOf
   rw [sizeBefore_succ e hd, int64_ofNat_add, Int64.add_assoc]
 
-/-- Distinct addresses at a cut point that follows a non-label directive. -/
-theorem addrOf_ne_of_valid (e : Executable) [hv : ValidLayout e] {k n : Nat}
-    (hk : k < n) (hsome : (e.2[n - 1]?).isSome)
-    (hd : ∀ l z, e.2[n - 1]? ≠ some (Directive.label l, z)) :
-    e.addrOf k ≠ e.addrOf n := by
-  obtain ⟨⟨d, z⟩, hdz⟩ := Option.isSome_iff_exists.mp hsome
-  have hz : 0 < z := hv.instr_size _ _ _ hdz (fun l hl => hd l z (by rw [hdz, hl]))
-  replace hd := hdz
-  have h1 : e.sizeBefore k ≤ e.sizeBefore (n - 1) := sizeBefore_mono e (by omega)
-  have h2 : e.sizeBefore n = e.sizeBefore (n - 1) + z := by
-    have hs := sizeBefore_succ e hdz
-    rw [show n - 1 + 1 = n by omega] at hs
-    exact hs
+/-- Coincident addresses have equal byte counts: the total byte count fits
+the address space, so `Int64.ofNat` acts injectively on the counts. -/
+theorem sizeBefore_eq_of_addrOf_eq (e : Executable) [hv : ValidLayout e] {k n : Nat}
+    (heq : e.addrOf k = e.addrOf n) : e.sizeBefore k = e.sizeBefore n := by
+  have hbk : e.sizeBefore k < 2 ^ 64 :=
+    Nat.lt_of_le_of_lt (sizeBefore_le_sum e k) hv.no_wrap
   have hbn : e.sizeBefore n < 2 ^ 64 :=
     Nat.lt_of_le_of_lt (sizeBefore_le_sum e n) hv.no_wrap
-  intro heq
   have hbv : BitVec.ofNat 64 (e.sizeBefore k) = BitVec.ofNat 64 (e.sizeBefore n) := by
     have h4 := congrArg Int64.toBitVec heq
     simp only [addrOf, Int64.toBitVec_add, Int64.toBitVec_ofNat'] at h4
@@ -215,6 +216,41 @@ theorem addrOf_ne_of_valid (e : Executable) [hv : ValidLayout e] {k n : Nat}
   have hnat := congrArg BitVec.toNat hbv
   simp only [BitVec.toNat_ofNat] at hnat
   omega
+
+/-- Distinct addresses at a cut point that follows a non-label directive. -/
+theorem addrOf_ne_of_valid (e : Executable) [hv : ValidLayout e] {k n : Nat}
+    (hk : k < n) (hsome : (e.2[n - 1]?).isSome)
+    (hd : ∀ l z, e.2[n - 1]? ≠ some (Directive.label l, z)) :
+    e.addrOf k ≠ e.addrOf n := by
+  obtain ⟨⟨d, z⟩, hdz⟩ := Option.isSome_iff_exists.mp hsome
+  have hz : 0 < z := hv.instr_size _ _ _ hdz (fun l hl => hd l z (by rw [hdz, hl]))
+  have h1 : e.sizeBefore k ≤ e.sizeBefore (n - 1) := sizeBefore_mono e (by omega)
+  have h2 : e.sizeBefore n = e.sizeBefore (n - 1) + z := by
+    have hs := sizeBefore_succ e hdz
+    rw [show n - 1 + 1 = n by omega] at hs
+    exact hs
+  intro heq
+  have h3 := sizeBefore_eq_of_addrOf_eq e heq
+  omega
+
+/-- Between two cut points with one address every cell is a label: a
+non-label cell occupies at least one byte and separates the addresses. -/
+theorem label_between_of_addrOf_eq (e : Executable) [hv : ValidLayout e] {j k n : Nat}
+    (hjk : j ≤ k) (hkn : k < n) (hn : n ≤ e.2.length)
+    (heq : e.addrOf j = e.addrOf n) :
+    ∃ l z, e.2[k]? = some (Directive.label l, z) := by
+  obtain ⟨⟨d, z⟩, hdz⟩ : ∃ dz, e.2[k]? = some dz :=
+    ⟨_, List.getElem?_eq_getElem (by omega)⟩
+  cases d with
+  | label l => exact ⟨l, z, hdz⟩
+  | instr i | byteArray a =>
+    exfalso
+    have hz : 0 < z := hv.instr_size _ _ _ hdz (fun l h => Directive.noConfusion h)
+    have h1 : e.sizeBefore j ≤ e.sizeBefore k := sizeBefore_mono e hjk
+    have h2 : e.sizeBefore (k + 1) = e.sizeBefore k + z := sizeBefore_succ e hdz
+    have h3 : e.sizeBefore (k + 1) ≤ e.sizeBefore n := sizeBefore_mono e hkn
+    have h4 := sizeBefore_eq_of_addrOf_eq e heq
+    omega
 
 end Executable
 

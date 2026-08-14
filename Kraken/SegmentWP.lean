@@ -367,6 +367,17 @@ theorem Layout.frag_getElem? [layout : Layout] (n : Nat) (p : Program) (i : Nat)
       rw [show n + (j + 1) = n + 1 + j from by omega]
       simp only [Layout.frag_cons, List.getElem?_cons_succ, ih (n + 1) j]
 
+theorem Layout.frag_drop [Layout] (n k : Nat) (p : Program) :
+    (Layout.frag n p).drop k = Layout.frag (n + k) (p.drop k) := by
+  induction p generalizing n k with
+  | nil => simp
+  | cons d ds ih =>
+    cases k with
+    | zero => simp
+    | succ m =>
+      rw [Layout.frag_cons, List.drop_succ_cons, List.drop_succ_cons, ih (n + 1) m,
+        show n + 1 + m = n + (m + 1) from by omega]
+
 theorem Layout.frag_mem [Layout] {n : Nat} {p : Program} {dz : Directive × Nat}
     (h : dz ∈ Layout.frag n p) : dz.1 ∈ p := by
   induction p generalizing n with
@@ -681,6 +692,25 @@ rewriting it to the cons cell on top. -/
     intro labels rco
     wpF_step
     exact Program.wpF_mono (fun _ h => h) (Program.exitsTo_grow _) _ _ h
+
+def Directive.isLabel : Directive → Bool
+  | .label _ => true
+  | _ => false
+
+/-- A leading run of label cells changes no traversal assertion. -/
+theorem Program.wpF_label_prefix {ls : Program} (hls : ∀ d ∈ ls, d.isLabel = true)
+    {p : Program} {Q : MachineData → Prop} {E : Label → MachineData → Prop} {s : MachineData}
+    (h : Program.wpF p Q E s) : Program.wpF (ls ++ p) Q E s := by
+  induction ls with
+  | nil => exact h
+  | cons d ls ih =>
+    cases d with
+    | label l =>
+      intro labels rco
+      wpF_step
+      exact ih fun d hd => hls d (List.mem_cons_of_mem _ hd)
+    | instr i => exact absurd (hls _ List.mem_cons_self) (by simp [Directive.isLabel])
+    | byteArray a => exact absurd (hls _ List.mem_cons_self) (by simp [Directive.isLabel])
 
 @[spec] theorem Program.nop_spec (asz osz : Width) (n : Nat) :
     ⦃ fun s => wp p Q E s ⦄
@@ -1309,56 +1339,13 @@ theorem Program.mem_labels_of_cell {t : Program} {l : Label}
       | instr i => exact ih hmem
       | byteArray a => exact ih hmem
 
-def Directive.isLabel : Directive → Bool
-  | .label _ => true
-  | _ => false
-
-/-- No label cell directly follows a label cell, so every label's address is
-distinct from its predecessors' addresses. -/
-def Program.sepLabels : Program → Bool
-  | [] => true
-  | d :: rest =>
-    (match d, rest with
-     | Directive.label _, Directive.label _ :: _ => false
-     | _, _ => true) && Program.sepLabels rest
-
-theorem Program.sepLabels_spec :
-    ∀ {p : Program}, Program.sepLabels p = true →
-      ∀ i l, p[i + 1]? = some (Directive.label l) →
-        ∀ l', p[i]? ≠ some (Directive.label l') := by
-  intro p
-  induction p with
-  | nil => intro _ i l h; simp at h
-  | cons d p ih =>
-    intro hsep i l hnext l'
-    cases p with
-    | nil => simp at hnext
-    | cons d' rest =>
-      simp only [Program.sepLabels, Bool.and_eq_true] at hsep
-      obtain ⟨hpair, hsep'⟩ := hsep
-      cases i with
-      | zero =>
-        intro hd
-        simp only [List.getElem?_cons_succ, List.getElem?_cons_zero,
-          Option.some.injEq] at hnext hd
-        subst hnext hd
-        simp at hpair
-      | succ j =>
-        have hs : Program.sepLabels (d' :: rest) = true := by
-          simp only [Program.sepLabels, Bool.and_eq_true]
-          exact hsep'
-        exact ih hs j l (by simpa using hnext) l' ∘ (by simpa using ·)
-
-/-- Wellformed text: the labels are unique, and no label cell directly
-follows a label cell. Both conditions are decidable, so `by decide` closes
-`WF` for a concrete program. -/
+/-- Wellformed text: the labels are unique. The condition is decidable, so
+`by decide` closes `WF` for a concrete program. -/
 structure Program.WF (p : Program) : Prop where
   nodup : (Program.labels p).Nodup
-  sep : Program.sepLabels p = true
 
 instance (p : Program) : Decidable (Program.WF p) :=
-  decidable_of_iff ((Program.labels p).Nodup ∧ Program.sepLabels p = true)
-    ⟨fun ⟨h₁, h₂⟩ => ⟨h₁, h₂⟩, fun ⟨h₁, h₂⟩ => ⟨h₁, h₂⟩⟩
+  decidable_of_iff ((Program.labels p).Nodup) ⟨fun h => ⟨h⟩, fun h => h.nodup⟩
 
 /-- The split of the text at a present label: the fresh prefix, the label
 cell, and the rest. -/
