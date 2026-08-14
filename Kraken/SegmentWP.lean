@@ -277,16 +277,12 @@ def Program.wpClosed (p : Program) (Q : MachineData → Prop)
     (E : Label → MachineData → Prop) (s : MachineData) : Prop :=
   Program.wpOpen p Q (Program.exitsTo p Q E) s
 
-def Program.wpTrans (p : Program) :
-    PredTrans (MachineData → Prop) (Label → MachineData → Prop) Unit :=
-  ⟨fun Q E s => Program.wpClosed p (Q ()) E s⟩
-
 namespace Program.ClosedWP
 
 /-- A triple on a program states the run wp. -/
 scoped instance instWP :
     WP Program Unit (MachineData → Prop) (Label → MachineData → Prop) where
-  wpTrans := Program.wpTrans
+  wpTrans p := ⟨fun Q E s => Program.wpClosed p (Q ()) E s⟩
   wp_trans_monotone _ _ _ _ _ hE hQ := fun s =>
     Program.wpOpen_mono (fun s' => hQ () s')
       (Program.exitsTo_mono (fun s' => hQ () s') hE) _ s
