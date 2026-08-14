@@ -782,142 +782,6 @@ rewriting it to the cons cell on top. -/
     simp only [hcancel]
     exact ⟨l, rfl, rfl, Or.inl h⟩
 
-/-- A triple from an absurd precondition. -/
-theorem Program.triple_false {p : Program} {Q : Unit → MachineData → Prop}
-    {E : Label → MachineData → Prop} :
-    ⦃ fun _ => False ⦄ p ⦃ Q; E ⦄ :=
-  Triple.intro fun _ h => h.elim
-
-/-- The consequence rule of the run wp. -/
-theorem Program.triple_conseq {P₁ P₂ : MachineData → Prop} {p : Program}
-    {Q : Unit → MachineData → Prop} {E₁ E₂ : Label → MachineData → Prop}
-    (h : ⦃P₁⦄ p ⦃Q; E₁⦄) (hP : ∀ s, P₂ s → P₁ s) (hE : ∀ l s, E₁ l s → E₂ l s) :
-    ⦃P₂⦄ p ⦃Q; E₂⦄ :=
-  Triple.intro fun s hp => Program.wpR_mono (fun _ h => h) hE p s (h.le_wp s (hP s hp))
-
-/-- The engine under `Program.while_spec` and `Program.resolve`. `E` is the
-label context of a traversal: a jump spec
-sends its target's assertion there, and this rule discharges the in-scope part
-of the context against the labels' own bodies, once, with a measure.
-
-`V n l` is the assertion at label `l` with measure `n`. The entry traversal
-may exit at an in-scope label with some measure, or into the residual context
-`E`. Each label's body starts at the label's scope suffix and must exit at
-in-scope labels with a smaller measure, or into `E`. The run then satisfies
-the triple with the in-scope labels gone from the context. -/
-private theorem Program.tie {p : Program} {P : MachineData → Prop}
-    {Q : Unit → MachineData → Prop} {E : Label → MachineData → Prop}
-    (V : Nat → Label → MachineData → Prop)
-    (hentry : ⦃P⦄ p
-      ⦃Q; fun l s => (Program.fromLabel p l ≠ [] ∧ ∃ n, V n l s) ∨ E l s⦄)
-    (hbody : ∀ n l, Program.fromLabel p l ≠ [] →
-      ⦃V n l⦄ (Program.fromLabel p l)
-      ⦃Q; fun l' s => (Program.fromLabel p l' ≠ [] ∧ ∃ n', n' < n ∧ V n' l' s)
-                    ∨ E l' s⦄) :
-    ⦃P⦄ p ⦃Q; E⦄ := by
-  refine Triple.intro fun s hp => ?_
-  have hmain : ∀ n l, Program.fromLabel p l ≠ [] → ∀ s', V n l s' →
-      Eventually (Program.runStep p (Q ()) E) (fun _ => False) (s', l) := by
-    intro n
-    induction n using Nat.strongRecOn with
-    | ind n ih =>
-      intro l hmem s' hV
-      have hmap : ∀ lx sx,
-          ((Program.fromLabel p lx ≠ [] ∧ ∃ n', n' < n ∧ V n' lx sx) ∨ E lx sx) →
-          Program.exitsTo p (Q ()) E lx sx := by
-        rintro lx sx (⟨hm', n', hn', hV'⟩ | he)
-        · exact Or.inr ⟨hm', ih n' hn' lx hm' sx hV'⟩
-        · exact Or.inl he
-      have hsub : ∀ lx, Program.fromLabel (Program.fromLabel p l) lx ≠ [] →
-          Program.fromLabel p lx = Program.fromLabel (Program.fromLabel p l) lx :=
-        fun lx h' => Program.fromLabel_of_suffix (Program.fromLabel_suffix p l) lx h'
-      refine step_cps _ _ _ ?_
-      show Program.wpF (Program.fromLabel p l) (Q ()) _ s'
-      refine Program.wpF_mono (fun _ h => h) (fun lx sx hx => ?_) _ _
-        ((hbody n l hmem).le_wp s' hV)
-      rcases hx with he | ⟨hmq, hch⟩
-      · exact hmap lx sx he
-      · exact Or.inr ⟨hsub lx hmq ▸ hmq,
-          Program.chain_lift hsub hmap (sx, lx) hmq hch⟩
-  have hmapO : ∀ lx sx,
-      ((Program.fromLabel p lx ≠ [] ∧ ∃ n, V n lx sx) ∨ E lx sx) →
-      Program.exitsTo p (Q ()) E lx sx := by
-    rintro lx sx (⟨hm', n, hV'⟩ | he)
-    · exact Or.inr ⟨hm', hmain n lx hm' sx hV'⟩
-    · exact Or.inl he
-  refine Program.wpF_mono (fun _ h => h) (fun lx sx hx => ?_) _ _ (hentry.le_wp s hp)
-  rcases hx with he | ⟨hmq, hch⟩
-  · exact hmapO lx sx he
-  · exact Or.inr ⟨hmq, Program.chain_lift (fun _ _ => rfl) hmapO (sx, lx) hmq hch⟩
-
-/-- The while rule, at the label cell the back jumps re-enter: the invariant
-`I` holds at the header, and every exit of the tail back to `l` keeps `I` and
-decreases the variant. `hl` says the label is not re-declared in the tail, so
-re-entry lands here. -/
-theorem Program.while_spec (l : Label) (I : MachineData → Prop) (var : MachineData → Nat)
-    (hl : Program.fromLabel p l = [])
-    (hbody : ∀ n, ⦃ fun s => I s ∧ var s = n ⦄ p
-        ⦃ Q; fun l' s => if l' = l then I s ∧ var s < n else E l' s ⦄) :
-    ⦃ I ⦄ (Directive.label l :: p) ⦃ Q; E ⦄ := by
-  have main : ∀ n s, I s → var s = n →
-      Program.wpR (Directive.label l :: p) (Q ()) E s := by
-    intro n
-    induction n using Nat.strongRecOn with
-    | ind n ih =>
-      intro s hI hvar
-      intro labels rco
-      wpF_step
-      have hmap : ∀ lx sx, (if lx = l then I sx ∧ var sx < n else E lx sx) →
-          Program.exitsTo (Directive.label l :: p) (Q ()) E lx sx := by
-        intro lx sx he
-        by_cases hxl : lx = l
-        · rw [if_pos hxl] at he
-          have hfull : Program.fromLabel (Directive.label l :: p) lx
-              = Directive.label l :: p := by
-            rw [hxl, Program.fromLabel_cons, if_pos ⟨hl, rfl⟩]
-          refine Or.inr ⟨by rw [hfull]; exact List.cons_ne_nil _ _, step_cps _ _ _ ?_⟩
-          show Program.wpF (Program.fromLabel (Directive.label l :: p) lx) _ _ sx
-          rw [hfull]
-          exact ih (var sx) he.2 sx he.1 rfl
-        · rw [if_neg hxl] at he
-          exact Or.inl he
-      refine Program.wpF_mono (fun _ h => h) (fun lx sx hx => ?_) _ _
-        ((hbody n).le_wp s ⟨hI, hvar⟩)
-      rcases hx with he | ⟨hm, hch⟩
-      · exact hmap lx sx he
-      · refine Or.inr ⟨Program.fromLabel_cons_of_mem _ lx hm ▸ hm, ?_⟩
-        exact Program.chain_lift (fun lx' h' => Program.fromLabel_cons_of_mem _ lx' h')
-          hmap (sx, lx) hm hch
-  exact Triple.intro fun s hI => main (var s) s hI rfl
-
-/-- Resolve the label context `J` of a traversal. A forward jump strictly
-shortens the scope suffix, so each in-scope context entry is discharged
-against its label's body with no measure of its own. What remains is the part
-of `J` at labels outside the text. -/
-theorem Program.resolve {p : Program} {P : MachineData → Prop}
-    {Q : Unit → MachineData → Prop} (J : Label → MachineData → Prop)
-    (hentry : ⦃P⦄ p ⦃Q; J⦄)
-    (hbody : ∀ l, Program.fromLabel p l ≠ [] →
-      ⦃ J l ⦄ (Program.fromLabel p l)
-      ⦃ Q; fun l' s => (Program.fromLabel p l').length < (Program.fromLabel p l).length
-                     ∧ J l' s ⦄) :
-    ⦃P⦄ p ⦃Q; fun l s => Program.fromLabel p l = [] ∧ J l s⦄ := by
-  refine Program.tie (V := fun n l s => J l s ∧ (Program.fromLabel p l).length = n) ?_ ?_
-  · refine Program.triple_conseq hentry (fun _ h => h) ?_
-    intro l s hJ
-    by_cases hm : Program.fromLabel p l = []
-    · exact Or.inr ⟨hm, hJ⟩
-    · exact Or.inl ⟨hm, (Program.fromLabel p l).length, hJ, rfl⟩
-  · intro n l hmem
-    by_cases hn : (Program.fromLabel p l).length = n
-    · refine Program.triple_conseq (hbody l hmem) (fun s hV => hV.1) ?_
-      rintro l' s ⟨hlt, hJ'⟩
-      by_cases hm' : Program.fromLabel p l' = []
-      · exact Or.inr ⟨hm', hJ'⟩
-      · exact Or.inl ⟨hm', (Program.fromLabel p l').length, hn ▸ hlt, hJ', rfl⟩
-    · exact Program.triple_conseq Program.triple_false
-        (fun s hV => (hn hV.2).elim) (fun _ _ h => False.elim h)
-
 /-! ### Basic blocks and the control-flow rule
 
 `Program.blocks` cuts the text at its label cells: each block is straight-line
@@ -1409,7 +1273,8 @@ there and the variant not increased, and a jump exit lands on a mapped table
 entry along `Program.EdgeLt`. The run never pauses: the label context of the
 conclusion is `⊥`. The text starts with the entry label, and its labels are
 distinct; both side conditions discharge themselves. -/
-theorem Program.cfg {p p' : Program} {Q : Unit → MachineData → Prop} {l₀ : Label}
+theorem Program.cfg {p p' : Program} {P : MachineData → Prop}
+    {Q : Unit → MachineData → Prop} {l₀ : Label}
     (T : Label → MachineData → Prop) (var : Label → MachineData → Nat)
     (hblocks : ∀ l blk, Program.blockAt p l = some blk → ∀ n : Nat,
       ⦃ fun s => T l s ∧ var l s = n ⦄ blk.body
@@ -1419,8 +1284,10 @@ theorem Program.cfg {p p' : Program} {Q : Unit → MachineData → Prop} {l₀ :
         fun l' s => (Program.blockAt p l').isSome ∧ T l' s
           ∧ Program.EdgeLt p var l n l' s ⦄)
     (hp : p = Directive.label l₀ :: p' := by rfl)
-    (hnd : (Program.labels p).Nodup := by decide) :
-    ⦃ T l₀ ⦄ p ⦃ Q ⦄ := by
+    (hnd : (Program.labels p).Nodup := by decide)
+    (hP : P = T l₀ := by rfl) :
+    ⦃ P ⦄ p ⦃ Q ⦄ := by
+  subst hP
   rw [Program.labels_eq_blocks] at hnd
   have main : ∀ m : Nat, ∀ l blk, Program.blockAt p l = some blk → ∀ s, T l s →
       var l s * (p.length + 1) + (Program.fromLabel p l).length = m →
