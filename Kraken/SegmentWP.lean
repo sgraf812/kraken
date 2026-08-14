@@ -63,8 +63,7 @@ def Directive.wpTrans (d : Directive) :
   ⟨fun Q E s => d.wp (Q ()) E s⟩
 
 /-- A directive is the singleton program. -/
-instance instWPDirective :
-    WP Directive Unit (MachineData → Prop) (Label → MachineData → Prop) where
+instance : WP Directive Unit (MachineData → Prop) (Label → MachineData → Prop) where
   wpTrans := Directive.wpTrans
   wp_trans_monotone _ _ _ _ _ hE hQ := fun _s h =>
     Directive.wp_mono (fun s' => hQ () s') hE h
@@ -204,14 +203,6 @@ def Program.fromLabel : Program → Label → Program
       if Program.fromLabel p l = [] ∧ d = Directive.label l then d :: p
       else Program.fromLabel p l := rfl
 
-/-- A label present in the tail keeps its scope suffix under a cons. -/
-theorem Program.fromLabel_cons_of_mem (d : Directive) {p : Program} (l : Label)
-    (h : Program.fromLabel p l ≠ []) :
-    Program.fromLabel (d :: p) l = Program.fromLabel p l := by
-  rw [Program.fromLabel_cons, if_neg]
-  rintro ⟨hnil, -⟩
-  exact h hnil
-
 /-- An instruction cell is invisible to the scope lookup. -/
 @[simp] theorem Program.fromLabel_cons_instr (i : Instr) (p : Program) (l : Label) :
     Program.fromLabel (Directive.instr i :: p) l = Program.fromLabel p l := by
@@ -226,20 +217,6 @@ theorem Program.fromLabel_suffix (p : Program) (l : Label) :
     split
     · exact List.suffix_rfl
     · exact ih.trans (List.suffix_cons d p)
-
-/-- A label present in a suffix has the same scope suffix in the host. -/
-theorem Program.fromLabel_of_suffix {q p : Program} (hs : q <:+ p) (l : Label)
-    (h : Program.fromLabel q l ≠ []) :
-    Program.fromLabel p l = Program.fromLabel q l := by
-  induction p with
-  | nil => rw [List.suffix_nil.mp hs]
-  | cons d p ih =>
-    rcases List.suffix_cons_iff.mp hs with heq | hs'
-    · rw [heq]
-    · have hp := ih hs'
-      rw [Program.fromLabel_cons, hp, if_neg]
-      rintro ⟨hnil, -⟩
-      exact h (hp ▸ hnil)
 
 /-- A label with a scope suffix is a cell of the program. -/
 theorem Program.fromLabel_mem {p : Program} {l : Label}
@@ -268,50 +245,6 @@ def Program.exitsTo (p : Program) (Q : MachineData → Prop) (E : Label → Mach
     (l : Label) (s : MachineData) : Prop :=
   E l s ∨ (Program.fromLabel p l ≠ [] ∧
     Eventually (Program.runStep p Q E) (fun _ => False) (s, l))
-
-/-- Lift a run chain into a host whose scope agrees on the chain's labels:
-each exit either maps into the host's exit dispatch or stays a chain state. -/
-theorem Program.chain_lift {q pf : Program} {Q : MachineData → Prop}
-    {E₁ E₂ : Label → MachineData → Prop}
-    (hsub : ∀ lx, Program.fromLabel q lx ≠ [] →
-      Program.fromLabel pf lx = Program.fromLabel q lx)
-    (hE : ∀ lx s, E₁ lx s → Program.exitsTo pf Q E₂ lx s) :
-    ∀ st, Program.fromLabel q st.2 ≠ [] →
-      Eventually (Program.runStep q Q E₁) (fun _ => False) st →
-      Eventually (Program.runStep pf Q E₂) (fun _ => False) st := by
-  intro st hmem h
-  revert hmem
-  induction h with
-  | done st hp => exact fun _ => hp.elim
-  | step st mid_p ht _ ih =>
-    intro hmem
-    refine Eventually.step st
-      (fun st' => (mid_p st' ∧ Program.fromLabel q st'.2 ≠ [])
-        ∨ Eventually (Program.runStep pf Q E₂) (fun _ => False) st') ?_ ?_
-    · show Program.wpOpen (Program.fromLabel pf st.2) Q _ st.1
-      rw [hsub st.2 hmem]
-      refine Program.wpOpen_mono (fun _ h => h) (fun lx s' hx => ?_) _ _ ht
-      rcases hx with hx | ⟨hmq, hmid⟩
-      · rcases hE lx s' hx with he | ⟨hm, hch⟩
-        · exact Or.inl he
-        · exact Or.inr ⟨hm, Or.inr hch⟩
-      · exact Or.inr ⟨hsub lx hmq ▸ hmq, Or.inl ⟨hmid, hmq⟩⟩
-    · rintro mid (⟨hmid, hmq⟩ | hch)
-      · exact ih mid hmid hmq
-      · exact hch
-
-/-- Growing the scope by one leading cell: chains re-enter the same suffixes,
-and exits keep their dispatch. -/
-theorem Program.exitsTo_grow {p : Program} {Q : MachineData → Prop}
-    {E : Label → MachineData → Prop} (d : Directive) :
-    ∀ (l : Label) (s : MachineData),
-      Program.exitsTo p Q E l s → Program.exitsTo (d :: p) Q E l s := by
-  intro l s hx
-  rcases hx with he | ⟨hm, hch⟩
-  · exact Or.inl he
-  · refine Or.inr ⟨Program.fromLabel_cons_of_mem d l hm ▸ hm, ?_⟩
-    exact Program.chain_lift (fun lx h' => Program.fromLabel_cons_of_mem d lx h')
-      (fun _ _ he => Or.inl he) (s, l) hm hch
 
 theorem Program.runStep_mono {p : Program} {Q₁ Q₂ : MachineData → Prop}
     {E₁ E₂ : Label → MachineData → Prop}
@@ -343,13 +276,6 @@ A triple on a `Program` states this transformer. -/
 def Program.wpClosed (p : Program) (Q : MachineData → Prop)
     (E : Label → MachineData → Prop) (s : MachineData) : Prop :=
   Program.wpOpen p Q (Program.exitsTo p Q E) s
-
-/-- Open jumps strengthen closed ones: a jump that lands in `E` is one
-disjunct of the dispatch. -/
-theorem Program.wpClosed_of_wpOpen {p : Program} {Q : MachineData → Prop}
-    {E : Label → MachineData → Prop} {s : MachineData}
-    (h : Program.wpOpen p Q E s) : Program.wpClosed p Q E s :=
-  Program.wpOpen_mono (fun _ h => h) (fun l s' he => Or.inl he) p s h
 
 def Program.wpTrans (p : Program) :
     PredTrans (MachineData → Prop) (Label → MachineData → Prop) Unit :=
@@ -427,13 +353,6 @@ rewriting it to the cons cell on top. -/
     ⦃ fun s => WP.wp (as ++ (bs ++ cs)) Q E s ⦄ ((as ++ bs) ++ cs) ⦃ Q; E ⦄ :=
   Triple.intro fun s h => by rw [List.append_assoc]; exact h
 
-@[spec] theorem Program.label_spec (l : Label) :
-    ⦃ fun s => WP.wp p Q E s ⦄ (Directive.label l :: p) ⦃ Q; E ⦄ :=
-  Triple.intro fun _ h => by
-    intro labels rco
-    wp_step
-    exact Program.wpOpen_mono (fun _ h => h) (Program.exitsTo_grow _) _ _ h
-
 def Directive.isLabel : Directive → Bool
   | .label _ => true
   | _ => false
@@ -453,22 +372,11 @@ theorem Program.wpOpen_label_prefix {ls : Program} (hls : ∀ d ∈ ls, d.isLabe
     | instr i => exact absurd (hls _ List.mem_cons_self) (by simp [Directive.isLabel])
     | byteArray a => exact absurd (hls _ List.mem_cons_self) (by simp [Directive.isLabel])
 
-/-- The run wp at an instruction cell, unfolded: the head's fall-through post
-is the tail's wp, the head's jump post is the tail's exit dispatch. -/
-theorem Program.wp_cons_instr (i : Instr) (p : Program) (Q : Unit → MachineData → Prop)
-    (E : Label → MachineData → Prop) (s : MachineData) :
-    WP.wp (Directive.instr i :: p) Q E s
-      = WP.wp (Directive.instr i) (fun _ => WP.wp p Q E) (Program.exitsTo p (Q ()) E) s := by
-  show Program.wpOpen (Directive.instr i :: p) (Q ())
-    (Program.exitsTo (Directive.instr i :: p) (Q ()) E) s = _
-  rw [Program.exitsTo_cons_instr]
-  rfl
-
 /-- The cons rule: the head instruction's triple, with the tail's wp as the
 fall-through post. The jump post is `E` itself, one disjunct of the exit
-dispatch `Program.wp_cons_instr` carries: a verification condition then
-mentions the exit assertion directly, and a jump that re-enters the text is
-the business of `Program.cfg`, not of the walk. -/
+dispatch: a verification condition then mentions the exit assertion directly,
+and a jump that re-enters the text is the business of `Program.cfg`, not of
+the walk. -/
 @[spec low] theorem Program.cons_spec (i : Instr) :
     ⦃ fun s => WP.wp (Directive.instr i) (fun _ => WP.wp p Q E) E s ⦄
       (Directive.instr i :: p) ⦃ Q; E ⦄ :=

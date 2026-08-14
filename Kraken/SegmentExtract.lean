@@ -195,12 +195,6 @@ private theorem sizeBefore_succ (e : Executable) {n : Nat} {d : Directive} {z : 
   rw [List.take_add_one, hd]
   simp
 
-/-- Stepping one directive advances the address by that directive's size. -/
-theorem addrOf_succ (e : Executable) {n : Nat} {d : Directive} {z : Nat}
-    (hd : e.2[n]? = some (d, z)) : e.addrOf (n + 1) = e.addrOf n + .ofNat z := by
-  unfold addrOf
-  rw [sizeBefore_succ e hd, int64_ofNat_add, Int64.add_assoc]
-
 /-- Coincident addresses have equal byte counts: the total byte count fits
 the address space, so `Int64.ofNat` acts injectively on the counts. -/
 theorem sizeBefore_eq_of_addrOf_eq (e : Executable) [hv : ValidLayout e] {k n : Nat}
@@ -262,10 +256,3 @@ theorem _root_.Layout.apply_fst [layout : Layout] (p : Program) :
 position zero. -/
 theorem _root_.Layout.apply_snd [layout : Layout] (p : Program) :
     (layout p).2 = Layout.frag 0 p := by simp [Layout.frag, Layout.apply]
-
-/-- Dropping a leading subprogram leaves the rest laid out from where it starts. -/
-theorem _root_.Layout.apply_drop [layout : Layout] (as bs : Program) :
-    ((layout (as ++ bs)).2).drop as.length = Layout.frag as.length bs := by
-  rw [Layout.apply_snd, Layout.frag_append]
-  simp
-

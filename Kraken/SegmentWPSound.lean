@@ -34,26 +34,6 @@ private theorem store_sound {s : MachineData} {addr : BitVec 64} {w : Width} {v 
   · exact h
   · exact hk _ h
 
-private theorem loadAvx_sound {s : MachineData} {addr : BitVec 64} {w : AvxWidth}
-    {r₁ r₂ : w.type → MachineData → Effects}
-    (hk : ∀ v s', (r₁ v s').All P₁ → (r₂ v s').All P₂)
-    (h : (s.loadAvx addr w r₁).All P₁) : (s.loadAvx addr w r₂).All P₂ := by
-  unfold MachineData.loadAvx at h ⊢
-  simp only [Effects.All] at h ⊢
-  cases hm : Mem.loadInt s.dmem addr w.bytes <;> simp only [hm] at h ⊢
-  · exact h
-  · exact hk _ _ h
-
-private theorem storeAvx_sound {s : MachineData} {addr : BitVec 64} {w : AvxWidth} {v : w.type}
-    {r₁ r₂ : MachineData → Effects}
-    (hk : ∀ s', (r₁ s').All P₁ → (r₂ s').All P₂)
-    (h : (s.storeAvx addr v r₁).All P₁) : (s.storeAvx addr v r₂).All P₂ := by
-  unfold MachineData.storeAvx at h ⊢
-  simp only [Effects.All] at h ⊢
-  cases hm : Mem.loadInt s.dmem addr w.bytes <;> simp only [hm] at h ⊢
-  · exact h
-  · exact hk _ h
-
 private theorem regOrMem_sound [Labels] [AddressSize] {w} {o : RegOrMem w}
     {s : MachineData} {p : Std.Rco Int64} {r₁ r₂ : w.type → MachineData → Effects}
     (hk : ∀ v s', (r₁ v s').All P₁ → (r₂ v s').All P₂)
@@ -86,31 +66,6 @@ private theorem set_sound [Labels] [AddressSize] {w} {d : Dst w} {v : w.type}
   cases d with
   | reg r => exact hk _ h
   | mem a => exact store_sound hk h
-
-private theorem avxRegOrMem_sound [Labels] [AddressSize] {w} {o : AvxRegOrMem w}
-    {s : MachineData} {p : Std.Rco Int64} {r₁ r₂ : w.type → MachineData → Effects}
-    (hk : ∀ v s', (r₁ v s').All P₁ → (r₂ v s').All P₂)
-    (h : (o.interp s p r₁).All P₁) : (o.interp s p r₂).All P₂ := by
-  cases o with
-  | avx r => exact hk _ _ h
-  | mem a => exact loadAvx_sound hk h
-
-private theorem setAvx_sound [Labels] [AddressSize] {w} {d : AvxDst w} {v : w.type}
-    {s : MachineData} {p : Std.Rco Int64} {r₁ r₂ : MachineData → Effects}
-    (hk : ∀ s', (r₁ s').All P₁ → (r₂ s').All P₂)
-    (h : (s.setAvx d v p r₁).All P₁) : (s.setAvx d v p r₂).All P₂ := by
-  cases d with
-  | avx r => exact hk _ h
-  | mem a => exact storeAvx_sound hk h
-
-private theorem setAvxLegacy_sound [Labels] [AddressSize] {w} {d : AvxDst w} {v : w.type}
-    {s : MachineData} {p : Std.Rco Int64} {r₁ r₂ : MachineData → Effects}
-    (hk : ∀ s', (r₁ s').All P₁ → (r₂ s').All P₂)
-    (h : (s.setAvxLegacy d v p r₁).All P₁) : (s.setAvxLegacy d v p r₂).All P₂ := by
-  cases d with
-  | avx r => exact hk _ h
-  | mem a => exact storeAvx_sound hk h
-
 
 private theorem undefined_sound {α} [NondetSupportingType α] {r₁ r₂ : α → Effects}
     (hk : ∀ v, (r₁ v).All P₁ → (r₂ v).All P₂)
