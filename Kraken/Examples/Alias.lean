@@ -33,11 +33,11 @@ fin:
 def palias : Program := palias.entry ++ palias.exit
 
 /-- The jump edge goes forward in the text. -/
-private theorem len_fin_lt_init :
-    (Program.fromLabel palias "fin").length < (Program.fromLabel palias "init").length := by
+private theorem idx_init_lt_fin :
+    Program.blockIdx palias "init" < Program.blockIdx palias "fin" := by
   decide
 
-grind_pattern len_fin_lt_init => List.length (Program.fromLabel palias "init")
+grind_pattern idx_init_lt_fin => Program.blockIdx palias "fin"
 
 /-- The jump target of `palias` is mapped. -/
 @[grind .] private theorem palias_fin_isSome :

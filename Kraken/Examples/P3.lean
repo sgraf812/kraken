@@ -78,8 +78,8 @@ so the rewrite cannot feed itself. -/
     _ < 2 ^ 64 := hbound
 
 /-- The forward edge of the loop: `_end` sits later in the text than `start`. -/
-@[grind .] private theorem len_end_lt_start :
-    (Program.fromLabel p3 "_end").length < (Program.fromLabel p3 "start").length := by
+@[grind .] private theorem idx_start_lt_end :
+    Program.blockIdx p3 "start" < Program.blockIdx p3 "_end" := by
   decide
 
 /-- The jump targets of `p3` are mapped. -/
