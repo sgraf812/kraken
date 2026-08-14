@@ -1349,6 +1349,17 @@ theorem Program.sepLabels_spec :
           exact hsep'
         exact ih hs j l (by simpa using hnext) l' ∘ (by simpa using ·)
 
+/-- Wellformed text: the labels are unique, and no label cell directly
+follows a label cell. Both conditions are decidable, so `by decide` closes
+`WF` for a concrete program. -/
+structure Program.WF (p : Program) : Prop where
+  nodup : (Program.labels p).Nodup
+  sep : Program.sepLabels p = true
+
+instance (p : Program) : Decidable (Program.WF p) :=
+  decidable_of_iff ((Program.labels p).Nodup ∧ Program.sepLabels p = true)
+    ⟨fun ⟨h₁, h₂⟩ => ⟨h₁, h₂⟩, fun ⟨h₁, h₂⟩ => ⟨h₁, h₂⟩⟩
+
 /-- The split of the text at a present label: the fresh prefix, the label
 cell, and the rest. -/
 theorem Program.fromLabel_split {p : Program} {l : Label}
@@ -1399,10 +1410,11 @@ theorem Program.cfg {p p' : Program} {P : MachineData → Prop}
         fun l' s => (Program.blockAt p l').isSome ∧ T l' s
           ∧ Program.EdgeLt p var l n l' s ⦄)
     (hp : p = Directive.label l₀ :: p' := by rfl)
-    (hnd : (Program.labels p).Nodup := by decide)
+    (hwf : Program.WF p := by decide)
     (hP : P = T l₀ := by rfl) :
     ⦃ P ⦄ p ⦃ Q ⦄ := by
   subst hP
+  have hnd := hwf.nodup
   rw [Program.labels_eq_blocks] at hnd
   have main : ∀ m : Nat, ∀ l blk, Program.blockAt p l = some blk → ∀ s, T l s →
       var l s * (p.length + 1) + (Program.fromLabel p l).length = m →

@@ -350,12 +350,11 @@ its position. The side conditions: labels are unique, and no label cell
 directly follows a label cell, so the label's address differs from every
 earlier cut point. -/
 theorem Program.extract [layout : Layout] {p : Program}
-    [hv : Executable.ValidLayout (layout p)]
-    (hnd : (Program.labels p).Nodup) (hsep : Program.sepLabels p = true)
+    [hv : Executable.ValidLayout (layout p)] (hwf : Program.WF p)
     {l : Label} (hne : Program.fromLabel p l ≠ []) :
     (layout p).directivesFromAddress ((layout p).labels.label l)
       = Layout.frag (p.length - (Program.fromLabel p l).length) (Program.fromLabel p l) := by
-  obtain ⟨t, rest, hp, hfl, hfresh, hlen⟩ := Program.fromLabel_split hnd hne
+  obtain ⟨t, rest, hp, hfl, hfresh, hlen⟩ := Program.fromLabel_split hwf.nodup hne
   have hcell : p[t.length]? = some (Directive.label l) := by
     rw [hp, List.getElem?_append_right (Nat.le_refl _), Nat.sub_self]
     rfl
@@ -393,7 +392,7 @@ theorem Program.extract [layout : Layout] {p : Program}
           simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hzeq
           rw [hzeq.1]
       have hk1 : t.length - 1 + 1 = t.length := by omega
-      exact Program.sepLabels_spec hsep (t.length - 1) l (hk1 ▸ hcell) l' hp'
+      exact Program.sepLabels_spec hwf.sep (t.length - 1) l (hk1 ▸ hcell) l' hp'
   have hdfa := Executable.directivesFromAddress_addrOf (layout p) t.length hle hinj
   rw [haddr, hdfa, ← hlen, hfl, hp]
   with_reducible exact Layout.apply_drop t (Directive.label l :: rest)
@@ -442,9 +441,7 @@ a label whose exit assertion holds. -/
 theorem Program.sound [layout : Layout] {p : Program}
     [hv : Executable.ValidLayout (layout p)]
     {Q : MachineData → Prop} {E : Label → MachineData → Prop} {s : MachineData}
-    (h : Program.wpR p Q E s)
-    (hnd : (Program.labels p).Nodup := by decide)
-    (hsep : Program.sepLabels p = true := by decide) :
+    (h : Program.wpR p Q E s) (hwf : Program.WF p := by decide) :
     Eventually (straightlineStep (layout p))
       (fun mid => Q mid.1 ∨ ∃ l, mid.2 = (layout p).labels.label l ∧ E l mid.1)
       (s, layout.start) := by
@@ -452,7 +449,7 @@ theorem Program.sound [layout : Layout] {p : Program}
   have hlab : ∀ l, Program.fromLabel p l ≠ [] →
       (layout p).directivesFromAddress ((layout p).labels.label l)
         = Layout.frag (p.length - (Program.fromLabel p l).length) (Program.fromLabel p l) :=
-    fun l hne => Program.extract hnd hsep hne
+    fun l hne => Program.extract hwf hne
   letI : Labels := (layout p).labels
   have hw := Program.wpF_toE (Layout.frag 0 p) (Layout.frag_map_fst 0 p) s layout.start h
   refine Eventually.step _
