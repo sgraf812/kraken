@@ -3,10 +3,12 @@ Weakest preconditions on the deep embedding. `Directive.wp` is the run
 transformer of a single directive: a fall-through postcondition and a jump
 postcondition at the address of the target label, quantified over every label
 table and instruction extent, so no assertion mentions the layout.
-`Program.wp` folds it over the text. The `WP` instance on `Directive` reads a
-directive as the singleton program; the instance on `Program` is the run: a
+`Program.wpOpen` folds it over the text, with every jump an open exit into
+`E`; `Program.wpClosed` closes the in-text labels by re-entry
+(`Program.exitsTo`). The `WP` instance on `Directive` reads a directive as
+the singleton program; the instance on `Program` is `Program.wpClosed`: a
 fall-through past the end of the text lands in `Q`, and a jump exit either
-surfaces in `E` or re-enters at the label's cell (`Program.exitsTo`).
+surfaces in `E` or re-enters at the label's cell.
 `Program.cons_spec` lifts the per-instruction triples through the text, and
 `Program.cfg` verifies a labeled program from one spec table and one variant.
 -/
@@ -148,25 +150,25 @@ alone. A jump exit names the target label, not an address: `E : Label →
 MachineData → Prop`, and the labels a spec's `E` mentions are the fragment's
 whole interface to its host program. -/
 
-def Program.wp : Program → (MachineData → Prop) → (Label → MachineData → Prop) →
+def Program.wpOpen : Program → (MachineData → Prop) → (Label → MachineData → Prop) →
     MachineData → Prop
   | [], Q, _, s => Q s
-  | d :: p, Q, E, s => d.wp (Program.wp p Q E) E s
+  | d :: p, Q, E, s => d.wp (Program.wpOpen p Q E) E s
 
-theorem Program.wp_mono {Q₁ Q₂ : MachineData → Prop} {E₁ E₂ : Label → MachineData → Prop}
+theorem Program.wpOpen_mono {Q₁ Q₂ : MachineData → Prop} {E₁ E₂ : Label → MachineData → Prop}
     (hQ : ∀ s, Q₁ s → Q₂ s) (hE : ∀ l s, E₁ l s → E₂ l s) :
-    ∀ (p : Program) (s : MachineData), Program.wp p Q₁ E₁ s → Program.wp p Q₂ E₂ s
+    ∀ (p : Program) (s : MachineData), Program.wpOpen p Q₁ E₁ s → Program.wpOpen p Q₂ E₂ s
   | [], s => hQ s
-  | _ :: p, _ => fun h => Directive.wp_mono (fun s' => wp_mono hQ hE p s') hE h
+  | _ :: p, _ => fun h => Directive.wp_mono (fun s' => wpOpen_mono hQ hE p s') hE h
 
 /-- Sequential composition of the traversal: a fall-through of `as` continues
 into `bs`, a jump exits the whole fragment. -/
-theorem Program.wp_append (as bs : Program) (Q : MachineData → Prop)
+theorem Program.wpOpen_append (as bs : Program) (Q : MachineData → Prop)
     (E : Label → MachineData → Prop) :
-    Program.wp (as ++ bs) Q E = Program.wp as (Program.wp bs Q E) E := by
+    Program.wpOpen (as ++ bs) Q E = Program.wpOpen as (Program.wpOpen bs Q E) E := by
   induction as with
   | nil => rfl
-  | cons d p ih => funext s; simp only [List.cons_append, Program.wp, ih]
+  | cons d p ih => funext s; simp only [List.cons_append, Program.wpOpen, ih]
 
 /-! ### Runs
 
@@ -257,7 +259,7 @@ fall-through ends in `Q`, a jump exit surfaces in `E` or hands an in-scope
 label to the continuation. -/
 def Program.runStep (p : Program) (Q : MachineData → Prop) (E : Label → MachineData → Prop)
     (st : MachineData × Label) (post : @Post (MachineData × Label)) : Prop :=
-  Program.wp (Program.fromLabel p st.2) Q
+  Program.wpOpen (Program.fromLabel p st.2) Q
     (fun l s => E l s ∨ (Program.fromLabel p l ≠ [] ∧ post (s, l))) st.1
 
 /-- Where a jump exit at `l` goes: it surfaces in `E`, or, in scope, the run
@@ -286,9 +288,9 @@ theorem Program.chain_lift {q pf : Program} {Q : MachineData → Prop}
     refine Eventually.step st
       (fun st' => (mid_p st' ∧ Program.fromLabel q st'.2 ≠ [])
         ∨ Eventually (Program.runStep pf Q E₂) (fun _ => False) st') ?_ ?_
-    · show Program.wp (Program.fromLabel pf st.2) Q _ st.1
+    · show Program.wpOpen (Program.fromLabel pf st.2) Q _ st.1
       rw [hsub st.2 hmem]
-      refine Program.wp_mono (fun _ h => h) (fun lx s' hx => ?_) _ _ ht
+      refine Program.wpOpen_mono (fun _ h => h) (fun lx s' hx => ?_) _ _ ht
       rcases hx with hx | ⟨hmq, hmid⟩
       · rcases hE lx s' hx with he | ⟨hm, hch⟩
         · exact Or.inl he
@@ -315,7 +317,7 @@ theorem Program.runStep_mono {p : Program} {Q₁ Q₂ : MachineData → Prop}
     {E₁ E₂ : Label → MachineData → Prop}
     (hQ : ∀ s, Q₁ s → Q₂ s) (hE : ∀ l s, E₁ l s → E₂ l s) :
     ∀ st post, Program.runStep p Q₁ E₁ st post → Program.runStep p Q₂ E₂ st post :=
-  fun _ _ h => Program.wp_mono hQ
+  fun _ _ h => Program.wpOpen_mono hQ
     (fun l s hx => hx.imp (hE l s) (fun ⟨hm, hp⟩ => ⟨hm, hp⟩)) _ _ h
 
 theorem Program.exitsTo_mono {p : Program} {Q₁ Q₂ : MachineData → Prop}
@@ -336,22 +338,35 @@ theorem Program.exitsTo_cons_instr (i : Instr) (p : Program)
   funext l s
   simp only [Program.exitsTo, Program.fromLabel_cons_instr, hrs]
 
+/-- The run wp: the traversal, with jumps resolved through the exit dispatch.
+A triple on a `Program` states this transformer. -/
+def Program.wpClosed (p : Program) (Q : MachineData → Prop)
+    (E : Label → MachineData → Prop) (s : MachineData) : Prop :=
+  Program.wpOpen p Q (Program.exitsTo p Q E) s
+
+/-- Open jumps strengthen closed ones: a jump that lands in `E` is one
+disjunct of the dispatch. -/
+theorem Program.wpClosed_of_wpOpen {p : Program} {Q : MachineData → Prop}
+    {E : Label → MachineData → Prop} {s : MachineData}
+    (h : Program.wpOpen p Q E s) : Program.wpClosed p Q E s :=
+  Program.wpOpen_mono (fun _ h => h) (fun l s' he => Or.inl he) p s h
+
 def Program.wpTrans (p : Program) :
     PredTrans (MachineData → Prop) (Label → MachineData → Prop) Unit :=
-  ⟨fun Q E s => Program.wp p (Q ()) (Program.exitsTo p (Q ()) E) s⟩
+  ⟨fun Q E s => Program.wpClosed p (Q ()) E s⟩
 
 /-- The run: the traversal, with jump exits resolved through the dispatch. -/
 instance instWPProgram :
     WP Program Unit (MachineData → Prop) (Label → MachineData → Prop) where
   wpTrans := Program.wpTrans
   wp_trans_monotone _ _ _ _ _ hE hQ := fun s =>
-    Program.wp_mono (fun s' => hQ () s')
+    Program.wpOpen_mono (fun s' => hQ () s')
       (Program.exitsTo_mono (fun s' => hQ () s') hE) _ s
 
 /-- Unfold the run wp into the traversal with its exit dispatch. -/
 theorem Program.wp_eq (p : Program) (Q : Unit → MachineData → Prop)
     (E : Label → MachineData → Prop) (s : MachineData) :
-    WP.wp p Q E s = Program.wp p (Q ()) (Program.exitsTo p (Q ()) E) s := rfl
+    WP.wp p Q E s = Program.wpOpen p (Q ()) (Program.exitsTo p (Q ()) E) s := rfl
 
 /-! ### Per-instruction specs
 
@@ -366,7 +381,7 @@ section ProgramSpecs
 variable {Q : Unit → MachineData → Prop} {E : Label → MachineData → Prop} {p : Program}
 
 local macro "wp_step" : tactic =>
-  `(tactic| simp only [Program.wp_eq, Directive.wp_eq, Program.wp, Directive.wp,
+  `(tactic| simp only [Program.wp_eq, Directive.wp_eq, Program.wpOpen, Directive.wp,
       Directive.interp, Instr.interp,
       Operation.interp, Operand.interp, RegOrMem.interp, RelRegOrMem.interp, ConstExpr.interp,
       MachineData.set, MachineData.setReg, Reg64s.get_low64, Reg64s.set_low64, Effects.All,
@@ -395,16 +410,16 @@ rewriting it to the cons cell on top. -/
   Triple.intro fun _ h => by
     intro labels rco
     wp_step
-    exact Program.wp_mono (fun _ h => h) (Program.exitsTo_grow _) _ _ h
+    exact Program.wpOpen_mono (fun _ h => h) (Program.exitsTo_grow _) _ _ h
 
 def Directive.isLabel : Directive → Bool
   | .label _ => true
   | _ => false
 
 /-- A leading run of label cells changes no traversal assertion. -/
-theorem Program.wp_label_prefix {ls : Program} (hls : ∀ d ∈ ls, d.isLabel = true)
+theorem Program.wpOpen_label_prefix {ls : Program} (hls : ∀ d ∈ ls, d.isLabel = true)
     {p : Program} {Q : MachineData → Prop} {E : Label → MachineData → Prop} {s : MachineData}
-    (h : Program.wp p Q E s) : Program.wp (ls ++ p) Q E s := by
+    (h : Program.wpOpen p Q E s) : Program.wpOpen (ls ++ p) Q E s := by
   induction ls with
   | nil => exact h
   | cons d ls ih =>
@@ -422,7 +437,7 @@ theorem Program.wp_cons_instr (i : Instr) (p : Program) (Q : Unit → MachineDat
     (E : Label → MachineData → Prop) (s : MachineData) :
     WP.wp (Directive.instr i :: p) Q E s
       = WP.wp (Directive.instr i) (fun _ => WP.wp p Q E) (Program.exitsTo p (Q ()) E) s := by
-  show Program.wp (Directive.instr i :: p) (Q ())
+  show Program.wpOpen (Directive.instr i :: p) (Q ())
     (Program.exitsTo (Directive.instr i :: p) (Q ()) E) s = _
   rw [Program.exitsTo_cons_instr]
   rfl
@@ -436,7 +451,7 @@ the business of `Program.cfg`, not of the walk. -/
     ⦃ fun s => WP.wp (Directive.instr i) (fun _ => WP.wp p Q E) E s ⦄
       (Directive.instr i :: p) ⦃ Q; E ⦄ :=
   Triple.intro fun s h => by
-    show Program.wp (Directive.instr i :: p) (Q ())
+    show Program.wpOpen (Directive.instr i :: p) (Q ())
       (Program.exitsTo (Directive.instr i :: p) (Q ()) E) s
     rw [Program.exitsTo_cons_instr]
     exact Directive.wp_mono (fun _ h => h) (fun l s' he => Or.inl he) h
@@ -827,11 +842,12 @@ theorem Program.fromLabel_block :
         rw [Program.fromLabel_cons, if_neg (by rintro ⟨hn, -⟩; exact hne'' hn)]
         exact hih
 
-/-- A label-free fragment's run is its traversal. -/
-theorem Program.wp_label_free {b : Program} (hb : ∀ lx, Program.fromLabel b lx = [])
+/-- On a label-free fragment the dispatch closes nothing, and the closed wp
+comes back to the open one. -/
+theorem Program.wpOpen_of_wpClosed {b : Program} (hb : ∀ lx, Program.fromLabel b lx = [])
     {Q : MachineData → Prop} {E : Label → MachineData → Prop} {s : MachineData}
-    (h : Program.wp b Q (Program.exitsTo b Q E) s) : Program.wp b Q E s :=
-  Program.wp_mono (fun _ h => h)
+    (h : Program.wpClosed b Q E s) : Program.wpOpen b Q E s :=
+  Program.wpOpen_mono (fun _ h => h)
     (fun lx _sx hx => hx.elim id (fun ⟨hm, _⟩ => absurd (hb lx) hm)) b s h
 
 /-- The block of the text at label `l`: the partial map the control-flow rule
@@ -1135,7 +1151,7 @@ theorem Program.cfg {p p' : Program} {P : MachineData → Prop}
   rw [Program.labels_eq_blocks] at hnd
   have main : ∀ m : Nat, ∀ l blk, Program.blockAt p l = some blk → ∀ s, T l s →
       var l s * (p.length + 1) + (Program.fromLabel p l).length = m →
-      Program.wp (Program.fromLabel p l) (Q ())
+      Program.wpOpen (Program.fromLabel p l) (Q ())
         (Program.exitsTo p (Q ()) ⊥) s := by
     intro m
     induction m using Nat.strongRecOn with
@@ -1145,10 +1161,10 @@ theorem Program.cfg {p p' : Program} {P : MachineData → Prop}
       rw [hself]
       intro labels rco
       wp_step
-      rw [Program.wp_append]
-      have hb := Program.wp_label_free (Program.blockAt_body_free hblk)
+      rw [Program.wpOpen_append]
+      have hb := Program.wpOpen_of_wpClosed (Program.blockAt_body_free hblk)
         ((hblocks l blk hblk (var l s)).le_wp s ⟨hT, rfl⟩)
-      refine Program.wp_mono (fun sx hq => ?_) (fun lx sx hx => ?_) _ _ hb
+      refine Program.wpOpen_mono (fun sx hq => ?_) (fun lx sx hx => ?_) _ _ hb
       · cases hnx : blk.next with
         | some l' =>
           rw [hnx] at hq hself
@@ -1174,7 +1190,7 @@ theorem Program.cfg {p p' : Program} {P : MachineData → Prop}
         obtain ⟨blk'', hblk''⟩ := Option.isSome_iff_exists.mp hsome
         have hne' := Program.blockAt_ne hblk''
         refine Or.inr ⟨hne', step_cps _ _ _ ?_⟩
-        show Program.wp (Program.fromLabel p lx) _ _ sx
+        show Program.wpOpen (Program.fromLabel p lx) _ _ sx
         refine ih _ ?_ lx blk'' hblk'' sx hT' rfl
         have hlen : (Program.fromLabel p lx).length ≤ p.length :=
           (Program.fromLabel_suffix p lx).length_le

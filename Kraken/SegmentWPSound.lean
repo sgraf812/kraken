@@ -297,26 +297,26 @@ attribute [local irreducible] Directive.interp Directives.interp
 /-- Transport the traversal wp along a sized spelling of its text into the
 baseline fold: `Q` lands at the fall-through past the end, `E` at a jump out,
 resolved to the ambient table's addresses. -/
-theorem Program.wp_sound [Labels] {P : MachineState → Prop}
+theorem Program.wpOpen_sound [Labels] {P : MachineState → Prop}
     {Q : MachineData → Prop} {E : Label → MachineData → Prop}
     (hQ : ∀ s' pc', Q s' → P (s', pc'))
     (hE : ∀ st, (∃ l, st.2 = label l ∧ E l st.1) → P st) :
     ∀ (ds : List (Directive × Nat)) {q : Program}, ds.map Prod.fst = q →
-      ∀ (s : MachineData) (pc : Int64), Program.wp q Q E s →
+      ∀ (s : MachineData) (pc : Int64), Program.wpOpen q Q E s →
         (Directives.interp ds s pc (fun pc' s' => .done (s', pc'))).All P
   | [], _, rfl, s, pc, h => by
     simp only [Directives.interp, Effects.All]
     exact hQ s pc h
   | (d, sz) :: ds, _, rfl, s, pc, h => by
-    simp only [List.map_cons, Program.wp, Directive.wp] at h
+    simp only [List.map_cons, Program.wpOpen, Directive.wp] at h
     simp only [Directives.interp]
     rcases h ‹Labels› ⟨pc, pc + .ofNat sz⟩ with hfall | hjump
     · exact Directive.interp_sound
-        (fun s' h' => Program.wp_sound hQ hE ds rfl s' (pc + .ofNat sz) h')
+        (fun s' h' => Program.wpOpen_sound hQ hE ds rfl s' (pc + .ofNat sz) h')
         (fun st' h' => hE _ h')
         (Or.inl hfall)
     · refine Directive.interp_sound
-        (fun s' h' => Program.wp_sound hQ hE ds rfl s' (pc + .ofNat sz) h')
+        (fun s' h' => Program.wpOpen_sound hQ hE ds rfl s' (pc + .ofNat sz) h')
         (fun st' h' => hE _ h')
         (Or.inr (Effects.All.mono ?_ _ hjump))
       rintro st ⟨l, -, ha, he⟩
@@ -330,10 +330,10 @@ theorem Program.straightlineStep_of_wp [Layout] {e : Executable} {q : Program}
     (hds : (e.directivesFromAddress pc).map Prod.fst = q)
     (hQ : ∀ s' pc', Q s' → post (s', pc'))
     (hE : ∀ st, (∃ l, st.2 = e.labels.label l ∧ E l st.1) → post st)
-    (h : Program.wp q Q E s) :
+    (h : Program.wpOpen q Q E s) :
     straightlineStep e (s, pc) post :=
   letI := e.labels
-  Program.wp_sound hQ hE _ hds s pc h
+  Program.wpOpen_sound hQ hE _ hds s pc h
 
 end InterpSealed
 
@@ -474,7 +474,7 @@ private theorem Program.chain_sound [layout : Layout] {p : Program}
       (fun mid => (Q mid.1 ∨ ∃ l, mid.2 = (layout p).labels.label l ∧ E l mid.1)
         ∨ (∃ l, mid.2 = (layout p).labels.label l
             ∧ Program.fromLabel p l ≠ [] ∧ mid_p (mid.1, l)))
-      (Program.straightlineStep_of_wp ?_ ?_ ?_ (Program.wp_label_prefix hls ht)) ?_
+      (Program.straightlineStep_of_wp ?_ ?_ ?_ (Program.wpOpen_label_prefix hls ht)) ?_
     · rw [hseg]
       exact Layout.frag_map_fst _ _
     · exact fun s' pc' hq => Or.inl (Or.inl hq)
@@ -494,7 +494,7 @@ a label whose exit assertion holds. -/
 theorem Program.sound [layout : Layout] {p : Program}
     [hv : Executable.ValidLayout (layout p)]
     {Q : MachineData → Prop} {E : Label → MachineData → Prop} {s : MachineData}
-    (h : Program.wp p Q (Program.exitsTo p Q E) s)
+    (h : Program.wpClosed p Q E s)
     (hwf : Program.WF p := by decide) :
     Eventually (straightlineStep (layout p))
       (fun mid => Q mid.1 ∨ ∃ l, mid.2 = (layout p).labels.label l ∧ E l mid.1)
