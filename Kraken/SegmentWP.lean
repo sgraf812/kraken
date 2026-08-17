@@ -637,7 +637,7 @@ private theorem idxOf_eq_of_getElem? {α} [BEq α] [LawfulBEq α] {xs : List α}
         have hmem : a ∈ xs := List.mem_of_getElem? h
         have hxa : x ≠ a := fun heq => (List.nodup_cons.mp hnd).1 (heq ▸ hmem)
         simpa using hxa
-      simp only [List.idxOf_cons, hne, cond_false]
+      simp only [List.idxOf_cons, hne, Bool.false_eq_true, ite_false]
       rw [ih (List.nodup_cons.mp hnd).2 h]
 
 /-! ### The block view
