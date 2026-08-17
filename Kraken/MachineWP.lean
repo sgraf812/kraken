@@ -185,6 +185,119 @@ private theorem cons_placement {d : Directive} {q : Program}
     simp only [hcancel]
     exact Or.inr h
 
+@[spec] theorem MachineWP.sub_reg_imm_spec (asz : Width) (r : Reg64) (i : Int64) :
+    ⦃ fun s =>
+        let b := s.regs.get64 r
+        let a := BitVec.setWidth 64 i.toBitVec
+        let v := b - a
+        WP.wp p Q E
+          { s with
+              regs := s.regs.set64 r v,
+              status := StatusFlags.from_result v
+                { cf := v.unsigned != b.unsigned - a.unsigned,
+                  af := (v.take 4).unsigned != (b.take 4).unsigned - (a.take 4).unsigned,
+                  of := v.signed != b.signed - a.signed } } ⦄
+      (Directive.instr (.regular asz .W64 (.sub (.reg (.low r .W64)) (.imm (.int64 i)))) :: p)
+    ⦃ Q; E ⦄ :=
+  Triple.intro fun s h => by
+    intro pc sized rest hmap hseg
+    obtain ⟨z, sized', rfl, hmap'⟩ := cons_placement hmap
+    wp_step
+    exact tail_step h hmap' (by simpa using hseg)
+
+@[spec] theorem MachineWP.add_reg_imm_spec (asz : Width) (r : Reg64) (i : Int64) :
+    ⦃ fun s =>
+        let a := BitVec.setWidth 64 i.toBitVec
+        let b := s.regs.get64 r
+        let v := a + b
+        WP.wp p Q E
+          { s with
+              regs := s.regs.set64 r v,
+              status := StatusFlags.from_result v
+                { cf := v.unsigned != a.unsigned + b.unsigned,
+                  af := (v.take 4).unsigned != (a.take 4).unsigned + (b.take 4).unsigned,
+                  of := v.signed != a.signed + b.signed } } ⦄
+      (Directive.instr (.regular asz .W64 (.add (.reg (.low r .W64)) (.imm (.int64 i)))) :: p)
+    ⦃ Q; E ⦄ :=
+  Triple.intro fun s h => by
+    intro pc sized rest hmap hseg
+    obtain ⟨z, sized', rfl, hmap'⟩ := cons_placement hmap
+    wp_step
+    exact tail_step h hmap' (by simpa using hseg)
+
+@[spec] theorem MachineWP.adc_reg_reg_spec (asz : Width) (rd rs : Reg64) :
+    ⦃ fun s =>
+        let a := s.regs.get64 rs
+        let b := s.regs.get64 rd
+        let c := s.status.cf
+        let v := a + b + BitVec.ofNat 64 c.toNat
+        WP.wp p Q E
+          { s with
+              regs := s.regs.set64 rd v,
+              status := StatusFlags.from_result v
+                { cf := v.unsigned != a.unsigned + b.unsigned + c,
+                  af := (v.take 4).unsigned != (a.take 4).unsigned + (b.take 4).unsigned + c,
+                  of := v.signed != a.signed + b.signed + c } } ⦄
+      (Directive.instr (.regular asz .W64
+          (.adc (.reg (.low rd .W64)) (.regOrMem (.reg (.low rs .W64))))) :: p)
+    ⦃ Q; E ⦄ :=
+  Triple.intro fun s h => by
+    intro pc sized rest hmap hseg
+    obtain ⟨z, sized', rfl, hmap'⟩ := cons_placement hmap
+    wp_step
+    exact tail_step h hmap' (by simpa using hseg)
+
+@[spec] theorem MachineWP.mulx_reg_spec (asz : Width) (hi lo rs : Reg64) :
+    ⦃ fun s =>
+        let v := (s.regs.get64 rs).unsigned * (s.regs.get64 .rdx).unsigned
+        WP.wp p Q E
+          { s with regs :=
+              (s.regs.set64 lo (BitVec.ofInt 64 v)).set64 hi (BitVec.ofInt 64 (v >>> 64)) } ⦄
+      (Directive.instr (.regular asz .W64
+          (.mulx (.low hi .W64) (.low lo .W64) (.reg (.low rs .W64)))) :: p)
+    ⦃ Q; E ⦄ :=
+  Triple.intro fun s h => by
+    intro pc sized rest hmap hseg
+    obtain ⟨z, sized', rfl, hmap'⟩ := cons_placement hmap
+    wp_step
+    exact tail_step h hmap' (by simpa using hseg)
+
+@[spec] theorem MachineWP.xor_reg_reg_spec (asz : Width) (rd rs : Reg64) :
+    ⦃ fun s =>
+        let a := s.regs.get64 rd
+        let b := s.regs.get64 rs
+        let v := a ^^^ b
+        ∀ af : Bool,
+          WP.wp p Q E
+            { s with
+                regs := s.regs.set64 rd v,
+                status := StatusFlags.from_result v { cf := false, of := false, af } } ⦄
+      (Directive.instr (.regular asz .W64
+          (.xor (.reg (.low rd .W64)) (.regOrMem (.reg (.low rs .W64))))) :: p)
+    ⦃ Q; E ⦄ :=
+  Triple.intro fun s h => by
+    intro pc sized rest hmap hseg
+    obtain ⟨z, sized', rfl, hmap'⟩ := cons_placement hmap
+    wp_step
+    intro af
+    exact tail_step (h af) hmap' (by simpa using hseg)
+
+@[spec] theorem MachineWP.jcc_spec (asz osz : Width) (cc : CondCode) (l : Label) :
+    ⦃ fun s =>
+        (cc.interp s.status = true → E (cenv.labels.label l) s)
+          ⊓ (cc.interp s.status = false → WP.wp p Q E s) ⦄
+      (Directive.instr (.regular asz osz (.jcc cc l)) :: p)
+    ⦃ Q; E ⦄ :=
+  Triple.intro fun s h => by
+    intro pc sized rest hmap hseg
+    obtain ⟨z, sized', rfl, hmap'⟩ := cons_placement hmap
+    wp_step
+    cases hc : CondCode.interp cc s.status <;>
+      simp only [hc, Bool.false_eq_true, if_true, if_false, meet_prop_eq_and,
+        Effects.All, or_false, false_or] at h ⊢
+    · exact tail_step (h.2 trivial) hmap' (by simpa using hseg)
+    · exact Or.inr (h.1 trivial)
+
 end Specs
 
 -- Smoke test: the walk steps a placed fragment through the registered specs.
