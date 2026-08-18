@@ -46,11 +46,25 @@ def Executable.instrStep (e : Executable) (st : MachineState) (post : @Post Mach
     (@Directive.interp e.labels d st.1 (.mk st.2 (st.2 + .ofNat z))
       (fun s' => .done (s', st.2 + .ofNat z)) (fun pc' s' => .done (s', pc'))).All post
 
+/-- The address behind the fragment `q` placed at `pc`: the entry, advanced
+by the sizes the ambient code gives those cells. -/
+def Executable.after (e : Executable) (pc : Int64) (q : Program) : Int64 :=
+  pc + .ofNat ((((e.directivesFromAddress pc).take q.length).map Prod.snd).sum)
+
+/-- The text at `pc` begins with `q`. -/
+def Executable.sits (e : Executable) (pc : Int64) (q : Program) : Prop :=
+  (((e.directivesFromAddress pc).take q.length).map Prod.fst) = q
+
 /-- `q` sits at `pc`, and the text behind it starts at `pcEnd`. -/
 def Executable.holds (e : Executable) (pc : Int64) (q : Program) (pcEnd : Int64) : Prop :=
   ∃ sized rest, e.directivesFromAddress pc = sized ++ rest
     ∧ sized.map Prod.fst = q
     ∧ pcEnd = pc + .ofNat ((sized.map Prod.snd).sum)
+
+theorem Executable.holds_of_sits {e : Executable} {pc : Int64} {q : Program}
+    (h : e.sits pc q) : e.holds pc q (e.after pc q) :=
+  ⟨(e.directivesFromAddress pc).take q.length, (e.directivesFromAddress pc).drop q.length,
+    (List.take_append_drop _ _).symm, h, rfl⟩
 
 /-- The run of the fragment `q` from `s`: placed anywhere in the ambient
 code, the machine eventually falls through to the placement's end with `Q`,
@@ -353,8 +367,8 @@ theorem Eventually.wf_ind {State : Type} {trans : State → Post → Prop}
 
 `Program.link` ties finitely or infinitely many separately verified
 fragments into one run. Each index `i` names a placed fragment: its text
-`frag i`, the address `entry i` where it starts, and the address `after i`
-where the text behind it starts. `T i` is the invariant at that entry, and
+`frag i` and the address `entry i` where it starts. The address behind it is
+derived, `cenv.after`. `T i` is the invariant at that entry, and
 `r` orders index-state pairs. A fragment's obligation is a Triple, so `vcgen`
 proves it; `link` supplies the well-founded induction that a back edge
 needs. -/
@@ -369,13 +383,14 @@ def Program.Cont {ι : Type} (post : @Post MachineState) (entry : ι → Int64)
 
 open MachineWP in
 theorem Program.link [CodeEnv] {ι : Type} {post : @Post MachineState}
-    (frag : ι → Program) (entry after : ι → Int64) (T : ι → MachineData → Prop)
+    (frag : ι → Program) (entry : ι → Int64) (T : ι → MachineData → Prop)
     (r : ι × MachineData → ι × MachineData → Prop) (hwf : WellFounded r)
-    (hplace : ∀ i, cenv.holds (entry i) (frag i) (after i))
+    (hplace : ∀ i, cenv.sits (entry i) (frag i))
     (hfrag : ∀ i s₀,
       ⦃ fun s => T i s ∧ s = s₀ ⦄
         frag i
-      ⦃ fun _ s => Program.Cont post entry T r i s₀ (after i) s;
+      ⦃ fun _ s => Program.Cont post entry T r i s₀
+          (cenv.after (entry i) (frag i)) s;
         fun a s => Program.Cont post entry T r i s₀ a s ⦄) :
     ∀ i s, T i s → Eventually cenv.instrStep post (s, entry i) := by
   suffices h : ∀ is : ι × MachineData, T is.1 is.2 →
@@ -386,8 +401,8 @@ theorem Program.link [CodeEnv] {ι : Type} {post : @Post MachineState}
   induction is using hwf.induction with
   | _ is ih =>
     intro hT
-    have hev := ((hfrag is.1 is.2).le_wp is.2 ⟨hT, rfl⟩) (entry is.1) (after is.1)
-      (hplace is.1)
+    have hev := ((hfrag is.1 is.2).le_wp is.2 ⟨hT, rfl⟩) (entry is.1)
+      (cenv.after (entry is.1) (frag is.1)) (Executable.holds_of_sits (hplace is.1))
     refine eventually_trans _ _ _ _ hev ?_
     rintro ⟨s', a⟩ (⟨ha, hc⟩ | hc)
     · subst ha
