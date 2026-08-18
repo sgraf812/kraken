@@ -327,6 +327,28 @@ private theorem step_here {post : @Post MachineState} {s : MachineData} {pc : In
 
 end Specs
 
+/-! ## The general loop rule
+
+`Eventually` is a least fixpoint, so one well-founded induction turns finitely
+many local steps into one global run. `I` describes every state the run may
+re-enter, and `r` orders those states. `Program.cfg` is the instance where `I`
+is a finite table keyed by pc, and `r` is the lex order of variant and block
+position. -/
+
+theorem Eventually.wf_ind {State : Type} {trans : State → Post → Prop}
+    {r : State → State → Prop} (hwf : WellFounded r) {I post : @Post State}
+    (hstep : ∀ st, I st →
+      Eventually trans (fun st' => post st' ∨ (I st' ∧ r st' st)) st) :
+    ∀ st, I st → Eventually trans post st := by
+  intro st
+  induction st using hwf.induction with
+  | _ st ih =>
+    intro hI
+    refine eventually_trans _ _ _ _ (hstep st hI) ?_
+    rintro mid (hp | ⟨hI', hr⟩)
+    · exact Eventually.done _ hp
+    · exact ih mid hr hI'
+
 -- Smoke test: the walk steps a placed fragment through the registered specs.
 set_option mvcgen.warning false in
 open MachineWP in
