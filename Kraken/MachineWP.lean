@@ -416,6 +416,170 @@ theorem Program.link [CodeEnv] {ι : Type} {post : @Post MachineState}
         rw [← hj]
         exact ih (j, s') hr hTj
 
+/-! ## The control-flow rule
+
+`Program.cfg` instantiates `link` at the blocks of a labeled program: the
+index is the label, the entry is the label's address, the fragment is the
+block body, and the order is the lex order of variant and block position.
+`Program.Placed` collects the placement facts that connect the program's
+syntax to the ambient addresses. -/
+
+/-- Where a label's block sits in the ambient code. -/
+structure Program.Placed [CodeEnv] (p : Program) (l₀ : Label) : Prop where
+  /-- Every placement of the text starts at the entry label's address. -/
+  entry : ∀ pc pcEnd, cenv.holds pc p pcEnd → cenv.labels.label l₀ = pc
+  /-- A block's body sits at its label's address. -/
+  block : ∀ l blk, Program.blockAt p l = some blk →
+    cenv.sits (cenv.labels.label l) blk.body
+  /-- A block that falls into another ends at that block's address. -/
+  next : ∀ l blk l', Program.blockAt p l = some blk → blk.next = some l' →
+    cenv.after (cenv.labels.label l) blk.body = cenv.labels.label l'
+  /-- The last block ends where the text ends. -/
+  last : ∀ pc pcEnd, cenv.holds pc p pcEnd → ∀ l blk, Program.blockAt p l = some blk →
+    blk.next = none → cenv.after (cenv.labels.label l) blk.body = pcEnd
+
+/-- A label-keyed table, read at an address. -/
+def Table.ofLabels [CodeEnv] (tl : Label → MachineData → Prop) :
+    Int64 → MachineData → Prop :=
+  fun a s => ∃ l, cenv.labels.label l = a ∧ tl l s
+
+@[grind ←] theorem Table.ofLabels_at [CodeEnv] {tl : Label → MachineData → Prop}
+    {l : Label} {s : MachineData} (h : tl l s) :
+    Table.ofLabels tl (cenv.labels.label l) s := ⟨l, rfl, h⟩
+
+/-- The block a block falls into: it is mapped, and it sits one position
+later in the text. -/
+theorem Program.blockAt_next {p : Program} (hnd : (Program.labels p).Nodup)
+    {l : Label} {blk : Program.Block} (h : Program.blockAt p l = some blk)
+    {l' : Label} (hn : blk.next = some l') :
+    (Program.blockAt p l').isSome ∧ Program.blockIdx p l' = Program.blockIdx p l + 1 := by
+  obtain ⟨-, i, hi, hnext⟩ := Program.blockAtAux_spec h
+  rw [hn] at hnext
+  have hndv : ((Program.view p).2.map (·.1)).Nodup := by rwa [← Program.labels_view]
+  cases hj : (Program.view p).2[i + 1]? with
+  | none => rw [hj] at hnext; cases hnext
+  | some lb =>
+    obtain ⟨l₁, b₁⟩ := lb
+    rw [hj] at hnext
+    simp only [Option.map_some, Option.some.injEq] at hnext
+    subst hnext
+    refine ⟨?_, ?_⟩
+    · show (Program.blockAtAux (Program.view p).2 l').isSome = true
+      rw [Program.blockAtAux_of_getElem hndv hj]
+      rfl
+    · rw [Program.blockIdx_eq hnd hj, Program.blockIdx_eq hnd hi]
+
+/-- A mapped label sits inside the block list. -/
+theorem Program.blockIdx_lt {p : Program} (hnd : (Program.labels p).Nodup)
+    {l : Label} {blk : Program.Block} (h : Program.blockAt p l = some blk) :
+    Program.blockIdx p l < (Program.view p).2.length := by
+  obtain ⟨-, i, hi, -⟩ := Program.blockAtAux_spec h
+  rw [Program.blockIdx_eq hnd hi]
+  by_cases hlt : i < (Program.view p).2.length
+  · exact hlt
+  · rw [List.getElem?_eq_none (by omega)] at hi
+    cases hi
+
+/-- The block index never exceeds the number of blocks. -/
+theorem Program.blockIdx_le (p : Program) (l : Label) :
+    Program.blockIdx p l ≤ (Program.view p).2.length := by
+  have h := List.idxOf_le_length (a := l) (l := Program.labels p)
+  have hlen : (Program.labels p).length = (Program.view p).2.length := by
+    rw [Program.labels_view, List.length_map]
+  rw [hlen] at h
+  exact h
+
+/-- The lex order of the control-flow rule, encoded in one number: the
+variant dominates, and the block position breaks ties. -/
+private def Program.cfgMeasure (p : Program) (var : Label → MachineData → Nat)
+    (x : Label × MachineData) : Nat :=
+  var x.1 x.2 * ((Program.view p).2.length + 1)
+    + ((Program.view p).2.length - Program.blockIdx p x.1)
+
+/-- The control-flow rule: one spec table `T`, one variant `var`, one triple
+per block of the map `Program.blockAt`. Each block is entered with its table
+entry and the variant snapshotted; it falls into the next block with the
+entry there and the variant not increased, and a jump exit lands on a mapped
+table entry along `Program.EdgeLt`. -/
+theorem MachineWP.cfg [CodeEnv] {p p' : Program} {P : MachineData → Prop}
+    {Q : Unit → MachineData → Prop} {l₀ : Label}
+    (T : Label → MachineData → Prop) (var : Label → MachineData → Nat)
+    (hpl : Program.Placed p l₀)
+    (hblocks : ∀ l blk, Program.blockAt p l = some blk → ∀ n : Nat,
+      ⦃ fun s => T l s ∧ var l s = n ⦄ blk.body
+      ⦃ (match blk.next with
+         | some l' => fun _ s => T l' s ∧ var l' s ≤ n
+         | none => Q);
+        Table.ofLabels (fun l' s => (Program.blockAt p l').isSome ∧ T l' s
+          ∧ Program.EdgeLt p var l n l' s) ⦄)
+    (hp : p = Directive.label l₀ :: p' := by rfl)
+    (hwf : Program.WF p := by decide)
+    (hP : P = T l₀ := by rfl) :
+    ⦃ P ⦄ p ⦃ Q ⦄ := by
+  subst hP
+  have hnd := hwf.nodup
+  refine Triple.intro fun s hT => ?_
+  intro pc pcEnd hplace
+  have hK : ∀ l, Program.blockIdx p l ≤ (Program.view p).2.length :=
+    Program.blockIdx_le p
+  have key := Program.link (post := fun st => st.2 = pcEnd ∧ Q () st.1)
+    (frag := fun l => (Program.blockAt p l).elim [] (·.body))
+    (entry := fun l => cenv.labels.label l)
+    (T := fun l s => (Program.blockAt p l).isSome ∧ T l s)
+    (r := fun x y => Program.cfgMeasure p var x < Program.cfgMeasure p var y)
+    (measure (Program.cfgMeasure p var)).wf ?_ ?_
+  · have h0 : (Program.blockAt p l₀).isSome := by
+      rw [hp]
+      show (Program.blockAtAux (Program.view (Directive.label l₀ :: p')).2 l₀).isSome = true
+      simp [Program.view, Program.blockAtAux]
+    have hrun := key l₀ s ⟨h0, hT⟩
+    rw [hpl.entry pc pcEnd hplace] at hrun
+    exact hrun.mono (fun _ _ ht => ht) (fun st hst => Or.inl hst)
+  · intro l
+    cases hb : Program.blockAt p l with
+    | none => simp [Executable.sits]
+    | some blk => simpa [hb] using hpl.block l blk hb
+  · intro l s₀
+    cases hb : Program.blockAt p l with
+    | none =>
+      exact Triple.intro fun s hpre => absurd hpre.1.1 (by simp [hb])
+    | some blk =>
+      simp only [hb, Option.elim]
+      refine Triple.intro fun s hpre => ?_
+      obtain ⟨⟨-, hTl⟩, rfl⟩ := hpre
+      have hidx : Program.blockIdx p l < (Program.view p).2.length :=
+        Program.blockIdx_lt hnd hb
+      refine Executable.wp_mono ?_ ?_ ((hblocks l blk hb (var l s)).le_wp s ⟨hTl, rfl⟩)
+      · intro s' hq
+        cases hnx : blk.next with
+        | some l' =>
+          rw [hnx] at hq
+          obtain ⟨hTl', hvar⟩ := hq
+          obtain ⟨hsome', hidx'⟩ := Program.blockAt_next hnd hb hnx
+          refine Or.inr ⟨l', (hpl.next l blk l' hb hnx).symm, ⟨hsome', hTl'⟩, ?_⟩
+          have hmul : var l' s' * ((Program.view p).2.length + 1)
+              ≤ var l s * ((Program.view p).2.length + 1) :=
+            Nat.mul_le_mul_right _ hvar
+          simp only [Program.cfgMeasure]
+          omega
+        | none =>
+          rw [hnx] at hq
+          exact Or.inl ⟨(hpl.last pc pcEnd hplace l blk hb hnx).symm ▸ rfl, hq⟩
+      · rintro a s' ⟨l', hlab, hsome', hTl', hedge⟩
+        refine Or.inr ⟨l', hlab, ⟨hsome', hTl'⟩, ?_⟩
+        have hle' : Program.blockIdx p l' ≤ (Program.view p).2.length := hK l'
+        simp only [Program.cfgMeasure]
+        rcases hedge with hlt | ⟨heq, hij⟩
+        · have hmul : (var l' s' + 1) * ((Program.view p).2.length + 1)
+              ≤ var l s * ((Program.view p).2.length + 1) :=
+            Nat.mul_le_mul_right _ hlt
+          have hsucc : (var l' s' + 1) * ((Program.view p).2.length + 1)
+              = var l' s' * ((Program.view p).2.length + 1)
+                + ((Program.view p).2.length + 1) := Nat.succ_mul _ _
+          omega
+        · rw [heq]
+          omega
+
 -- Smoke test: the walk steps a placed fragment through the registered specs.
 set_option mvcgen.warning false in
 open MachineWP in
