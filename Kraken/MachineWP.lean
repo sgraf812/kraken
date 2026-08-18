@@ -32,28 +32,42 @@ private theorem int64_ofNat_add (a b : Nat) :
   apply Int64.toBitVec_inj.mp
   simp
 
-/-! ## The wp -/
+/-! ## The step relation and the wp
+
+`instrStep` runs exactly the cell at the current pc: the machine's own
+interpreter, with the fall-through and jump continuations both stopping. It
+refines kraken's `straightlineStep`, which runs a whole segment burst, into
+the granularity the per-instruction rules need. -/
+
+/-- One cell of the ambient code, run from `st`. -/
+def Executable.instrStep (e : Executable) (st : MachineState) (post : @Post MachineState) :
+    Prop :=
+  ∃ d z rest, e.directivesFromAddress st.2 = (d, z) :: rest ∧
+    (@Directive.interp e.labels d st.1 (.mk st.2 (st.2 + .ofNat z))
+      (fun s' => .done (s', st.2 + .ofNat z)) (fun pc' s' => .done (s', pc'))).All post
+
+/-- `q` sits at `pc`, and the text behind it starts at `pcEnd`. -/
+def Executable.holds (e : Executable) (pc : Int64) (q : Program) (pcEnd : Int64) : Prop :=
+  ∃ sized rest, e.directivesFromAddress pc = sized ++ rest
+    ∧ sized.map Prod.fst = q
+    ∧ pcEnd = pc + .ofNat ((sized.map Prod.snd).sum)
 
 /-- The run of the fragment `q` from `s`: placed anywhere in the ambient
-code, its cells run and every stop is a fall-through at the placement's end
-satisfying `Q`, or a stop at a pc satisfying `E`. -/
+code, the machine eventually falls through to the placement's end with `Q`,
+or stops at a pc satisfying `E`. Re-entry inside the fragment is free: the
+judgment is the fixpoint `Eventually`, so a back edge simply keeps stepping. -/
 def Executable.wp (e : Executable) (q : Program) (Q : MachineData → Prop)
     (E : Int64 → MachineData → Prop) (s : MachineData) : Prop :=
-  ∀ (pc : Int64) (sized rest : List (Directive × Nat)),
-    sized.map Prod.fst = q →
-    e.directivesFromAddress pc = sized ++ rest →
-    (@Directives.interp e.labels sized s pc (fun pc' s' => .done (s', pc'))).All
-      (fun st => (st.2 = pc + .ofNat ((sized.map Prod.snd).sum) ∧ Q st.1)
-        ∨ E st.2 st.1)
+  ∀ (pc pcEnd : Int64), e.holds pc q pcEnd →
+    Eventually (e.instrStep)
+      (fun st => (st.2 = pcEnd ∧ Q st.1) ∨ E st.2 st.1) (s, pc)
 
 theorem Executable.wp_mono {e : Executable} {q : Program}
     {Q₁ Q₂ : MachineData → Prop} {E₁ E₂ : Int64 → MachineData → Prop}
     (hQ : ∀ s, Q₁ s → Q₂ s) (hE : ∀ a s, E₁ a s → E₂ a s)
-    {s : MachineData} (h : e.wp q Q₁ E₁ s) : e.wp q Q₂ E₂ s := by
-  intro pc sized rest hmap hseg
-  exact Effects.All.mono
-    (fun st hst => hst.imp (fun ⟨ha, hq⟩ => ⟨ha, hQ _ hq⟩) (hE _ _)) _
-    (h pc sized rest hmap hseg)
+    {s : MachineData} (h : e.wp q Q₁ E₁ s) : e.wp q Q₂ E₂ s := fun pc pcEnd hpl =>
+  (h pc pcEnd hpl).mono (fun _ _ ht => ht)
+    (fun st hst => hst.imp (fun ⟨ha, hq⟩ => ⟨ha, hQ _ hq⟩) (hE _ _))
 
 namespace MachineWP
 
@@ -86,36 +100,51 @@ variable [CodeEnv] {Q : Unit → MachineData → Prop} {E : Int64 → MachineDat
   {p : Program}
 
 local macro "wp_step" : tactic =>
-  `(tactic| simp only [MachineWP.wp_eq, Executable.wp, Directives.interp,
-      Directive.interp, Instr.interp,
+  `(tactic| simp only [Directive.interp, Instr.interp,
       Operation.interp, Operand.interp, RegOrMem.interp, RelRegOrMem.interp, ConstExpr.interp,
       MachineData.set, MachineData.setReg, Reg64s.get_low64, Reg64s.set_low64, Effects.All,
-      List.map_cons, List.map_nil, List.sum_cons, List.sum_nil, List.cons_append,
       or_false, false_or])
 
-/-- Peel one placed cell: the tail's wp yields the tail's `All` at the
-advanced placement, with the end address reassociated. -/
-private theorem tail_step {q : Program} {Q : MachineData → Prop}
-    {E : Int64 → MachineData → Prop} {s : MachineData}
-    (h : cenv.wp q Q E s) {pc : Int64} {d : Directive} {z : Nat}
-    {sized rest : List (Directive × Nat)} (hmap : sized.map Prod.fst = q)
-    (hseg : cenv.directivesFromAddress pc = (d, z) :: (sized ++ rest)) :
-    (@Directives.interp cenv.labels sized s (pc + .ofNat z)
-        (fun pc' s' => .done (s', pc'))).All
-      (fun st => (st.2 = pc + .ofNat (z + (sized.map Prod.snd).sum) ∧ Q st.1)
-        ∨ E st.2 st.1) := by
-  have hadv := CodeEnv.advance pc (d, z) (sized ++ rest) hseg
-  have hall := h (pc + .ofNat z) sized rest hmap hadv
-  refine Effects.All.mono (fun st hst => hst.imp (fun ⟨ha, hq⟩ => ⟨?_, hq⟩) id) _ hall
-  rw [ha, int64_ofNat_add, Int64.add_assoc]
+/-- Peel the head cell off a placement: the head's size, the head cell in the
+segment map, and the tail's placement behind it. -/
+private theorem holds_cons {d : Directive} {q : Program} {pc pcEnd : Int64}
+    (hpl : cenv.holds pc (d :: q) pcEnd) :
+    ∃ z rest, cenv.directivesFromAddress pc = (d, z) :: rest
+      ∧ cenv.holds (pc + .ofNat z) q pcEnd := by
+  obtain ⟨sized, rest, hseg, hmap, hend⟩ := hpl
+  cases sized with
+  | nil => cases hmap
+  | cons c sized' =>
+    obtain ⟨c₁, c₂⟩ := c
+    simp only [List.map_cons, List.cons.injEq] at hmap
+    obtain ⟨rfl, hmap'⟩ := hmap
+    refine ⟨c₂, sized' ++ rest, by simpa using hseg, sized', rest, ?_, hmap', ?_⟩
+    · exact CodeEnv.advance pc (c₁, c₂) (sized' ++ rest) (by simpa using hseg)
+    · rw [hend]
+      simp only [List.map_cons, List.sum_cons]
+      rw [int64_ofNat_add, Int64.add_assoc]
+
+private theorem holds_nil {pc pcEnd : Int64} (hpl : cenv.holds pc [] pcEnd) : pcEnd = pc := by
+  obtain ⟨sized, rest, hseg, hmap, hend⟩ := hpl
+  rw [List.map_eq_nil_iff.mp hmap] at hend
+  simpa using hend
+
+/-- Run one cell and continue: the rule pattern shared by every
+instruction. -/
+private theorem step_here {post : @Post MachineState} {s : MachineData} {pc : Int64}
+    {d : Directive} {z : Nat} {rest : List (Directive × Nat)}
+    (hseg : cenv.directivesFromAddress pc = (d, z) :: rest)
+    (hall : (@Directive.interp cenv.labels d s (.mk pc (pc + .ofNat z))
+        (fun s' => .done (s', pc + .ofNat z)) (fun pc' s' => .done (s', pc'))).All
+      (fun st => Eventually cenv.instrStep post st)) :
+    Eventually cenv.instrStep post (s, pc) :=
+  step_cps _ _ _ ⟨d, z, rest, hseg, hall⟩
 
 @[spec] theorem MachineWP.nil_spec :
     ⦃ fun s => Q () s ⦄ ([] : Program) ⦃ Q; E ⦄ :=
   Triple.intro fun s h => by
-    intro pc sized rest hmap hseg
-    rw [List.map_eq_nil_iff.mp hmap]
-    simp only [Directives.interp, List.map_nil, List.sum_nil, Effects.All]
-    exact Or.inl ⟨by simp, h⟩
+    intro pc pcEnd hpl
+    exact Eventually.done _ (Or.inl ⟨(holds_nil hpl).symm, h⟩)
 
 @[spec] theorem MachineWP.nil_append_spec (bs : Program) :
     ⦃ fun s => WP.wp bs Q E s ⦄ (([] : Program) ++ bs) ⦃ Q; E ⦄ :=
@@ -129,61 +158,35 @@ private theorem tail_step {q : Program} {Q : MachineData → Prop}
     ⦃ fun s => WP.wp (as ++ (bs ++ cs)) Q E s ⦄ ((as ++ bs) ++ cs) ⦃ Q; E ⦄ :=
   Triple.intro fun s h => by rw [List.append_assoc]; exact h
 
-omit [CodeEnv] in
-/-- Split a cons-headed placement into the head cell and the placed tail. -/
-private theorem cons_placement {d : Directive} {q : Program}
-    {sized : List (Directive × Nat)} (hmap : sized.map Prod.fst = d :: q) :
-    ∃ z sized', sized = (d, z) :: sized' ∧ sized'.map Prod.fst = q := by
-  cases sized with
-  | nil => cases hmap
-  | cons c sized' =>
-    obtain ⟨c₁, c₂⟩ := c
-    simp only [List.map_cons, List.cons.injEq] at hmap
-    exact ⟨c₂, sized', by rw [hmap.1], hmap.2⟩
-
 @[spec] theorem MachineWP.label_spec (l : Label) :
     ⦃ fun s => WP.wp p Q E s ⦄ (Directive.label l :: p) ⦃ Q; E ⦄ :=
   Triple.intro fun s h => by
-    intro pc sized rest hmap hseg
-    obtain ⟨z, sized', rfl, hmap'⟩ := cons_placement hmap
+    intro pc pcEnd hpl
+    obtain ⟨z, rest, hseg, hpl'⟩ := holds_cons hpl
+    refine step_here hseg ?_
     wp_step
-    exact tail_step h hmap' (by simpa using hseg)
+    exact h _ _ hpl'
 
 @[spec] theorem MachineWP.nop_spec (asz osz : Width) (n : Nat) :
     ⦃ fun s => WP.wp p Q E s ⦄
       (Directive.instr (.regular asz osz (.nop n)) :: p) ⦃ Q; E ⦄ :=
   Triple.intro fun s h => by
-    intro pc sized rest hmap hseg
-    obtain ⟨z, sized', rfl, hmap'⟩ := cons_placement hmap
+    intro pc pcEnd hpl
+    obtain ⟨z, rest, hseg, hpl'⟩ := holds_cons hpl
+    refine step_here hseg ?_
     wp_step
-    exact tail_step h hmap' (by simpa using hseg)
+    exact h _ _ hpl'
 
 @[spec] theorem MachineWP.mov_reg_imm_spec (asz : Width) (r : Reg64) (i : Int64) :
     ⦃ fun s => WP.wp p Q E { s with regs := s.regs.set64 r (BitVec.setWidth 64 i.toBitVec) } ⦄
       (Directive.instr (.regular asz .W64 (.mov (.reg (.low r .W64)) (.imm (.int64 i)))) :: p)
     ⦃ Q; E ⦄ :=
   Triple.intro fun s h => by
-    intro pc sized rest hmap hseg
-    obtain ⟨z, sized', rfl, hmap'⟩ := cons_placement hmap
+    intro pc pcEnd hpl
+    obtain ⟨z, rest, hseg, hpl'⟩ := holds_cons hpl
+    refine step_here hseg ?_
     wp_step
-    exact tail_step h hmap' (by simpa using hseg)
-
-@[spec] theorem MachineWP.jmp_label_spec (asz osz : Width) (l : Label) :
-    ⦃ fun s => E (cenv.labels.label l) s ⦄
-      (Directive.instr (.regular asz osz
-          (.jmp (.rel (.sub (.label l) .after_current_instruction)))) :: p)
-    ⦃ Q; E ⦄ :=
-  Triple.intro fun s h => by
-    intro pc sized rest hmap hseg
-    obtain ⟨z, sized', rfl, hmap'⟩ := cons_placement hmap
-    wp_step
-    have hcancel : pc + .ofNat z + (cenv.labels.label l - (pc + .ofNat z))
-        = cenv.labels.label l := by
-      apply Int64.toBitVec_inj.mp
-      simp only [Int64.toBitVec_add, Int64.toBitVec_sub]
-      rw [BitVec.add_comm, BitVec.sub_add_cancel]
-    simp only [hcancel]
-    exact Or.inr h
+    exact h _ _ hpl'
 
 @[spec] theorem MachineWP.sub_reg_imm_spec (asz : Width) (r : Reg64) (i : Int64) :
     ⦃ fun s =>
@@ -200,10 +203,11 @@ private theorem cons_placement {d : Directive} {q : Program}
       (Directive.instr (.regular asz .W64 (.sub (.reg (.low r .W64)) (.imm (.int64 i)))) :: p)
     ⦃ Q; E ⦄ :=
   Triple.intro fun s h => by
-    intro pc sized rest hmap hseg
-    obtain ⟨z, sized', rfl, hmap'⟩ := cons_placement hmap
+    intro pc pcEnd hpl
+    obtain ⟨z, rest, hseg, hpl'⟩ := holds_cons hpl
+    refine step_here hseg ?_
     wp_step
-    exact tail_step h hmap' (by simpa using hseg)
+    exact h _ _ hpl'
 
 @[spec] theorem MachineWP.add_reg_imm_spec (asz : Width) (r : Reg64) (i : Int64) :
     ⦃ fun s =>
@@ -220,10 +224,11 @@ private theorem cons_placement {d : Directive} {q : Program}
       (Directive.instr (.regular asz .W64 (.add (.reg (.low r .W64)) (.imm (.int64 i)))) :: p)
     ⦃ Q; E ⦄ :=
   Triple.intro fun s h => by
-    intro pc sized rest hmap hseg
-    obtain ⟨z, sized', rfl, hmap'⟩ := cons_placement hmap
+    intro pc pcEnd hpl
+    obtain ⟨z, rest, hseg, hpl'⟩ := holds_cons hpl
+    refine step_here hseg ?_
     wp_step
-    exact tail_step h hmap' (by simpa using hseg)
+    exact h _ _ hpl'
 
 @[spec] theorem MachineWP.adc_reg_reg_spec (asz : Width) (rd rs : Reg64) :
     ⦃ fun s =>
@@ -242,10 +247,11 @@ private theorem cons_placement {d : Directive} {q : Program}
           (.adc (.reg (.low rd .W64)) (.regOrMem (.reg (.low rs .W64))))) :: p)
     ⦃ Q; E ⦄ :=
   Triple.intro fun s h => by
-    intro pc sized rest hmap hseg
-    obtain ⟨z, sized', rfl, hmap'⟩ := cons_placement hmap
+    intro pc pcEnd hpl
+    obtain ⟨z, rest, hseg, hpl'⟩ := holds_cons hpl
+    refine step_here hseg ?_
     wp_step
-    exact tail_step h hmap' (by simpa using hseg)
+    exact h _ _ hpl'
 
 @[spec] theorem MachineWP.mulx_reg_spec (asz : Width) (hi lo rs : Reg64) :
     ⦃ fun s =>
@@ -257,10 +263,11 @@ private theorem cons_placement {d : Directive} {q : Program}
           (.mulx (.low hi .W64) (.low lo .W64) (.reg (.low rs .W64)))) :: p)
     ⦃ Q; E ⦄ :=
   Triple.intro fun s h => by
-    intro pc sized rest hmap hseg
-    obtain ⟨z, sized', rfl, hmap'⟩ := cons_placement hmap
+    intro pc pcEnd hpl
+    obtain ⟨z, rest, hseg, hpl'⟩ := holds_cons hpl
+    refine step_here hseg ?_
     wp_step
-    exact tail_step h hmap' (by simpa using hseg)
+    exact h _ _ hpl'
 
 @[spec] theorem MachineWP.xor_reg_reg_spec (asz : Width) (rd rs : Reg64) :
     ⦃ fun s =>
@@ -276,11 +283,30 @@ private theorem cons_placement {d : Directive} {q : Program}
           (.xor (.reg (.low rd .W64)) (.regOrMem (.reg (.low rs .W64))))) :: p)
     ⦃ Q; E ⦄ :=
   Triple.intro fun s h => by
-    intro pc sized rest hmap hseg
-    obtain ⟨z, sized', rfl, hmap'⟩ := cons_placement hmap
+    intro pc pcEnd hpl
+    obtain ⟨z, rest, hseg, hpl'⟩ := holds_cons hpl
+    refine step_here hseg ?_
     wp_step
     intro af
-    exact tail_step (h af) hmap' (by simpa using hseg)
+    exact h af _ _ hpl'
+
+@[spec] theorem MachineWP.jmp_label_spec (asz osz : Width) (l : Label) :
+    ⦃ fun s => E (cenv.labels.label l) s ⦄
+      (Directive.instr (.regular asz osz
+          (.jmp (.rel (.sub (.label l) .after_current_instruction)))) :: p)
+    ⦃ Q; E ⦄ :=
+  Triple.intro fun s h => by
+    intro pc pcEnd hpl
+    obtain ⟨z, rest, hseg, hpl'⟩ := holds_cons hpl
+    refine step_here hseg ?_
+    wp_step
+    have hcancel : pc + .ofNat z + (cenv.labels.label l - (pc + .ofNat z))
+        = cenv.labels.label l := by
+      apply Int64.toBitVec_inj.mp
+      simp only [Int64.toBitVec_add, Int64.toBitVec_sub]
+      rw [BitVec.add_comm, BitVec.sub_add_cancel]
+    simp only [hcancel]
+    exact Eventually.done _ (Or.inr h)
 
 @[spec] theorem MachineWP.jcc_spec (asz osz : Width) (cc : CondCode) (l : Label) :
     ⦃ fun s =>
@@ -289,14 +315,15 @@ private theorem cons_placement {d : Directive} {q : Program}
       (Directive.instr (.regular asz osz (.jcc cc l)) :: p)
     ⦃ Q; E ⦄ :=
   Triple.intro fun s h => by
-    intro pc sized rest hmap hseg
-    obtain ⟨z, sized', rfl, hmap'⟩ := cons_placement hmap
+    intro pc pcEnd hpl
+    obtain ⟨z, rest, hseg, hpl'⟩ := holds_cons hpl
+    refine step_here hseg ?_
     wp_step
     cases hc : CondCode.interp cc s.status <;>
-      simp only [hc, Bool.false_eq_true, if_true, if_false, meet_prop_eq_and,
-        Effects.All, or_false, false_or] at h ⊢
-    · exact tail_step (h.2 trivial) hmap' (by simpa using hseg)
-    · exact Or.inr (h.1 trivial)
+      simp only [hc, Bool.false_eq_true, ite_true, ite_false, meet_prop_eq_and,
+        Effects.All] at h ⊢
+    · exact h.2 trivial _ _ hpl'
+    · exact Eventually.done _ (Or.inr (h.1 trivial))
 
 end Specs
 
