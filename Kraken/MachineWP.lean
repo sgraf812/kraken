@@ -16,13 +16,9 @@ open Lean.Order
 
 /-! ## The ambient code -/
 
-/-- The ambient executable, with the placement-advance fact: behind the cell
-at `pc` the segment map continues at `pc + size`. -/
+/-- The ambient executable. -/
 class CodeEnv where
   env : Executable
-  advance : ∀ (pc : Int64) (c : Directive × Nat) (t : List (Directive × Nat)),
-    env.directivesFromAddress pc = c :: t →
-    env.directivesFromAddress (pc + .ofNat c.2) = t
 
 /-- The ambient code. -/
 abbrev cenv [CodeEnv] : Executable := CodeEnv.env
@@ -39,32 +35,34 @@ interpreter, with the fall-through and jump continuations both stopping. It
 refines kraken's `straightlineStep`, which runs a whole segment burst, into
 the granularity the per-instruction rules need. -/
 
-/-- One cell of the ambient code, run from `st`. -/
+/-- The cells at an address, past the labels that share it. A label occupies
+no bytes, so several cells sit at one address; the machine runs the first one
+that is not a label. -/
+def Executable.codeAt (e : Executable) (pc : Int64) : List (Directive × Nat) :=
+  (e.directivesFromAddress pc).dropWhile (fun c => c.1.isLabel)
+
+/-- One instruction of the ambient code, run from `st`. -/
 def Executable.instrStep (e : Executable) (st : MachineState) (post : @Post MachineState) :
     Prop :=
-  ∃ d z rest, e.directivesFromAddress st.2 = (d, z) :: rest ∧
+  ∃ d z rest, e.codeAt st.2 = (d, z) :: rest ∧
     (@Directive.interp e.labels d st.1 (.mk st.2 (st.2 + .ofNat z))
       (fun s' => .done (s', st.2 + .ofNat z)) (fun pc' s' => .done (s', pc'))).All post
 
-/-- The address behind the fragment `q` placed at `pc`: the entry, advanced
-by the sizes the ambient code gives those cells. -/
-def Executable.after (e : Executable) (pc : Int64) (q : Program) : Int64 :=
-  pc + .ofNat ((((e.directivesFromAddress pc).take q.length).map Prod.snd).sum)
+/-- The fragment `q` sits at `pc`: a label costs no address, and every other
+cell is the next instruction there. -/
+def Executable.sits (e : Executable) (pc : Int64) : Program → Prop
+  | [] => True
+  | .label _ :: q => e.sits pc q
+  | d :: q => ∃ z rest, e.codeAt pc = (d, z) :: rest ∧ e.sits (pc + .ofNat z) q
 
-/-- The text at `pc` begins with `q`. -/
-def Executable.sits (e : Executable) (pc : Int64) (q : Program) : Prop :=
-  (((e.directivesFromAddress pc).take q.length).map Prod.fst) = q
-
-/-- `q` sits at `pc`, and the text behind it starts at `pcEnd`. -/
-def Executable.holds (e : Executable) (pc : Int64) (q : Program) (pcEnd : Int64) : Prop :=
-  ∃ sized rest, e.directivesFromAddress pc = sized ++ rest
-    ∧ sized.map Prod.fst = q
-    ∧ pcEnd = pc + .ofNat ((sized.map Prod.snd).sum)
-
-theorem Executable.holds_of_sits {e : Executable} {pc : Int64} {q : Program}
-    (h : e.sits pc q) : e.holds pc q (e.after pc q) :=
-  ⟨(e.directivesFromAddress pc).take q.length, (e.directivesFromAddress pc).drop q.length,
-    (List.take_append_drop _ _).symm, h, rfl⟩
+/-- The address behind the fragment `q` placed at `pc`. -/
+def Executable.after (e : Executable) (pc : Int64) : Program → Int64
+  | [] => pc
+  | .label _ :: q => e.after pc q
+  | _ :: q =>
+    match e.codeAt pc with
+    | [] => pc
+    | (_, z) :: _ => e.after (pc + .ofNat z) q
 
 /-- The run of the fragment `q` from `s`: placed anywhere in the ambient
 code, the machine eventually falls through to the placement's end with `Q`,
@@ -72,15 +70,15 @@ or stops at a pc satisfying `E`. Re-entry inside the fragment is free: the
 judgment is the fixpoint `Eventually`, so a back edge simply keeps stepping. -/
 def Executable.wp (e : Executable) (q : Program) (Q : MachineData → Prop)
     (E : Int64 → MachineData → Prop) (s : MachineData) : Prop :=
-  ∀ (pc pcEnd : Int64), e.holds pc q pcEnd →
+  ∀ (pc : Int64), e.sits pc q →
     Eventually (e.instrStep)
-      (fun st => (st.2 = pcEnd ∧ Q st.1) ∨ E st.2 st.1) (s, pc)
+      (fun st => (st.2 = e.after pc q ∧ Q st.1) ∨ E st.2 st.1) (s, pc)
 
 theorem Executable.wp_mono {e : Executable} {q : Program}
     {Q₁ Q₂ : MachineData → Prop} {E₁ E₂ : Int64 → MachineData → Prop}
     (hQ : ∀ s, Q₁ s → Q₂ s) (hE : ∀ a s, E₁ a s → E₂ a s)
-    {s : MachineData} (h : e.wp q Q₁ E₁ s) : e.wp q Q₂ E₂ s := fun pc pcEnd hpl =>
-  (h pc pcEnd hpl).mono (fun _ _ ht => ht)
+    {s : MachineData} (h : e.wp q Q₁ E₁ s) : e.wp q Q₂ E₂ s := fun pc hpl =>
+  (h pc hpl).mono (fun _ _ ht => ht)
     (fun st hst => hst.imp (fun ⟨ha, hq⟩ => ⟨ha, hQ _ hq⟩) (hE _ _))
 
 namespace MachineWP
@@ -119,35 +117,18 @@ local macro "wp_step" : tactic =>
       MachineData.set, MachineData.setReg, Reg64s.get_low64, Reg64s.set_low64, Effects.All,
       or_false, false_or])
 
-/-- Peel the head cell off a placement: the head's size, the head cell in the
-segment map, and the tail's placement behind it. -/
-private theorem holds_cons {d : Directive} {q : Program} {pc pcEnd : Int64}
-    (hpl : cenv.holds pc (d :: q) pcEnd) :
-    ∃ z rest, cenv.directivesFromAddress pc = (d, z) :: rest
-      ∧ cenv.holds (pc + .ofNat z) q pcEnd := by
-  obtain ⟨sized, rest, hseg, hmap, hend⟩ := hpl
-  cases sized with
-  | nil => cases hmap
-  | cons c sized' =>
-    obtain ⟨c₁, c₂⟩ := c
-    simp only [List.map_cons, List.cons.injEq] at hmap
-    obtain ⟨rfl, hmap'⟩ := hmap
-    refine ⟨c₂, sized' ++ rest, by simpa using hseg, sized', rest, ?_, hmap', ?_⟩
-    · exact CodeEnv.advance pc (c₁, c₂) (sized' ++ rest) (by simpa using hseg)
-    · rw [hend]
-      simp only [List.map_cons, List.sum_cons]
-      rw [int64_ofNat_add, Int64.add_assoc]
-
-private theorem holds_nil {pc pcEnd : Int64} (hpl : cenv.holds pc [] pcEnd) : pcEnd = pc := by
-  obtain ⟨sized, rest, hseg, hmap, hend⟩ := hpl
-  rw [List.map_eq_nil_iff.mp hmap] at hend
-  simpa using hend
+/-- Unfold the fall-through address past one instruction cell. -/
+private theorem after_instr {i : Instr} {q : Program} {pc : Int64} {z : Nat}
+    {rest : List (Directive × Nat)}
+    (hcode : cenv.codeAt pc = (Directive.instr i, z) :: rest) :
+    cenv.after pc (Directive.instr i :: q) = cenv.after (pc + .ofNat z) q := by
+  simp only [Executable.after, hcode]
 
 /-- Run one cell and continue: the rule pattern shared by every
 instruction. -/
 private theorem step_here {post : @Post MachineState} {s : MachineData} {pc : Int64}
     {d : Directive} {z : Nat} {rest : List (Directive × Nat)}
-    (hseg : cenv.directivesFromAddress pc = (d, z) :: rest)
+    (hseg : cenv.codeAt pc = (d, z) :: rest)
     (hall : (@Directive.interp cenv.labels d s (.mk pc (pc + .ofNat z))
         (fun s' => .done (s', pc + .ofNat z)) (fun pc' s' => .done (s', pc'))).All
       (fun st => Eventually cenv.instrStep post st)) :
@@ -157,8 +138,8 @@ private theorem step_here {post : @Post MachineState} {s : MachineData} {pc : In
 @[spec] theorem MachineWP.nil_spec :
     ⦃ fun s => Q () s ⦄ ([] : Program) ⦃ Q; E ⦄ :=
   Triple.intro fun s h => by
-    intro pc pcEnd hpl
-    exact Eventually.done _ (Or.inl ⟨(holds_nil hpl).symm, h⟩)
+    intro pc _
+    exact Eventually.done _ (Or.inl ⟨rfl, h⟩)
 
 @[spec] theorem MachineWP.nil_append_spec (bs : Program) :
     ⦃ fun s => WP.wp bs Q E s ⦄ (([] : Program) ++ bs) ⦃ Q; E ⦄ :=
@@ -172,35 +153,33 @@ private theorem step_here {post : @Post MachineState} {s : MachineData} {pc : In
     ⦃ fun s => WP.wp (as ++ (bs ++ cs)) Q E s ⦄ ((as ++ bs) ++ cs) ⦃ Q; E ⦄ :=
   Triple.intro fun s h => by rw [List.append_assoc]; exact h
 
+/-- A label costs no step and no address. -/
 @[spec] theorem MachineWP.label_spec (l : Label) :
     ⦃ fun s => WP.wp p Q E s ⦄ (Directive.label l :: p) ⦃ Q; E ⦄ :=
-  Triple.intro fun s h => by
-    intro pc pcEnd hpl
-    obtain ⟨z, rest, hseg, hpl'⟩ := holds_cons hpl
-    refine step_here hseg ?_
-    wp_step
-    exact h _ _ hpl'
+  Triple.intro fun s h => h
 
 @[spec] theorem MachineWP.nop_spec (asz osz : Width) (n : Nat) :
     ⦃ fun s => WP.wp p Q E s ⦄
       (Directive.instr (.regular asz osz (.nop n)) :: p) ⦃ Q; E ⦄ :=
   Triple.intro fun s h => by
-    intro pc pcEnd hpl
-    obtain ⟨z, rest, hseg, hpl'⟩ := holds_cons hpl
+    intro pc hpl
+    obtain ⟨z, rest, hseg, hpl'⟩ := hpl
+    rw [after_instr hseg]
     refine step_here hseg ?_
     wp_step
-    exact h _ _ hpl'
+    exact h _ hpl'
 
 @[spec] theorem MachineWP.mov_reg_imm_spec (asz : Width) (r : Reg64) (i : Int64) :
     ⦃ fun s => WP.wp p Q E { s with regs := s.regs.set64 r (BitVec.setWidth 64 i.toBitVec) } ⦄
       (Directive.instr (.regular asz .W64 (.mov (.reg (.low r .W64)) (.imm (.int64 i)))) :: p)
     ⦃ Q; E ⦄ :=
   Triple.intro fun s h => by
-    intro pc pcEnd hpl
-    obtain ⟨z, rest, hseg, hpl'⟩ := holds_cons hpl
+    intro pc hpl
+    obtain ⟨z, rest, hseg, hpl'⟩ := hpl
+    rw [after_instr hseg]
     refine step_here hseg ?_
     wp_step
-    exact h _ _ hpl'
+    exact h _ hpl'
 
 @[spec] theorem MachineWP.sub_reg_imm_spec (asz : Width) (r : Reg64) (i : Int64) :
     ⦃ fun s =>
@@ -217,11 +196,12 @@ private theorem step_here {post : @Post MachineState} {s : MachineData} {pc : In
       (Directive.instr (.regular asz .W64 (.sub (.reg (.low r .W64)) (.imm (.int64 i)))) :: p)
     ⦃ Q; E ⦄ :=
   Triple.intro fun s h => by
-    intro pc pcEnd hpl
-    obtain ⟨z, rest, hseg, hpl'⟩ := holds_cons hpl
+    intro pc hpl
+    obtain ⟨z, rest, hseg, hpl'⟩ := hpl
+    rw [after_instr hseg]
     refine step_here hseg ?_
     wp_step
-    exact h _ _ hpl'
+    exact h _ hpl'
 
 @[spec] theorem MachineWP.add_reg_imm_spec (asz : Width) (r : Reg64) (i : Int64) :
     ⦃ fun s =>
@@ -238,11 +218,12 @@ private theorem step_here {post : @Post MachineState} {s : MachineData} {pc : In
       (Directive.instr (.regular asz .W64 (.add (.reg (.low r .W64)) (.imm (.int64 i)))) :: p)
     ⦃ Q; E ⦄ :=
   Triple.intro fun s h => by
-    intro pc pcEnd hpl
-    obtain ⟨z, rest, hseg, hpl'⟩ := holds_cons hpl
+    intro pc hpl
+    obtain ⟨z, rest, hseg, hpl'⟩ := hpl
+    rw [after_instr hseg]
     refine step_here hseg ?_
     wp_step
-    exact h _ _ hpl'
+    exact h _ hpl'
 
 @[spec] theorem MachineWP.adc_reg_reg_spec (asz : Width) (rd rs : Reg64) :
     ⦃ fun s =>
@@ -261,11 +242,12 @@ private theorem step_here {post : @Post MachineState} {s : MachineData} {pc : In
           (.adc (.reg (.low rd .W64)) (.regOrMem (.reg (.low rs .W64))))) :: p)
     ⦃ Q; E ⦄ :=
   Triple.intro fun s h => by
-    intro pc pcEnd hpl
-    obtain ⟨z, rest, hseg, hpl'⟩ := holds_cons hpl
+    intro pc hpl
+    obtain ⟨z, rest, hseg, hpl'⟩ := hpl
+    rw [after_instr hseg]
     refine step_here hseg ?_
     wp_step
-    exact h _ _ hpl'
+    exact h _ hpl'
 
 @[spec] theorem MachineWP.mulx_reg_spec (asz : Width) (hi lo rs : Reg64) :
     ⦃ fun s =>
@@ -277,11 +259,12 @@ private theorem step_here {post : @Post MachineState} {s : MachineData} {pc : In
           (.mulx (.low hi .W64) (.low lo .W64) (.reg (.low rs .W64)))) :: p)
     ⦃ Q; E ⦄ :=
   Triple.intro fun s h => by
-    intro pc pcEnd hpl
-    obtain ⟨z, rest, hseg, hpl'⟩ := holds_cons hpl
+    intro pc hpl
+    obtain ⟨z, rest, hseg, hpl'⟩ := hpl
+    rw [after_instr hseg]
     refine step_here hseg ?_
     wp_step
-    exact h _ _ hpl'
+    exact h _ hpl'
 
 @[spec] theorem MachineWP.xor_reg_reg_spec (asz : Width) (rd rs : Reg64) :
     ⦃ fun s =>
@@ -297,12 +280,13 @@ private theorem step_here {post : @Post MachineState} {s : MachineData} {pc : In
           (.xor (.reg (.low rd .W64)) (.regOrMem (.reg (.low rs .W64))))) :: p)
     ⦃ Q; E ⦄ :=
   Triple.intro fun s h => by
-    intro pc pcEnd hpl
-    obtain ⟨z, rest, hseg, hpl'⟩ := holds_cons hpl
+    intro pc hpl
+    obtain ⟨z, rest, hseg, hpl'⟩ := hpl
+    rw [after_instr hseg]
     refine step_here hseg ?_
     wp_step
     intro af
-    exact h af _ _ hpl'
+    exact h af _ hpl'
 
 @[spec] theorem MachineWP.jmp_label_spec (asz osz : Width) (l : Label) :
     ⦃ fun s => E (cenv.labels.label l) s ⦄
@@ -310,8 +294,8 @@ private theorem step_here {post : @Post MachineState} {s : MachineData} {pc : In
           (.jmp (.rel (.sub (.label l) .after_current_instruction)))) :: p)
     ⦃ Q; E ⦄ :=
   Triple.intro fun s h => by
-    intro pc pcEnd hpl
-    obtain ⟨z, rest, hseg, hpl'⟩ := holds_cons hpl
+    intro pc hpl
+    obtain ⟨z, rest, hseg, hpl'⟩ := hpl
     refine step_here hseg ?_
     wp_step
     have hcancel : pc + .ofNat z + (cenv.labels.label l - (pc + .ofNat z))
@@ -329,14 +313,15 @@ private theorem step_here {post : @Post MachineState} {s : MachineData} {pc : In
       (Directive.instr (.regular asz osz (.jcc cc l)) :: p)
     ⦃ Q; E ⦄ :=
   Triple.intro fun s h => by
-    intro pc pcEnd hpl
-    obtain ⟨z, rest, hseg, hpl'⟩ := holds_cons hpl
+    intro pc hpl
+    obtain ⟨z, rest, hseg, hpl'⟩ := hpl
+    rw [after_instr hseg]
     refine step_here hseg ?_
     wp_step
     cases hc : CondCode.interp cc s.status <;>
       simp only [hc, Bool.false_eq_true, ite_true, ite_false, meet_prop_eq_and,
         Effects.All] at h ⊢
-    · exact h.2 trivial _ _ hpl'
+    · exact h.2 trivial _ hpl'
     · exact Eventually.done _ (Or.inr (h.1 trivial))
 
 end Specs
@@ -402,7 +387,7 @@ theorem Program.link [CodeEnv] {ι : Type} {post : @Post MachineState}
   | _ is ih =>
     intro hT
     have hev := ((hfrag is.1 is.2).le_wp is.2 ⟨hT, rfl⟩) (entry is.1)
-      (cenv.after (entry is.1) (frag is.1)) (Executable.holds_of_sits (hplace is.1))
+      (hplace is.1)
     refine eventually_trans _ _ _ _ hev ?_
     rintro ⟨s', a⟩ (⟨ha, hc⟩ | hc)
     · subst ha
@@ -427,7 +412,7 @@ syntax to the ambient addresses. -/
 /-- Where a label's block sits in the ambient code. -/
 structure Program.Placed [CodeEnv] (p : Program) (l₀ : Label) : Prop where
   /-- Every placement of the text starts at the entry label's address. -/
-  entry : ∀ pc pcEnd, cenv.holds pc p pcEnd → cenv.labels.label l₀ = pc
+  entry : ∀ pc, cenv.sits pc p → cenv.labels.label l₀ = pc
   /-- A block's body sits at its label's address. -/
   block : ∀ l blk, Program.blockAt p l = some blk →
     cenv.sits (cenv.labels.label l) blk.body
@@ -435,8 +420,8 @@ structure Program.Placed [CodeEnv] (p : Program) (l₀ : Label) : Prop where
   next : ∀ l blk l', Program.blockAt p l = some blk → blk.next = some l' →
     cenv.after (cenv.labels.label l) blk.body = cenv.labels.label l'
   /-- The last block ends where the text ends. -/
-  last : ∀ pc pcEnd, cenv.holds pc p pcEnd → ∀ l blk, Program.blockAt p l = some blk →
-    blk.next = none → cenv.after (cenv.labels.label l) blk.body = pcEnd
+  last : ∀ pc, cenv.sits pc p → ∀ l blk, Program.blockAt p l = some blk →
+    blk.next = none → cenv.after (cenv.labels.label l) blk.body = cenv.after pc p
 
 /-- A label-keyed table, read at an address. -/
 def Table.ofLabels [CodeEnv] (tl : Label → MachineData → Prop) :
@@ -519,10 +504,10 @@ theorem MachineWP.cfg [CodeEnv] {p p' : Program} {P : MachineData → Prop}
   subst hP
   have hnd := hwf.nodup
   refine Triple.intro fun s hT => ?_
-  intro pc pcEnd hplace
+  intro pc hplace
   have hK : ∀ l, Program.blockIdx p l ≤ (Program.view p).2.length :=
     Program.blockIdx_le p
-  have key := Program.link (post := fun st => st.2 = pcEnd ∧ Q () st.1)
+  have key := Program.link (post := fun st => st.2 = cenv.after pc p ∧ Q () st.1)
     (frag := fun l => (Program.blockAt p l).elim [] (·.body))
     (entry := fun l => cenv.labels.label l)
     (T := fun l s => (Program.blockAt p l).isSome ∧ T l s)
@@ -533,11 +518,11 @@ theorem MachineWP.cfg [CodeEnv] {p p' : Program} {P : MachineData → Prop}
       show (Program.blockAtAux (Program.view (Directive.label l₀ :: p')).2 l₀).isSome = true
       simp [Program.view, Program.blockAtAux]
     have hrun := key l₀ s ⟨h0, hT⟩
-    rw [hpl.entry pc pcEnd hplace] at hrun
+    rw [hpl.entry pc hplace] at hrun
     exact hrun.mono (fun _ _ ht => ht) (fun st hst => Or.inl hst)
   · intro l
     cases hb : Program.blockAt p l with
-    | none => simp [Executable.sits]
+    | none => exact trivial
     | some blk => simpa [hb] using hpl.block l blk hb
   · intro l s₀
     cases hb : Program.blockAt p l with
@@ -564,7 +549,7 @@ theorem MachineWP.cfg [CodeEnv] {p p' : Program} {P : MachineData → Prop}
           omega
         | none =>
           rw [hnx] at hq
-          exact Or.inl ⟨(hpl.last pc pcEnd hplace l blk hb hnx).symm ▸ rfl, hq⟩
+          exact Or.inl ⟨(hpl.last pc hplace l blk hb hnx).symm ▸ rfl, hq⟩
       · rintro a s' ⟨l', hlab, hsome', hTl', hedge⟩
         refine Or.inr ⟨l', hlab, ⟨hsome', hTl'⟩, ?_⟩
         have hle' : Program.blockIdx p l' ≤ (Program.view p).2.length := hK l'
