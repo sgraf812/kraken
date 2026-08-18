@@ -349,6 +349,58 @@ theorem Eventually.wf_ind {State : Type} {trans : State → Post → Prop}
     · exact Eventually.done _ hp
     · exact ih mid hr hI'
 
+/-! ## Linking fragments
+
+`Program.link` ties finitely or infinitely many separately verified
+fragments into one run. Each index `i` names a placed fragment: its text
+`frag i`, the address `entry i` where it starts, and the address `after i`
+where the text behind it starts. `T i` is the invariant at that entry, and
+`r` orders index-state pairs. A fragment's obligation is a Triple, so `vcgen`
+proves it; `link` supplies the well-founded induction that a back edge
+needs. -/
+
+/-- Where a step out of fragment `i`, entered in state `s₀`, may land: the
+global postcondition at the address it stopped at, or another fragment's
+entry, with that fragment's invariant and a smaller measure. -/
+def Program.Cont {ι : Type} (post : @Post MachineState) (entry : ι → Int64)
+    (T : ι → MachineData → Prop) (r : ι × MachineData → ι × MachineData → Prop)
+    (i : ι) (s₀ : MachineData) (a : Int64) (s : MachineData) : Prop :=
+  post (s, a) ∨ ∃ j, entry j = a ∧ T j s ∧ r (j, s) (i, s₀)
+
+open MachineWP in
+theorem Program.link [CodeEnv] {ι : Type} {post : @Post MachineState}
+    (frag : ι → Program) (entry after : ι → Int64) (T : ι → MachineData → Prop)
+    (r : ι × MachineData → ι × MachineData → Prop) (hwf : WellFounded r)
+    (hplace : ∀ i, cenv.holds (entry i) (frag i) (after i))
+    (hfrag : ∀ i s₀,
+      ⦃ fun s => T i s ∧ s = s₀ ⦄
+        frag i
+      ⦃ fun _ s => Program.Cont post entry T r i s₀ (after i) s;
+        fun a s => Program.Cont post entry T r i s₀ a s ⦄) :
+    ∀ i s, T i s → Eventually cenv.instrStep post (s, entry i) := by
+  suffices h : ∀ is : ι × MachineData, T is.1 is.2 →
+      Eventually cenv.instrStep post (is.2, entry is.1) by
+    intro i s hT
+    exact h (i, s) hT
+  intro is
+  induction is using hwf.induction with
+  | _ is ih =>
+    intro hT
+    have hev := ((hfrag is.1 is.2).le_wp is.2 ⟨hT, rfl⟩) (entry is.1) (after is.1)
+      (hplace is.1)
+    refine eventually_trans _ _ _ _ hev ?_
+    rintro ⟨s', a⟩ (⟨ha, hc⟩ | hc)
+    · subst ha
+      rcases hc with hp | ⟨j, hj, hTj, hr⟩
+      · exact Eventually.done _ hp
+      · rw [← hj]
+        exact ih (j, s') hr hTj
+    · rcases hc with hp | ⟨j, hj, hTj, hr⟩
+      · exact Eventually.done _ hp
+      · dsimp only at hj
+        rw [← hj]
+        exact ih (j, s') hr hTj
+
 -- Smoke test: the walk steps a placed fragment through the registered specs.
 set_option mvcgen.warning false in
 open MachineWP in
