@@ -260,6 +260,17 @@ theorem addrOf_ne_of_valid (e : Executable) [hv : ValidLayout e] {k n : Nat}
   have h3 := sizeBefore_eq_of_addrOf_eq e heq
   omega
 
+/-- The least index that satisfies a predicate, at or below a witness. -/
+theorem _root_.Nat.exists_least_le {P : Nat → Prop} {n : Nat} (h : P n) :
+    ∃ j, j ≤ n ∧ P j ∧ ∀ k, k < j → ¬P k := by
+  induction n using Nat.strongRecOn with
+  | ind n ih =>
+    by_cases hb : ∃ m, m < n ∧ P m
+    · obtain ⟨m, hm, hPm⟩ := hb
+      obtain ⟨j, hj, hPj, hmin⟩ := ih m hm hPm
+      exact ⟨j, by omega, hPj, hmin⟩
+    · exact ⟨n, Nat.le_refl n, h, fun k hk hPk => hb ⟨k, hk, hPk⟩⟩
+
 /-- Between two cut points with one address every cell is a label: a
 non-label cell occupies at least one byte and separates the addresses. -/
 theorem label_between_of_addrOf_eq (e : Executable) [hv : ValidLayout e] {j k n : Nat}
@@ -278,6 +289,17 @@ theorem label_between_of_addrOf_eq (e : Executable) [hv : ValidLayout e] {j k n 
     have h3 : e.sizeBefore (k + 1) ≤ e.sizeBefore n := sizeBefore_mono e hkn
     have h4 := sizeBefore_eq_of_addrOf_eq e heq
     omega
+
+/-- The cut point of the address of index `n`: the segment there starts at
+the least index `j` with that address, and every cell from `j` up to `n` is a
+label. -/
+theorem exists_cut (e : Executable) [ValidLayout e] {n : Nat} (hn : n ≤ e.2.length) :
+    ∃ j, j ≤ n ∧ e.directivesFromAddress (e.addrOf n) = e.2.drop j
+      ∧ ∀ m, j ≤ m → m < n → ∃ l z, e.2[m]? = some (Directive.label l, z) := by
+  obtain ⟨j, hjn, hj, hmin⟩ :=
+    Nat.exists_least_le (P := fun k => e.addrOf k = e.addrOf n) rfl
+  exact ⟨j, hjn, directivesFromAddress_addrOf_first e j n hjn hn hj hmin,
+    fun m hjm hmn => label_between_of_addrOf_eq e hjm hmn hn hj⟩
 
 end Executable
 

@@ -850,7 +850,7 @@ theorem Program.blockIdx_eq {p : Program} (hnd : (Program.labels p).Nodup)
   rfl
 
 /-- The blocks behind position `i`, glued back into text. -/
-private theorem Program.drop_flatMap_cons {bs : List (Label × Program)} {i : Nat}
+theorem Program.drop_flatMap_cons {bs : List (Label × Program)} {i : Nat}
     {l : Label} {b : Program} (hi : bs[i]? = some (l, b)) :
     (bs.drop i).flatMap Program.blockCells
       = Directive.label l :: (b ++ (bs.drop (i + 1)).flatMap Program.blockCells) := by

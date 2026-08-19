@@ -646,36 +646,253 @@ theorem Executable.after_cons_of_not_label {e : Executable} {pc : Int64} {d : Di
   | instr i => simp only [Executable.after, hcode]
   | byteArray a => simp only [Executable.after, hcode]
 
-/-- Walking a label-free fragment laid out at an address: it sits there, and
-the walk ends where the text behind it begins. -/
-theorem Executable.walk_of_dfa [Layout] {e : Executable} (hwf : e.CodeWF) :
-    ∀ (body rest : Program) (pc : Int64) (n : Nat),
-      (∀ d ∈ body, d.isLabel = false) →
-      e.directivesFromAddress pc = Layout.frag n (body ++ rest) →
-      e.sits pc body ∧
-        e.directivesFromAddress (e.after pc body) = Layout.frag (n + body.length) rest := by
+/-! ### Walking a laid-out program
+
+A laid-out program places the directive at position `i` at the address
+`Executable.addrOf i`, so a fragment of the text sits at the address of its
+first position (`Executable.walk_addrOf`), and a label's address is the
+address of its cell (`Program.label_addrOf_drop`). The whole text sits at one
+address only (`Executable.entry_of_sits`): a placement consumes one cell per
+non-label directive, and the text has no cell to spare. -/
+
+private theorem dropWhile_append_of_all {α} {q : α → Bool} {as bs : List α}
+    (h : ∀ a ∈ as, q a = true) : (as ++ bs).dropWhile q = bs.dropWhile q := by
+  induction as with
+  | nil => rfl
+  | cons a as ih =>
+    rw [List.cons_append, List.dropWhile_cons, if_pos (h a List.mem_cons_self)]
+    exact ih (fun a' ha' => h a' (List.mem_cons_of_mem _ ha'))
+
+private theorem countP_frag [Layout] (f : Directive → Bool) :
+    ∀ (n : Nat) (q : Program), (Layout.frag n q).countP (fun c => f c.1) = q.countP f := by
+  intro n q
+  induction q generalizing n with
+  | nil => rfl
+  | cons d q ih => rw [Layout.frag_cons, List.countP_cons, List.countP_cons, ih]
+
+/-- The cell of a laid-out program at a position. -/
+private theorem layout_getElem [layout : Layout] (p : Program) (i : Nat) :
+    (layout p).2[i]? = (p[i]?).map (fun d => (d, layout.size i)) := by
+  rw [Layout.apply_snd, Layout.frag_getElem?, Nat.zero_add]
+
+/-- A label occupies no bytes. -/
+private theorem size_label [layout : Layout] {p : Program}
+    [hv : Executable.ValidLayout (layout p)] {i : Nat} {l : Label}
+    (hp : p[i]? = some (Directive.label l)) : layout.size i = 0 :=
+  hv.label_size i l _ (by rw [layout_getElem, hp]; rfl)
+
+/-- Stepping one position advances the address by that position's size. -/
+private theorem addrOf_step [layout : Layout] {p : Program} {i : Nat} {d : Directive}
+    (hp : p[i]? = some d) :
+    (layout p).addrOf (i + 1) = (layout p).addrOf i + .ofNat (layout.size i) :=
+  Executable.addrOf_succ _ (by rw [layout_getElem, hp]; rfl)
+
+/-- The cells at the address of a position that holds an instruction: the text
+from that position on. -/
+theorem Executable.codeAt_addrOf [layout : Layout] {p : Program}
+    [Executable.ValidLayout (layout p)] {i : Nat} {d : Directive}
+    (hd : d.isLabel = false) (hp : p[i]? = some d) :
+    (layout p).codeAt ((layout p).addrOf i)
+      = (d, layout.size i) :: Layout.frag (i + 1) (p.drop (i + 1)) := by
+  have hi : i < p.length := by
+    by_cases h : i < p.length
+    · exact h
+    · rw [List.getElem?_eq_none (by omega)] at hp; cases hp
+  have hlen : i ≤ (layout p).2.length := by
+    rw [Layout.apply_snd, Layout.frag_length]; omega
+  obtain ⟨j, hji, hdfa, hlab⟩ := Executable.exists_cut (layout p) hlen
+  have hlent : ((p.drop j).take (i - j)).length = i - j := by
+    rw [List.length_take, List.length_drop]; omega
+  have hdrop : (layout p).2.drop j
+      = Layout.frag j ((p.drop j).take (i - j)) ++ Layout.frag i (p.drop i) := by
+    rw [Layout.apply_snd, Layout.frag_drop, Nat.zero_add]
+    conv => lhs; rw [← List.take_append_drop (i - j) (p.drop j)]
+    rw [Layout.frag_append, hlent, List.drop_drop, show j + (i - j) = i from by omega]
+  have hslice : ∀ dz ∈ Layout.frag j ((p.drop j).take (i - j)),
+      (fun c : Directive × Nat => c.1.isLabel) dz = true := by
+    intro dz hdz
+    show dz.1.isLabel = true
+    obtain ⟨m, hm, heq⟩ := List.getElem_of_mem (Layout.frag_mem hdz)
+    rw [hlent] at hm
+    have hpm : p[j + m]? = some dz.1 := by
+      rw [← List.getElem?_drop, ← List.getElem?_take_of_lt hm,
+        List.getElem?_eq_getElem (by rw [hlent]; omega), heq]
+    obtain ⟨l', z, hlz⟩ := hlab (j + m) (Nat.le_add_right j m) (by omega)
+    rw [layout_getElem, hpm] at hlz
+    simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hlz
+    rw [hlz.1]
+    rfl
+  have hget : p[i] = d := by
+    have h := List.getElem?_eq_getElem hi
+    rw [hp] at h
+    exact (Option.some.inj h).symm
+  have hhead : p.drop i = d :: p.drop (i + 1) := by
+    rw [List.drop_eq_getElem_cons hi, hget]
+  rw [Executable.codeAt, hdfa, hdrop, dropWhile_append_of_all hslice, hhead,
+    Layout.frag_cons, List.dropWhile_cons, if_neg (by simpa using hd)]
+
+/-- Walking a fragment of a laid-out program: it sits at the address of its
+first position, and the walk ends at the address of the position behind it. -/
+theorem Executable.walk_addrOf [layout : Layout] {p : Program}
+    [Executable.ValidLayout (layout p)] :
+    ∀ (body rest : Program) (i : Nat), p.drop i = body ++ rest →
+      (layout p).sits ((layout p).addrOf i) body
+        ∧ (layout p).after ((layout p).addrOf i) body
+            = (layout p).addrOf (i + body.length) := by
   intro body
   induction body with
-  | nil =>
-    intro rest pc n _ hdfa
-    exact ⟨trivial, by simpa [Executable.after] using hdfa⟩
-  | cons d body' ih =>
-    intro rest pc n hfree hdfa
-    have hd : d.isLabel = false := hfree d List.mem_cons_self
-    have hfree' : ∀ d' ∈ body', d'.isLabel = false :=
-      fun d' hd' => hfree d' (List.mem_cons_of_mem _ hd')
-    rw [List.cons_append, Layout.frag_cons] at hdfa
-    have hcode : e.codeAt pc = (d, Layout.size n) :: Layout.frag (n + 1) (body' ++ rest) := by
-      rw [Executable.codeAt, hdfa, List.dropWhile_cons, if_neg (by simpa using hd)]
-    have hadv := hwf.advance pc d (Layout.size n) _ hcode
-    obtain ⟨hsits', hafter'⟩ := ih rest (pc + .ofNat (Layout.size n)) (n + 1) hfree' hadv
-    refine ⟨?_, ?_⟩
-    · rw [Executable.sits_cons_of_not_label hd]
-      exact ⟨_, _, hcode, hsits'⟩
-    · rw [Executable.after_cons_of_not_label hd hcode, hafter']
+  | nil => intro rest i _; exact ⟨trivial, by simp [Executable.after]⟩
+  | cons d body ih =>
+    intro rest i hdrop
+    have hp : p[i]? = some d := by
+      have h0 : (p.drop i)[0]? = some d := by rw [hdrop]; rfl
+      rw [List.getElem?_drop] at h0
+      simpa using h0
+    have hdrop' : p.drop (i + 1) = body ++ rest := by
+      rw [← List.drop_drop, hdrop]
+      rfl
+    obtain ⟨hsits, hafter⟩ := ih rest (i + 1) hdrop'
+    by_cases hd : d.isLabel
+    · obtain ⟨l, rfl⟩ : ∃ l, d = Directive.label l := by
+        cases d with
+        | label l => exact ⟨l, rfl⟩
+        | instr i' => simp [Directive.isLabel] at hd
+        | byteArray a => simp [Directive.isLabel] at hd
+      have hstep : (layout p).addrOf (i + 1) = (layout p).addrOf i := by
+        rw [addrOf_step hp, size_label hp]
+        exact int64_add_zero _
+      rw [hstep] at hsits hafter
+      refine ⟨hsits, ?_⟩
+      rw [show (layout p).after ((layout p).addrOf i) (Directive.label l :: body)
+        = (layout p).after ((layout p).addrOf i) body from rfl, hafter]
       congr 1
       simp only [List.length_cons]
       omega
+    · have hdf : d.isLabel = false := by simpa using hd
+      have hcode := Executable.codeAt_addrOf hdf hp
+      rw [addrOf_step hp] at hsits hafter
+      refine ⟨?_, ?_⟩
+      · rw [Executable.sits_cons_of_not_label hdf]
+        exact ⟨_, _, hcode, hsits⟩
+      · rw [Executable.after_cons_of_not_label hdf hcode, hafter]
+        congr 1
+        simp only [List.length_cons]
+        omega
+
+/-- A placement consumes one cell per non-label directive: the segment at the
+placement's start is the segment behind it, with those cells in front. -/
+private theorem consume {e : Executable} (hwf : e.CodeWF) :
+    ∀ (q : Program) (pc : Int64), e.sits pc q →
+      ∃ pre, e.directivesFromAddress pc = pre ++ e.directivesFromAddress (e.after pc q)
+        ∧ pre.countP (fun c => !c.1.isLabel) = q.countP (fun d => !d.isLabel) := by
+  intro q
+  induction q with
+  | nil => intro pc _; exact ⟨[], by simp [Executable.after], by simp⟩
+  | cons d q ih =>
+    intro pc hsits
+    by_cases hd : d.isLabel
+    · obtain ⟨l, rfl⟩ : ∃ l, d = Directive.label l := by
+        cases d with
+        | label l => exact ⟨l, rfl⟩
+        | instr i => simp [Directive.isLabel] at hd
+        | byteArray a => simp [Directive.isLabel] at hd
+      obtain ⟨pre, hpre, hcnt⟩ := ih pc hsits
+      exact ⟨pre, hpre, by simpa [List.countP_cons, Directive.isLabel] using hcnt⟩
+    · have hdf : d.isLabel = false := by simpa using hd
+      rw [Executable.sits_cons_of_not_label hdf] at hsits
+      obtain ⟨z, rest, hcode, hsits'⟩ := hsits
+      obtain ⟨pre, hpre, hcnt⟩ := ih (pc + .ofNat z) hsits'
+      refine ⟨(e.directivesFromAddress pc).takeWhile (fun c => c.1.isLabel) ++ (d, z) :: pre,
+        ?_, ?_⟩
+      · rw [Executable.after_cons_of_not_label hdf hcode, List.append_assoc,
+          List.cons_append, ← hpre, hwf.advance pc d z rest hcode]
+        conv => lhs; rw [← List.takeWhile_append_dropWhile
+          (p := fun c : Directive × Nat => c.1.isLabel) (l := e.directivesFromAddress pc)]
+        rw [show (e.directivesFromAddress pc).dropWhile (fun c => c.1.isLabel)
+          = (d, z) :: rest from hcode]
+      · have hzero : ((e.directivesFromAddress pc).takeWhile
+            (fun c => c.1.isLabel)).countP (fun c => !c.1.isLabel) = 0 :=
+          List.countP_eq_zero.mpr (fun c hc => by
+            simp [mem_takeWhile (p := fun c : Directive × Nat => c.1.isLabel) hc])
+        rw [List.countP_append, hzero, List.countP_cons, List.countP_cons, hcnt, hdf]
+        simp
+
+/-- The one address a laid-out program sits at: its start. Every non-label
+directive consumes a cell, and the text has exactly as many. -/
+theorem Executable.entry_of_sits [layout : Layout] {p : Program}
+    [Executable.ValidLayout (layout p)] (hne : 0 < p.countP (fun d => !d.isLabel))
+    {pc : Int64} (h : (layout p).sits pc p) : pc = (layout p).addrOf 0 := by
+  obtain ⟨pre, hpre, hcnt⟩ := consume (Executable.codeWF_of_valid (layout p)) p pc h
+  have htext : ((layout p).2).countP (fun c => !c.1.isLabel)
+      = p.countP (fun d => !d.isLabel) := by
+    rw [Layout.apply_snd]
+    exact countP_frag (fun d => !d.isLabel) 0 p
+  have hnil : (layout p).directivesFromAddress pc ≠ [] := by
+    intro hz
+    rw [hz] at hpre
+    have : pre = [] := (List.append_eq_nil_iff.mp hpre.symm).1
+    rw [this] at hcnt
+    simp at hcnt
+    omega
+  obtain ⟨k, -, hk, hdrop⟩ :=
+    Executable.exists_pos_of_directivesFromAddress (layout p) hnil
+  have hsplit : ((layout p).2).countP (fun c => !c.1.isLabel)
+      = (((layout p).2).take k).countP (fun c => !c.1.isLabel)
+        + (((layout p).2).drop k).countP (fun c => !c.1.isLabel) := by
+    conv => lhs; rw [← List.take_append_drop k ((layout p).2)]
+    rw [List.countP_append]
+  rw [← hdrop, hpre, List.countP_append, hcnt, htext] at hsplit
+  have htake : (((layout p).2).take k).countP (fun c => !c.1.isLabel) = 0 := by omega
+  have hlabels : ∀ i a, i < k → ((layout p).2)[0 + i]? = some a → a.1.isLabel = true := by
+    intro i a hi hget
+    rw [Nat.zero_add] at hget
+    have hmem : a ∈ ((layout p).2).take k :=
+      List.mem_iff_getElem?.mpr ⟨i, by rw [List.getElem?_take_of_lt hi]; exact hget⟩
+    simpa using List.countP_eq_zero.mp htake a hmem
+  rw [← hk]
+  have := addrOf_add_of_labels (layout p) (k := 0) k hlabels
+  rw [Nat.zero_add] at this
+  exact this
+
+/-- The address of a label, from the position its scope suffix starts at. -/
+theorem Program.label_addrOf_drop [layout : Layout] {p : Program}
+    [hv : Executable.ValidLayout (layout p)] (hnd : (Program.labels p).Nodup)
+    {l : Label} {i : Nat} (hdrop : p.drop i = Program.fromLabel p l)
+    (hne : Program.fromLabel p l ≠ []) :
+    (layout p).labels.label l = (layout p).addrOf i := by
+  obtain ⟨t, rest, hsplit, hfl, hfresh, hlen⟩ := Program.fromLabel_split hnd hne
+  have hplen : p.length = t.length + (Program.fromLabel p l).length := by
+    have h := congrArg List.length hsplit
+    rw [hfl]
+    simpa using h
+  have hdlen : p.length - i = (Program.fromLabel p l).length := by
+    have h := congrArg List.length hdrop
+    rwa [List.length_drop] at h
+  have hile : i ≤ p.length := by
+    by_cases h : i ≤ p.length
+    · exact h
+    · rw [List.drop_eq_nil_of_le (by omega)] at hdrop
+      exact absurd hdrop.symm hne
+  have hit : i = t.length := by omega
+  have hcell : p[i]? = some (Directive.label l) := by
+    have h0 : (p.drop i)[0]? = some (Directive.label l) := by rw [hdrop, hfl]; rfl
+    rw [List.getElem?_drop] at h0
+    simpa using h0
+  have hlay : (layout p).2[i]? = some (Directive.label l, layout.size i) := by
+    rw [layout_getElem, hcell]; rfl
+  refine Executable.label_addrOf (layout p) l i ?_ ?_
+  · rw [hlay, hv.label_size i l _ hlay]
+  · have hpt : p.take i = t := by
+      rw [hit, hsplit]
+      exact List.take_left' rfl
+    have htake : ((layout p).2).take i = Layout.frag 0 (p.take i) := by
+      rw [Layout.apply_snd]
+      conv => lhs; rw [← List.take_append_drop i p, Layout.frag_append]
+      exact List.take_left' (by rw [Layout.frag_length, List.length_take]; omega)
+    intro dz hdz heq
+    rw [htake, hpt] at hdz
+    exact hfresh (Program.mem_labels_of_cell (heq ▸ Layout.frag_mem hdz))
+
 
 end Derive
 
@@ -754,6 +971,120 @@ structure Program.Placed [CodeEnv] (p : Program) (l₀ : Label) : Prop where
   last : ∀ pc, cenv.sits pc p → ∀ l blk, Program.blockAt p l = some blk →
     blk.next = none → cenv.after (cenv.labels.label l) blk.body = cenv.after pc p
 
+/-- The placement facts of a laid-out program: every block sits at its label's
+address, and falls through to the address of the label behind it. -/
+theorem Program.placed_of_layout [layout : Layout] {p p' : Program}
+    [Executable.ValidLayout (layout p)] {l₀ : Label} (hwf : Program.WF p)
+    (hp : p = Directive.label l₀ :: p')
+    (hne : 0 < p.countP (fun d => !d.isLabel)) :
+    @Program.Placed ⟨layout p⟩ p l₀ := by
+  have hnd := hwf.nodup
+  -- the entry label names the start of the text
+  have hfl₀ : Program.fromLabel p l₀ = p := by
+    have hlab : Program.labels p = l₀ :: Program.labels p' := by rw [hp]; rfl
+    have hp' : Program.fromLabel p' l₀ = [] := by
+      by_cases h : Program.fromLabel p' l₀ = []
+      · exact h
+      · exact absurd (Program.mem_labels_of_cell (Program.fromLabel_mem h))
+          (by rw [hlab] at hnd; exact (List.nodup_cons.mp hnd).1)
+    rw [hp, Program.fromLabel_cons, if_pos ⟨hp', rfl⟩]
+  have hne₀ : Program.fromLabel p l₀ ≠ [] := by
+    rw [hfl₀, hp]
+    exact List.cons_ne_nil _ _
+  have hentry : (layout p).labels.label l₀ = (layout p).addrOf 0 :=
+    Program.label_addrOf_drop hnd (l := l₀) (i := 0) (by rw [List.drop_zero, hfl₀]) hne₀
+  have hwhole : (layout p).after ((layout p).addrOf 0) p
+      = (layout p).addrOf p.length := by
+    have h := (Executable.walk_addrOf (p := p) p [] 0 (by simp)).2
+    rwa [Nat.zero_add] at h
+  -- every block, at the position of its label cell
+  have hpos : ∀ l blk, Program.blockAt p l = some blk →
+      ∃ pos i, pos < p.length
+        ∧ blk.next = ((Program.view p).2[i + 1]?).map (·.1)
+        ∧ p.drop (pos + 1)
+            = blk.body ++ ((Program.view p).2.drop (i + 1)).flatMap Program.blockCells
+        ∧ (layout p).labels.label l = (layout p).addrOf pos
+        ∧ (layout p).sits ((layout p).addrOf pos) blk.body
+        ∧ (layout p).after ((layout p).addrOf pos) blk.body
+            = (layout p).addrOf (pos + 1 + blk.body.length) := by
+    intro l blk hb
+    obtain ⟨-, i, hi, hnext⟩ := Program.blockAtAux_spec hb
+    have hne' : Program.fromLabel p l ≠ [] :=
+      Program.fromLabel_ne_nil_of_mem (Program.blockAt_mem_labels hb)
+    obtain ⟨t, rest, hsplit, hfl, -, -⟩ := Program.fromLabel_split hnd hne'
+    have hdropt : p.drop t.length = Program.fromLabel p l := by
+      conv => lhs; rw [hsplit]
+      rw [List.drop_left, hfl]
+    have hdrop : p.drop t.length
+        = Directive.label l
+          :: (blk.body ++ ((Program.view p).2.drop (i + 1)).flatMap Program.blockCells) := by
+      rw [hdropt, Program.fromLabel_view hnd hi, Program.drop_flatMap_cons hi]
+    have hlabel : (layout p).labels.label l = (layout p).addrOf t.length :=
+      Program.label_addrOf_drop hnd hdropt hne'
+    have hcell : p[t.length]? = some (Directive.label l) := by
+      have h0 : (p.drop t.length)[0]? = some (Directive.label l) := by rw [hdrop]; rfl
+      rw [List.getElem?_drop] at h0
+      simpa using h0
+    have hlt : t.length < p.length := by
+      by_cases h : t.length < p.length
+      · exact h
+      · rw [List.getElem?_eq_none (by omega)] at hcell; cases hcell
+    have hstep : (layout p).addrOf (t.length + 1) = (layout p).addrOf t.length := by
+      rw [addrOf_step hcell, size_label hcell]
+      exact int64_add_zero _
+    have hbody : p.drop (t.length + 1)
+        = blk.body ++ ((Program.view p).2.drop (i + 1)).flatMap Program.blockCells := by
+      rw [← List.drop_drop, hdrop]
+      rfl
+    obtain ⟨hsits, hafter⟩ := Executable.walk_addrOf blk.body _ (t.length + 1) hbody
+    rw [hstep] at hsits hafter
+    exact ⟨t.length, i, hlt, hnext, hbody, hlabel, hsits, hafter⟩
+  refine @Program.Placed.mk ⟨layout p⟩ p l₀ ?_ ?_ ?_ ?_
+  · intro pc hplace
+    rw [hentry]
+    exact (Executable.entry_of_sits hne hplace).symm
+  · intro l blk hb
+    obtain ⟨pos, i, -, -, -, hlabel, hsits, -⟩ := hpos l blk hb
+    rw [hlabel]
+    exact hsits
+  · intro l blk l' hb hn
+    obtain ⟨pos, i, -, hnext, hbody, hlabel, -, hafter⟩ := hpos l blk hb
+    show (layout p).after ((layout p).labels.label l) blk.body = (layout p).labels.label l'
+    rw [hn] at hnext
+    obtain ⟨⟨l₁, b₁⟩, hi'⟩ : ∃ lb, (Program.view p).2[i + 1]? = some lb := by
+      cases h : (Program.view p).2[i + 1]? with
+      | none => rw [h] at hnext; cases hnext
+      | some lb => exact ⟨lb, rfl⟩
+    rw [hi'] at hnext
+    simp only [Option.map_some, Option.some.injEq] at hnext
+    subst hnext
+    have htail : p.drop (pos + 1 + blk.body.length) = Program.fromLabel p l' := by
+      rw [← List.drop_drop, hbody, List.drop_left, Program.fromLabel_view hnd hi']
+    have hne' : Program.fromLabel p l' ≠ [] := by
+      rw [Program.fromLabel_view hnd hi', Program.drop_flatMap_cons hi']
+      exact List.cons_ne_nil _ _
+    rw [hlabel, hafter, Program.label_addrOf_drop hnd htail hne']
+  · intro pc hplace l blk hb hn
+    obtain ⟨pos, i, hlt, hnext, hbody, hlabel, -, hafter⟩ := hpos l blk hb
+    show (layout p).after ((layout p).labels.label l) blk.body = (layout p).after pc p
+    rw [hn] at hnext
+    have hnone : (Program.view p).2[i + 1]? = none := by
+      cases h : (Program.view p).2[i + 1]? with
+      | none => rfl
+      | some lb => rw [h] at hnext; cases hnext
+    have hdropnil : (Program.view p).2.drop (i + 1) = [] :=
+      List.drop_eq_nil_of_le (by
+        by_cases hle : (Program.view p).2.length ≤ i + 1
+        · exact hle
+        · rw [List.getElem?_eq_getElem (by omega)] at hnone; cases hnone)
+    rw [hdropnil] at hbody
+    simp only [List.flatMap_nil, List.append_nil] at hbody
+    have hlenb : pos + 1 + blk.body.length = p.length := by
+      have h := congrArg List.length hbody
+      rw [List.length_drop] at h
+      omega
+    rw [hlabel, hafter, hlenb, ← hwhole, Executable.entry_of_sits hne hplace]
+
 /-- A label-keyed table, read at an address. -/
 def Table.ofLabels [CodeEnv] (tl : Label → MachineData → Prop) :
     Int64 → MachineData → Prop :=
@@ -820,7 +1151,6 @@ table entry along `Program.EdgeLt`. -/
 theorem MachineWP.cfg [CodeEnv] {p p' : Program} {P : MachineData → Prop}
     {Q : Unit → MachineData → Prop} {l₀ : Label}
     (T : Label → MachineData → Prop) (var : Label → MachineData → Nat)
-    (hpl : Program.Placed p l₀)
     (hblocks : ∀ l blk, Program.blockAt p l = some blk → ∀ n : Nat,
       ⦃ fun s => T l s ∧ var l s = n ⦄ blk.body
       ⦃ (match blk.next with
@@ -830,6 +1160,10 @@ theorem MachineWP.cfg [CodeEnv] {p p' : Program} {P : MachineData → Prop}
           ∧ Program.EdgeLt p var l n l' s) ⦄)
     (hp : p = Directive.label l₀ :: p' := by rfl)
     (hwf : Program.WF p := by decide)
+    (hpl : Program.Placed p l₀ := by
+      first
+        | assumption
+        | exact Program.placed_of_layout (by decide) (by rfl) (by decide))
     (hP : P = T l₀ := by rfl) :
     ⦃ P ⦄ p ⦃ Q ⦄ := by
   subst hP

@@ -329,16 +329,6 @@ theorem Program.extract_entry [layout : Layout] (p : Program) :
   rw [← Layout.apply_snd]
   simpa [Layout.apply_fst] using h
 
-private theorem exists_least {P : Nat → Prop} {n : Nat} (h : P n) :
-    ∃ j, j ≤ n ∧ P j ∧ ∀ k, k < j → ¬P k := by
-  induction n using Nat.strongRecOn with
-  | ind n ih =>
-    by_cases hb : ∃ m, m < n ∧ P m
-    · obtain ⟨m, hm, hPm⟩ := hb
-      obtain ⟨j, hj, hPj, hmin⟩ := ih m hm hPm
-      exact ⟨j, by omega, hPj, hmin⟩
-    · exact ⟨n, Nat.le_refl n, h, fun k hk hPk => hb ⟨k, hk, hPk⟩⟩
-
 /-- The segment at a label's address: the label's scope suffix, preceded by
 a run of label cells that share the address. Alias labels make the run
 nonempty: a label cell occupies no bytes, so a label directly after a label
@@ -373,7 +363,7 @@ theorem Program.extract [layout : Layout] {p : Program}
     rw [Layout.apply_snd, Layout.frag_length]
     omega
   obtain ⟨j, hjle, hj, hmin⟩ :=
-    exists_least (P := fun k => (layout p).addrOf k = (layout p).addrOf t.length) rfl
+    Nat.exists_least_le (P := fun k => (layout p).addrOf k = (layout p).addrOf t.length) rfl
   have hdfa := Executable.directivesFromAddress_addrOf_first (layout p) j t.length
     hjle hle hj hmin
   have hdropt : p.drop t.length = Program.fromLabel p l := by
