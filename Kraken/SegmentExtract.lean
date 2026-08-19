@@ -195,6 +195,39 @@ private theorem sizeBefore_succ (e : Executable) {n : Nat} {d : Directive} {z : 
   rw [List.take_add_one, hd]
   simp
 
+/-- Stepping one directive advances the address by that directive's size. -/
+theorem addrOf_succ (e : Executable) {n : Nat} {d : Directive} {z : Nat}
+    (hd : e.2[n]? = some (d, z)) : e.addrOf (n + 1) = e.addrOf n + .ofNat z := by
+  unfold addrOf
+  rw [sizeBefore_succ e hd, int64_ofNat_add, Int64.add_assoc]
+
+/-- A nonempty segment starts at a cell, and the segment is the text from
+that cell on. -/
+theorem exists_pos_of_directivesFromAddress (e : Executable) {a : Int64}
+    (h : e.directivesFromAddress a ≠ []) :
+    ∃ k, k < e.2.length ∧ e.addrOf k = a ∧ e.directivesFromAddress a = e.2.drop k := by
+  have hlen : (e.withAddresses.map (·.1)).idxOf a < e.2.length := by
+    by_cases hk : (e.withAddresses.map (·.1)).idxOf a < e.2.length
+    · exact hk
+    · exact absurd (by
+        show e.directivesFromAddress a = []
+        unfold Executable.directivesFromAddress
+        exact List.drop_eq_nil_of_le (by omega)) h
+  have hwlen : (e.withAddresses.map (·.1)).length = e.2.length + 1 := by
+    unfold withAddresses
+    simp
+  have hwlen2 : e.withAddresses.length = e.2.length + 1 := by
+    unfold withAddresses
+    simp
+  have hidx : (e.withAddresses.map (·.1)).idxOf a < e.withAddresses.length := by omega
+  have hget := List.getElem_idxOf (x := a) (xs := e.withAddresses.map (·.1))
+    (by rw [List.length_map]; omega)
+  have hw := getElem?_withAddresses e ((e.withAddresses.map (·.1)).idxOf a) (by omega)
+  rw [List.getElem?_eq_getElem hidx] at hw
+  simp only [Option.map_some, Option.some.injEq] at hw
+  rw [List.getElem_map] at hget
+  exact ⟨(e.withAddresses.map (·.1)).idxOf a, hlen, by rw [← hw, hget], rfl⟩
+
 /-- Coincident addresses have equal byte counts: the total byte count fits
 the address space, so `Int64.ofNat` acts injectively on the counts. -/
 theorem sizeBefore_eq_of_addrOf_eq (e : Executable) [hv : ValidLayout e] {k n : Nat}

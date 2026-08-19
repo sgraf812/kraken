@@ -488,6 +488,147 @@ theorem Executable.bridge [Layout] {e : Executable} (hwf : e.CodeWF)
   intro st h
   exact step_burst (key st h)
 
+section Derive
+
+/-! ## Deriving the ambient facts
+
+A laid-out program satisfies `CodeWF`: `ValidLayout` gives a label cell zero
+size and an instruction cell positive size, so the address behind an
+instruction determines the position behind it. -/
+
+private theorem dropWhile_eq_drop {α} (p : α → Bool) (l : List α) :
+    ∃ j, l.dropWhile p = l.drop j ∧ ∀ i a, i < j → l[i]? = some a → p a = true := by
+  induction l with
+  | nil => exact ⟨0, rfl, by intro i a hi h; simp at h⟩
+  | cons x xs ih =>
+    obtain ⟨j, hj, hp⟩ := ih
+    by_cases hx : p x
+    · refine ⟨j + 1, ?_, ?_⟩
+      · rw [List.dropWhile_cons, if_pos hx, List.drop_succ_cons]
+        exact hj
+      · intro i a hi hg
+        cases i with
+        | zero =>
+          simp only [List.getElem?_cons_zero, Option.some.injEq] at hg
+          exact hg ▸ hx
+        | succ n =>
+          simp only [List.getElem?_cons_succ] at hg
+          exact hp n a (by omega) hg
+    · refine ⟨0, ?_, by intro i a hi; omega⟩
+      rw [List.dropWhile_cons, if_neg hx, List.drop_zero]
+
+private theorem dropWhile_head {α} {p : α → Bool} : ∀ {l : List α} {a rest},
+    l.dropWhile p = a :: rest → p a = false := by
+  intro l
+  induction l with
+  | nil => intro a rest h; simp at h
+  | cons x xs ih =>
+    intro a rest h
+    by_cases hx : p x
+    · rw [List.dropWhile_cons, if_pos hx] at h
+      exact ih h
+    · rw [List.dropWhile_cons, if_neg hx] at h
+      simp only [List.cons.injEq] at h
+      exact h.1 ▸ (by simpa using hx)
+
+private theorem addrOf_succ_of_none (e : Executable) {n : Nat} (h : e.2[n]? = none) :
+    e.addrOf (n + 1) = e.addrOf n := by
+  have hle : e.2.length ≤ n := by
+    by_cases hlt : n < e.2.length
+    · rw [List.getElem?_eq_getElem hlt] at h; cases h
+    · omega
+  unfold Executable.addrOf Executable.sizeBefore
+  rw [List.take_of_length_le (by omega), List.take_of_length_le hle]
+
+/-- A run of label cells occupies no bytes, so the address does not move. -/
+private theorem addrOf_add_of_labels (e : Executable) [Executable.ValidLayout e] {k : Nat} :
+    ∀ (j : Nat), (∀ i a, i < j → e.2[k + i]? = some a → a.1.isLabel = true) →
+      e.addrOf (k + j) = e.addrOf k := by
+  intro j
+  induction j with
+  | zero => intro _; rfl
+  | succ n ih =>
+    intro h
+    have hstep : e.addrOf (k + n + 1) = e.addrOf (k + n) := by
+      cases hc : e.2[k + n]? with
+      | none => exact addrOf_succ_of_none e hc
+      | some c =>
+        have hlab := h n c (by omega) hc
+        obtain ⟨d, z⟩ := c
+        cases d with
+        | label l =>
+          have hz : z = 0 := Executable.ValidLayout.label_size (k + n) l z hc
+          rw [Executable.addrOf_succ e hc, hz]
+          exact int64_add_zero _
+        | instr i => simp [Directive.isLabel] at hlab
+        | byteArray a => simp [Directive.isLabel] at hlab
+    rw [show k + (n + 1) = k + n + 1 from rfl, hstep]
+    exact ih (fun i a hi hg => h i a (by omega) hg)
+
+/-- A laid-out program is wellformed code. -/
+theorem Executable.codeWF_of_valid (e : Executable) [hv : Executable.ValidLayout e] :
+    e.CodeWF where
+  label_size := by
+    intro c hc hlab
+    obtain ⟨i, hi⟩ := List.mem_iff_getElem?.mp hc
+    obtain ⟨d, z⟩ := c
+    cases d with
+    | label l => exact hv.label_size i l z hi
+    | instr i' => simp [Directive.isLabel] at hlab
+    | byteArray a => simp [Directive.isLabel] at hlab
+  advance := by
+    intro pc d z rest hcode
+    have hne : e.directivesFromAddress pc ≠ [] := by
+      intro hnil
+      rw [Executable.codeAt, hnil] at hcode
+      simp at hcode
+    obtain ⟨k, hklen, hkaddr, hkdrop⟩ := Executable.exists_pos_of_directivesFromAddress e hne
+    obtain ⟨j, hj, hjp⟩ := dropWhile_eq_drop (fun c : Directive × Nat => c.1.isLabel)
+      (e.directivesFromAddress pc)
+    have hcodeDrop : e.2.drop (k + j) = (d, z) :: rest := by
+      rw [← List.drop_drop, ← hkdrop, ← hj]
+      exact hcode
+    have hcell : e.2[k + j]? = some (d, z) := by
+      have h0 : (e.2.drop (k + j))[0]? = some (d, z) := by rw [hcodeDrop]; rfl
+      rw [List.getElem?_drop] at h0
+      simpa using h0
+    have hdlab : d.isLabel = false := by
+      have := dropWhile_head (p := fun c : Directive × Nat => c.1.isLabel)
+        (l := e.directivesFromAddress pc) hcode
+      simpa using this
+    have haddr : e.addrOf (k + j) = pc := by
+      rw [addrOf_add_of_labels e j ?_, hkaddr]
+      intro i a hi hg
+      refine hjp i a hi ?_
+      rw [hkdrop, List.getElem?_drop]
+      exact hg
+    have hsucc : e.addrOf (k + j + 1) = pc + .ofNat z := by
+      rw [Executable.addrOf_succ e hcell, haddr]
+    have hfresh : ∀ i, i < k + j + 1 → e.addrOf i ≠ e.addrOf (k + j + 1) := by
+      intro i hi
+      refine Executable.addrOf_ne_of_valid e hi ?_ ?_
+      · rw [show k + j + 1 - 1 = k + j from rfl, hcell]
+        rfl
+      · intro l zz hzz
+        rw [show k + j + 1 - 1 = k + j from rfl, hcell] at hzz
+        simp only [Option.some.injEq, Prod.mk.injEq] at hzz
+        rw [hzz.1] at hdlab
+        simp [Directive.isLabel] at hdlab
+    have hlen : k + j + 1 ≤ e.2.length := by
+      have : (e.2.drop (k + j)).length = e.2.length - (k + j) := List.length_drop
+      rw [hcodeDrop] at this
+      simp only [List.length_cons] at this
+      omega
+    have hdfa := Executable.directivesFromAddress_addrOf e (k + j + 1) hlen hfresh
+    rw [hsucc] at hdfa
+    rw [hdfa]
+    have : e.2.drop (k + j + 1) = rest := by
+      rw [show k + j + 1 = (k + j) + 1 from rfl, ← List.drop_drop, hcodeDrop]
+      rfl
+    exact this
+
+end Derive
+
 /-! ## Linking fragments
 
 `Program.link` ties finitely or infinitely many separately verified
