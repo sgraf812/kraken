@@ -1,16 +1,18 @@
 /-
-Soundness of the segment weakest precondition against the closed straightline
-judgment. `Directive.interp_sound` transports each `Directive.wp` disjunct
-into the baseline interpreter with real continuations, by a per-primitive
-dictionary and one case analysis over the instruction set;
-`Program.straightlineStep_of_wp` folds it over a sized segment.
+Transport of a directive's transformer into the baseline interpreter.
+`Directive.interp_sound` turns each disjunct of a cell's step, the
+fall-through tree and the jump tree, into the interpreter with real
+continuations, by a per-primitive dictionary and one case analysis over the
+instruction set. The machine-founded weakest precondition
+(Kraken/MachineWP.lean) consumes it at every step of its bridge to
+`straightlineStep`.
 -/
-import Kraken.SegmentWP
+import Kraken.Blocks
 import Kraken.SegmentExtract
 
 open Std.Internal.Do
 
-namespace SegmentWPSound
+namespace InterpSound
 
 variable {P₁ P₂ : MachineState → Prop}
 
@@ -192,11 +194,11 @@ private theorem operation_sound {w} [Labels] [AddressSize] {P : MachineState →
       | simp only [] at h ⊢
       | cases w
 
-end SegmentWPSound
+end InterpSound
 
 section WP1Sound
 
-open SegmentWPSound
+open InterpSound
 
 /-- Transport one directive's transformer disjunction into the baseline
 interpreter with real continuations. -/
@@ -249,47 +251,6 @@ section InterpSealed
 set_option allowUnsafeReducibility true in
 attribute [local irreducible] Directive.interp Directives.interp
 
-/-- Transport the traversal wp along a sized spelling of its text into the
-baseline fold: `Q` lands at the fall-through past the end, `E` at a jump out,
-resolved to the ambient table's addresses. -/
-theorem Program.wpOpen_sound [Labels] {P : MachineState → Prop}
-    {Q : MachineData → Prop} {E : Label → MachineData → Prop}
-    (hQ : ∀ s' pc', Q s' → P (s', pc'))
-    (hE : ∀ st, (∃ l, st.2 = label l ∧ E l st.1) → P st) :
-    ∀ (ds : List (Directive × Nat)) {q : Program}, ds.map Prod.fst = q →
-      ∀ (s : MachineData) (pc : Int64), Program.wpOpen q Q E s →
-        (Directives.interp ds s pc (fun pc' s' => .done (s', pc'))).All P
-  | [], _, rfl, s, pc, h => by
-    simp only [Directives.interp, Effects.All]
-    exact hQ s pc h
-  | (d, sz) :: ds, _, rfl, s, pc, h => by
-    simp only [List.map_cons, Program.wpOpen, Directive.wp] at h
-    simp only [Directives.interp]
-    rcases h ‹Labels› ⟨pc, pc + .ofNat sz⟩ with hfall | hjump
-    · exact Directive.interp_sound
-        (fun s' h' => Program.wpOpen_sound hQ hE ds rfl s' (pc + .ofNat sz) h')
-        (fun st' h' => hE _ h')
-        (Or.inl hfall)
-    · refine Directive.interp_sound
-        (fun s' h' => Program.wpOpen_sound hQ hE ds rfl s' (pc + .ofNat sz) h')
-        (fun st' h' => hE _ h')
-        (Or.inr (Effects.All.mono ?_ _ hjump))
-      rintro st ⟨l, -, ha, he⟩
-      exact ⟨l, ha, he⟩
-
-/-- The traversal wp of the segment at `pc` establishes the omni-semantics
-straightline judgment. -/
-theorem Program.straightlineStep_of_wp [Layout] {e : Executable} {q : Program}
-    {s : MachineData} {pc : Int64} {Q : MachineData → Prop}
-    {E : Label → MachineData → Prop} {post : MachineState → Prop}
-    (hds : (e.directivesFromAddress pc).map Prod.fst = q)
-    (hQ : ∀ s' pc', Q s' → post (s', pc'))
-    (hE : ∀ st, (∃ l, st.2 = e.labels.label l ∧ E l st.1) → post st)
-    (h : Program.wpOpen q Q E s) :
-    straightlineStep e (s, pc) post :=
-  letI := e.labels
-  Program.wpOpen_sound hQ hE _ hds s pc h
-
 end InterpSealed
 
 /- `straightlineStep` is the API boundary: every proof enters through
@@ -311,159 +272,3 @@ symbolic layout. Its API is the extraction equations
 set_option allowUnsafeReducibility true in
 attribute [irreducible] Executable.directivesFromAddress
 
-/-! ## Runs
-
-`Program.sound` reads a run triple back as the baseline judgment: from the
-entry address, the machine eventually satisfies the run's fall-through
-postcondition, or sits at the address of a label whose exit assertion holds.
-`Program.extract` supplies the segment at each label's address; its
-side condition `Program.WF` is decidable, so `Program.sound` discharges it
-by `decide`. -/
-
-/-- The segment at the start of the text: a run from `layout.start` traverses
-the whole program. -/
-theorem Program.extract_entry [layout : Layout] (p : Program) :
-    (layout p).directivesFromAddress layout.start = Layout.frag 0 p := by
-  have h := Executable.directivesFromAddress_addrOf (layout p) 0 (Nat.zero_le _)
-    (fun k hk => absurd hk (Nat.not_lt_zero k))
-  rw [← Layout.apply_snd]
-  simpa [Layout.apply_fst] using h
-
-/-- The segment at a label's address: the label's scope suffix, preceded by
-a run of label cells that share the address. Alias labels make the run
-nonempty: a label cell occupies no bytes, so a label directly after a label
-sits at the same address, and the segment cuts at the first of them. -/
-theorem Program.extract [layout : Layout] {p : Program}
-    [hv : Executable.ValidLayout (layout p)] (hwf : Program.WF p)
-    {l : Label} (hne : Program.fromLabel p l ≠ []) :
-    ∃ j ls, (∀ d ∈ ls, d.isLabel = true) ∧
-      (layout p).directivesFromAddress ((layout p).labels.label l)
-        = Layout.frag j (ls ++ Program.fromLabel p l) := by
-  obtain ⟨t, rest, hp, hfl, hfresh, hlen⟩ := Program.fromLabel_split hwf.nodup hne
-  have hcell : p[t.length]? = some (Directive.label l) := by
-    rw [hp, List.getElem?_append_right (Nat.le_refl _), Nat.sub_self]
-    rfl
-  have hlay : (layout p).2[t.length]? = some (Directive.label l, layout.size t.length) := by
-    rw [Layout.apply_snd, Layout.frag_getElem?, hcell]
-    simp
-  have haddr : (layout p).labels.label l = (layout p).addrOf t.length := by
-    apply Executable.label_addrOf
-    · rw [hlay, hv.label_size _ _ _ hlay]
-    · have htake : ((layout p).2).take t.length = Layout.frag 0 t := by
-        rw [Layout.apply_snd, hp, Layout.frag_append]
-        exact List.take_left' (Layout.frag_length 0 t)
-      intro dz hdz heq
-      rw [htake] at hdz
-      exact hfresh (Program.mem_labels_of_cell (heq ▸ Layout.frag_mem hdz))
-  have hplen : t.length < p.length := by
-    rw [hp]
-    simp only [List.length_append, List.length_cons]
-    omega
-  have hle : t.length ≤ (layout p).2.length := by
-    rw [Layout.apply_snd, Layout.frag_length]
-    omega
-  obtain ⟨j, hjle, hj, hmin⟩ :=
-    Nat.exists_least_le (P := fun k => (layout p).addrOf k = (layout p).addrOf t.length) rfl
-  have hdfa := Executable.directivesFromAddress_addrOf_first (layout p) j t.length
-    hjle hle hj hmin
-  have hdropt : p.drop t.length = Program.fromLabel p l := by
-    conv => lhs; rw [hp]
-    rw [List.drop_left, hfl]
-  refine ⟨j, (p.drop j).take (t.length - j), ?_, ?_⟩
-  · intro d hd
-    obtain ⟨m, hm, heq⟩ := List.getElem_of_mem hd
-    have hmlt : m < t.length - j := by
-      have := List.length_take_le (t.length - j) (p.drop j)
-      omega
-    obtain ⟨l', z, hlz⟩ := Executable.label_between_of_addrOf_eq (layout p)
-      (Nat.le_add_right j m) (show j + m < t.length by omega) hle hj
-    rw [Layout.apply_snd, Layout.frag_getElem?] at hlz
-    have hpcell : p[j + m]? = some (Directive.label l') := by
-      cases hpp : p[j + m]? with
-      | none => rw [hpp] at hlz; cases hlz
-      | some d0 =>
-        rw [hpp] at hlz
-        simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hlz
-        rw [hlz.1]
-    have hds : some d = some (Directive.label l') := by
-      rw [← hpcell, ← List.getElem?_drop, ← List.getElem?_take_of_lt hmlt,
-        List.getElem?_eq_getElem hm, heq]
-    obtain rfl := Option.some.inj hds
-    rfl
-  · rw [haddr, hdfa, Layout.apply_snd, Layout.frag_drop, Nat.zero_add]
-    congr 1
-    conv => lhs; rw [← List.take_append_drop (t.length - j) (p.drop j)]
-    congr 1
-    rw [List.drop_drop, show j + (t.length - j) = t.length from by omega]
-    exact hdropt
-
-private theorem Program.chain_sound [layout : Layout] {p : Program}
-    {Q : MachineData → Prop} {E : Label → MachineData → Prop}
-    (hlab : ∀ l, Program.fromLabel p l ≠ [] →
-      ∃ j ls, (∀ d ∈ ls, d.isLabel = true) ∧
-        (layout p).directivesFromAddress ((layout p).labels.label l)
-          = Layout.frag j (ls ++ Program.fromLabel p l)) :
-    ∀ st, Program.fromLabel p st.2 ≠ [] →
-      Eventually (Program.runStep p Q E) (fun _ => False) st →
-      Eventually (straightlineStep (layout p))
-        (fun mid => Q mid.1 ∨ ∃ l, mid.2 = (layout p).labels.label l ∧ E l mid.1)
-        (st.1, (layout p).labels.label st.2) := by
-  intro st hmem h
-  revert hmem
-  induction h with
-  | done st hp => exact fun _ => hp.elim
-  | step st mid_p ht _ ih =>
-    intro hmem
-    obtain ⟨j, ls, hls, hseg⟩ := hlab st.2 hmem
-    refine Eventually.step _
-      (fun mid => (Q mid.1 ∨ ∃ l, mid.2 = (layout p).labels.label l ∧ E l mid.1)
-        ∨ (∃ l, mid.2 = (layout p).labels.label l
-            ∧ Program.fromLabel p l ≠ [] ∧ mid_p (mid.1, l)))
-      (Program.straightlineStep_of_wp ?_ ?_ ?_ (Program.wpOpen_label_prefix hls ht)) ?_
-    · rw [hseg]
-      exact Layout.frag_map_fst _ _
-    · exact fun s' pc' hq => Or.inl (Or.inl hq)
-    · rintro st' ⟨l, ha, he⟩
-      rcases he with he | ⟨hm, hmid⟩
-      · exact Or.inl (Or.inr ⟨l, ha, he⟩)
-      · exact Or.inr ⟨l, ha, hm, hmid⟩
-    · rintro mid (hdone | ⟨l, ha, hm, hmid⟩)
-      · exact Eventually.done _ hdone
-      · have hb := ih (mid.1, l) hmid hm
-        rw [← ha] at hb
-        exact hb
-
-/-- A run triple, read at the machine: from the entry address, the machine
-eventually satisfies the fall-through postcondition, or sits at the address of
-a label whose exit assertion holds. -/
-theorem Program.sound [layout : Layout] {p : Program}
-    [hv : Executable.ValidLayout (layout p)]
-    {Q : MachineData → Prop} {E : Label → MachineData → Prop} {s : MachineData}
-    (h : Program.wpClosed p Q E s)
-    (hwf : Program.WF p := by decide) :
-    Eventually (straightlineStep (layout p))
-      (fun mid => Q mid.1 ∨ ∃ l, mid.2 = (layout p).labels.label l ∧ E l mid.1)
-      (s, layout.start) := by
-  have hentry := Program.extract_entry (layout := layout) p
-  have hlab : ∀ l, Program.fromLabel p l ≠ [] →
-      ∃ j ls, (∀ d ∈ ls, d.isLabel = true) ∧
-        (layout p).directivesFromAddress ((layout p).labels.label l)
-          = Layout.frag j (ls ++ Program.fromLabel p l) :=
-    fun l hne => Program.extract hwf hne
-  refine Eventually.step _
-    (fun mid => (Q mid.1 ∨ ∃ l, mid.2 = (layout p).labels.label l ∧ E l mid.1)
-      ∨ (∃ l, mid.2 = (layout p).labels.label l ∧ Program.fromLabel p l ≠ []
-          ∧ Eventually (Program.runStep p Q E) (fun _ => False) (mid.1, l)))
-    (Program.straightlineStep_of_wp ?_ ?_ ?_ h) ?_
-  · rw [hentry]
-    exact Layout.frag_map_fst 0 p
-  · exact fun s' pc' hq => Or.inl (Or.inl hq)
-  · rintro st' ⟨l, ha, he⟩
-    rcases he with he | ⟨hm, hch⟩
-    · exact Or.inl (Or.inr ⟨l, ha, he⟩)
-    · exact Or.inr ⟨l, ha, hm, hch⟩
-  · rintro mid (hdone | ⟨l, ha, hm, hch⟩)
-    · exact Eventually.done _ hdone
-    · have hb := Program.chain_sound hlab (mid.1, l) hm hch
-      rw [← ha] at hb
-      exact hb

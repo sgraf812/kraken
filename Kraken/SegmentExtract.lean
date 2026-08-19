@@ -10,7 +10,7 @@ one, and the program fits in the address space; `addrOf_ne_of_valid`
 discharges the freshness hypothesis at any index that follows a non-label
 directive.
 -/
-import Kraken.SegmentWP
+import Kraken.Blocks
 
 namespace Executable
 

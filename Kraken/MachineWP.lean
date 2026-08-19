@@ -10,7 +10,7 @@ pc values: `E : Int64 → MachineData → Prop`. A label exit is
 fact the rules consume: the segment map advances cell by cell.
 -/
 import Kraken.SegmentExtract
-import Kraken.SegmentWPSound
+import Kraken.InterpSound
 
 open Std.Internal.Do
 open Lean.Order
