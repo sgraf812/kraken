@@ -121,13 +121,6 @@ def MachineData.pushRa (s : MachineData) (ra : Int64) : MachineData :=
            dmem := Mem.storeInt s.dmem (s.regs.get64 .rsp - Width.W64.bytesv)
              Width.W64.bytes ra.toBitVec.toInt }
 
-/-- The caller's state, read back from the callee's entry state: the stack
-pointer above the return address again, and the slot the call overwrote
-holding `v`. -/
-def MachineData.popWith (t : MachineData) (v : Int) : MachineData :=
-  { t with regs := t.regs.set64 .rsp (t.regs.get64 .rsp + Width.W64.bytesv),
-           dmem := Mem.storeInt t.dmem (t.regs.get64 .rsp) Width.W64.bytes v }
-
 /-- The address the stack top holds. -/
 def MachineData.retAddr (t : MachineData) : Option Int64 :=
   (Mem.loadInt t.dmem (t.regs.get64 .rsp) Width.W64.bytes).map
@@ -137,21 +130,13 @@ def MachineData.retAddr (t : MachineData) : Option Int64 :=
     t.retAddr = (Mem.loadInt t.dmem (t.regs.get64 .rsp) Width.W64.bytes).map
       (fun i => Int64.ofBitVec (BitVec.ofInt Width.W64.bits i)) := rfl
 
-/-- A push leaves the address it pushed on the stack, and the pop that undoes
-it restores the caller's state. -/
-theorem MachineData.popWith_pushRa (s : MachineData) (ra : Int64) {v : Int}
-    (hv : Mem.loadInt s.dmem (s.regs.get64 .rsp - Width.W64.bytesv) Width.W64.bytes = some v) :
-    (s.pushRa ra).popWith v = s ∧ (s.pushRa ra).retAddr = some ra := by
-  have hrsp : (s.pushRa ra).regs.get64 .rsp = s.regs.get64 .rsp - Width.W64.bytesv := by
-    simp [MachineData.pushRa]
+/-- A push leaves on the stack the address it pushed. -/
+@[simp, grind =] theorem MachineData.retAddr_pushRa (s : MachineData) (ra : Int64) :
+    (s.pushRa ra).retAddr = some ra := by
   have hbound : Width.W64.bytes ≤ 2 ^ 64 := by decide
-  constructor
-  · simp only [MachineData.popWith, MachineData.pushRa, Reg64s.get64_set64, reduceIte,
-      Mem.storeInt_storeInt, Mem.storeInt_loadInt _ _ _ _ hbound hv, BitVec.sub_add_cancel,
-      Reg64s.set64_set64, Reg64s.set64_get64]
-  · simp only [MachineData.retAddr, MachineData.pushRa, Reg64s.get64_set64, reduceIte,
-      Mem.loadInt_storeInt _ _ _ _ hbound, Option.map_some,
-      BitVec.ofInt_ofBytes_toBytes 64 8 rfl, Int64.ofBitVec_toBitVec]
+  simp only [MachineData.retAddr, MachineData.pushRa, Reg64s.get64_set64, reduceIte,
+    Mem.loadInt_storeInt _ _ _ _ hbound, Option.map_some,
+    BitVec.ofInt_ofBytes_toBytes 64 8 rfl, Int64.ofBitVec_toBitVec]
 
 section Specs
 
@@ -380,31 +365,30 @@ private theorem step_here {post : @Post MachineState} {s : MachineData} {pc : In
     Effects.All, hval]
   exact Eventually.done _ (Or.inr (hE ra hra))
 
-/-- One call, with the callee's run as its premise. The conclusion is
-ramified: `P` is the caller's assertion at the call, `Q` and `E` its channels.
-The callee runs from `P` rolled back over the return address the machine
-pushed, `v` names the stack slot's old contents, and the callee's exit at the
-return address continues the caller's wp of the cells behind the call. An exit
+/-- One call, with the callee's run as its premise. `P ra` is the callee's
+assertion at its entry, for a run that returns to `ra`, so a caller pins the
+return address inside its own choice of `P`. The conclusion rolls `P` back over
+the push, quantified over the address the machine pushes, and the callee's exit
+at that address continues the caller's wp of the cells behind the call. An exit
 anywhere else is the caller's own. -/
-theorem MachineWP.call_spec {P : MachineData → Prop} (asz osz : Width) (l : Label)
+theorem MachineWP.call_spec {P : Int64 → MachineData → Prop} (asz osz : Width) (l : Label)
     (body : Program) (hplace : cenv.sits (cenv.labels.label l) body)
-    (hslot : ∀ s, P s → (Mem.loadInt s.dmem
-      (s.regs.get64 .rsp - Width.W64.bytesv) Width.W64.bytes).isSome = true)
-    (hbody : ∀ (ra : Int64) (v : Int),
-      ⦃ fun t => P (t.popWith v) ∧ t.retAddr = some ra ⦄
+    (hbody : ∀ ra : Int64,
+      ⦃ P ra ⦄
         body
       ⦃ (fun _ _ => False);
         fun a s' => if a = ra then WP.wp p Q E s' else E a s' ⦄) :
-    ⦃ P ⦄
+    ⦃ fun s => (∀ ra : Int64, P ra (s.pushRa ra))
+        ∧ (Mem.loadInt s.dmem (s.regs.get64 .rsp - Width.W64.bytesv)
+             Width.W64.bytes).isSome = true ⦄
       (Directive.instr (.regular asz osz
           (.call (.rel (.sub (.label l) .after_current_instruction)))) :: p)
     ⦃ Q; E ⦄ := by
-  refine Triple.intro fun s hP => ?_
-  have hmapped := hslot s hP
+  refine Triple.intro fun s h => ?_
+  obtain ⟨hP, hmapped⟩ := h
   intro pc hpl
   obtain ⟨z, rest, hseg, hpl'⟩ := hpl
   obtain ⟨v, hv⟩ := Option.isSome_iff_exists.mp hmapped
-  obtain ⟨hpop, hret⟩ := MachineData.popWith_pushRa s (pc + Int64.ofNat z) hv
   have hcancel : Int64.ofBitVec
       (pc + Int64.ofNat z + (cenv.labels.label l - (pc + Int64.ofNat z))).toBitVec
       = cenv.labels.label l := by
@@ -415,8 +399,8 @@ theorem MachineWP.call_spec {P : MachineData → Prop} (asz osz : Width) (l : La
   refine step_cps _ _ _ ⟨_, _, _, hseg, Or.inr ?_⟩
   simp only [Directive.interp, Instr.interp, Operation.interp, RelRegOrMem.interp,
     ConstExpr.interp, MachineData.store, hv, Effects.All, hcancel]
-  have hrun := (hbody (pc + Int64.ofNat z) v).le_wp (s.pushRa (pc + Int64.ofNat z))
-    ⟨by rw [hpop]; exact hP, hret⟩
+  have hrun := (hbody (pc + Int64.ofNat z)).le_wp (s.pushRa (pc + Int64.ofNat z))
+    (hP (pc + Int64.ofNat z))
   rw [MachineWP.wp_eq] at hrun
   refine eventually_trans _ _ _ _ (hrun (cenv.labels.label l) hplace) ?_
   rintro ⟨s', a⟩ (⟨-, hbot⟩ | hexit)

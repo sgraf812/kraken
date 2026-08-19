@@ -74,42 +74,38 @@ private theorem pswap_body_spec (ra : Int64) (rax rbx rsp : BitVec 64) (dmem : D
 
 omit [Executable.ValidLayout (layout pswap)] in
 /-- One call of the procedure, as the premise of the call rule: the callee
-enters with the caller's state pushed, and returns with the two registers
-exchanged, the stack pointer restored, and the slot it used still mapped. -/
-private theorem pswap_call (ra : Int64) (v : Int) (s : MachineData)
+enters on the caller's state pushed with the return address, and returns with
+the two registers exchanged, the stack pointer restored, and the slot it used
+still mapped. -/
+private theorem pswap_call (ra : Int64) (s : MachineData)
     {K : MachineData → Prop} {E : Int64 → MachineData → Prop}
+    (hslot : (Mem.loadInt s.dmem (s.regs.get64 .rsp - Width.W64.bytesv)
+      Width.W64.bytes).isSome = true)
     (hK : ∀ s' : MachineData,
       s'.regs.get64 .rax = s.regs.get64 .rbx → s'.regs.get64 .rbx = s.regs.get64 .rax →
       s'.regs.get64 .rsp = s.regs.get64 .rsp →
       (Mem.loadInt s'.dmem (s'.regs.get64 .rsp - Width.W64.bytesv)
         Width.W64.bytes).isSome = true → K s') :
-    ⦃ fun t => (fun u => u = s) (t.popWith v) ∧ t.retAddr = some ra ⦄
+    ⦃ fun t => t = s.pushRa ra ⦄
       pswap.body
     ⦃ (fun _ _ => False); fun a s' => if a = ra then K s' else E a s' ⦄ := by
   refine Triple.intro fun t ht => ?_
+  subst ht
   rw [MachineWP.wp_eq]
-  obtain ⟨hpop, hret⟩ := ht
-  have hslot : (Mem.loadInt t.dmem (t.regs.get64 .rsp) Width.W64.bytes).isSome = true := by
-    rw [MachineData.retAddr_eq] at hret
-    cases h : Mem.loadInt t.dmem (t.regs.get64 .rsp) Width.W64.bytes with
-    | none => rw [h] at hret; exact absurd hret (by simp)
-    | some _ => rfl
-  have hregs : s.regs.get64 .rax = t.regs.get64 .rax ∧ s.regs.get64 .rbx = t.regs.get64 .rbx
-      ∧ s.regs.get64 .rsp = t.regs.get64 .rsp + Width.W64.bytesv := by
-    rw [← hpop]
-    simp [MachineData.popWith]
-  have hrun := (pswap_body_spec ra (t.regs.get64 .rax) (t.regs.get64 .rbx)
-    (t.regs.get64 .rsp) t.dmem).le_wp t ⟨rfl, rfl, rfl, rfl, hret⟩
+  have hrun := (pswap_body_spec ra (s.regs.get64 .rax) (s.regs.get64 .rbx)
+    (s.regs.get64 .rsp - Width.W64.bytesv) (s.pushRa ra).dmem).le_wp (s.pushRa ra)
+    ⟨by simp [MachineData.pushRa], by simp [MachineData.pushRa],
+      by simp [MachineData.pushRa], rfl, MachineData.retAddr_pushRa s ra⟩
   rw [MachineWP.wp_eq] at hrun
   refine Executable.wp_mono (fun _ hq => hq) ?_ hrun
-  rintro a s' ⟨rfl, hrax', hrbx', hrsp', hdmem⟩
-  rw [if_pos rfl]
-  refine hK s' ?_ ?_ ?_ ?_
-  · rw [hrax', hregs.2.1]
-  · rw [hrbx', hregs.1]
-  · rw [hrsp', hregs.2.2]
-  · rw [hdmem, hrsp', BitVec.add_sub_cancel]
-    exact hslot
+  rintro a s' ⟨hra, hrax, hrbx, hrsp, hdmem⟩
+  rw [if_pos hra]
+  refine hK s' hrax hrbx ?_ ?_
+  · rw [hrsp, BitVec.sub_add_cancel]
+  · rw [hdmem, hrsp, BitVec.sub_add_cancel]
+    simp only [MachineData.pushRa, Reg64s.get64_set64, reduceIte]
+    rw [Mem.loadInt_storeInt _ _ _ _ (by decide)]
+    rfl
 
 theorem pswap_correct (d : MachineData)
     (hslot : (Mem.loadInt d.dmem (d.regs.get64 .rsp - Width.W64.bytesv)
@@ -124,14 +120,14 @@ theorem pswap_correct (d : MachineData)
   · -- the caller: two calls, then the jump to the tail
     refine Triple.intro fun s hs => ?_
     obtain ⟨rfl, hn⟩ := hs
-    refine (MachineWP.call_spec (P := fun u => u = s) _ _ "swap" pswap.body
-      pswap_body_placed (by rintro u rfl; exact hslot) ?_).le_wp s rfl
-    intro ra₁ v₁
-    refine pswap_call ra₁ v₁ s (fun s' hrax hrbx hrsp hslot' => ?_)
-    refine (MachineWP.call_spec (P := fun u => u = s') _ _ "swap" pswap.body
-      pswap_body_placed (by rintro u rfl; exact hslot') ?_).le_wp s' rfl
-    intro ra₂ v₂
-    refine pswap_call ra₂ v₂ s' (fun s'' hrax' hrbx' hrsp' _ => ?_)
+    refine (MachineWP.call_spec (P := fun ra u => u = s.pushRa ra) _ _ "swap" pswap.body
+      pswap_body_placed ?_).le_wp s ⟨fun _ => rfl, hslot⟩
+    intro ra₁
+    refine pswap_call ra₁ s hslot (fun s' hrax hrbx hrsp hslot' => ?_)
+    refine (MachineWP.call_spec (P := fun ra u => u = s'.pushRa ra) _ _ "swap" pswap.body
+      pswap_body_placed ?_).le_wp s' ⟨fun _ => rfl, hslot'⟩
+    intro ra₂
+    refine pswap_call ra₂ s' hslot' (fun s'' hrax' hrbx' hrsp' _ => ?_)
     refine (MachineWP.jmp_label_spec _ _ "done").le_wp s'' ?_
     refine Table.ofLabels_at ⟨by decide, ⟨?_, ?_, ?_⟩, Or.inr ⟨hn, by decide⟩⟩
     · rw [hrax', hrbx]
