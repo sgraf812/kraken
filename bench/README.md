@@ -19,7 +19,7 @@ stepping tactic and a discharge tactic.
 | `add.lean` | register add chain, symbolic start | `vcgen -internalize simplifying_assumptions` | `bv_decide` |
 | `dec.lean` | register decrement chain | `vcgen -internalize simplifying_assumptions` | `bv_decide` |
 | `adc.lean` | carry chain, ground | `vcgen -internalize simplifying_assumptions` | none left |
-| `segadc.lean` | carry chain, ground, deep embedding | `vcgen -internalize simplifying_assumptions` | none left |
+| `segadc.lean` | carry chain, ground, deep embedding | `vcgen -internalize simplifying_assumptions` | `grind` |
 | `multireg.lean` | fifteen writes per round, ground | `vcgen -internalize simplifying_assumptions` | none left |
 | `mov.lean` | immediate-mov chain | `vcgen -internalize simplifying_assumptions` | `grind` |
 | `letspec.lean` | add chain, four pipelines | four rows | `sorry` / `kfold_discharge` / `bv_decide` |
@@ -42,11 +42,14 @@ with `vcgen -internalize simplifying_assumptions` and discharged with
 | add | 25 / 5 / 17 | 58 / 3 / 61 | 221 / 4 / 414 |
 | dec | 25 / 19 / 18 | 55 / 58 / 66 | 188 / 245 / 418 |
 | adc | 31 / — / 29 | 71 / — / 132 | 290 / — / 804 |
-| segadc | 21 / — / 26 | 58 / — / 160 | 304 / — / 873 |
+| segadc | 19 / 13 / 36 | 53 / 11 / 153 | 248 / 12 / 713 |
 
-`segadc` steps the same carry chain through the segment weakest precondition
-of `Kraken/SegmentWP.lean`: the program is the sized directive list, the specs
-are the cons-cell triples, and the state is a `MachineState` pair.
+`segadc` steps the same carry chain through the machine-founded weakest
+precondition of `Kraken/MachineWP.lean`: the program is the directive list, the
+specs are the cons-cell triples, and a run is the baseline interpreter over the
+ambient code. Its goal quantifies over the ambient code, so `intro` precedes the
+stepping tactic. One verification condition survives stepping, the read of the
+register the postcondition names, and `grind` closes it.
 
 `—` marks a family with no verification condition to discharge. `multireg` runs
 at n=4/10/40 rounds (fifteen writes each): 26 / — / 20, 33 / — / 32, 90 / — / 123.

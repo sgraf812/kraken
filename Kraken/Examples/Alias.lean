@@ -2,16 +2,15 @@
 Alias labels: `alias` and `fin` name the same address, because the label cell
 `alias` occupies no bytes. `palias_correct` runs the control-flow rule over
 the three blocks, and `palias_correct_run` reads the triple back at the
-machine through `Program.sound`, whose extraction handles the shared address.
+machine through `Program.run_of_triple`, whose placement handles the shared
+address.
 -/
 import Kraken.Parser
-import Kraken.SegmentExtract
-import Kraken.SegmentWP
-import Kraken.SegmentWPSound
+import Kraken.MachineWP
 
 open Kraken.Parser
 open Std.Internal.Do
-open Program.ClosedWP
+open MachineWP
 open Lean.Order
 
 set_option mvcgen.warning false
@@ -50,22 +49,21 @@ private abbrev palias_table : Label → MachineData → Prop
   | "fin", s => s.regs.rdx.toNat = 2
   | _, _ => False
 
+variable [layout : Layout] [Executable.ValidLayout (layout palias)]
+
+/-- The ambient code of the example: `palias`, laid out. -/
+local instance palias.env : CodeEnv := ⟨layout palias⟩
+
 theorem palias_correct :
     ⦃ fun _ => True ⦄ palias ⦃ fun _ s => s.regs.rdx.toNat = 2 ⦄ := by
-  apply Program.cfg palias_table (fun _ _ => 0)
+  apply MachineWP.cfg palias_table (fun _ _ => 0)
   cfg_cases [palias, palias.entry, palias.exit]
   · vcgen simplifying_assumptions with finish
   · vcgen simplifying_assumptions with finish
   · vcgen simplifying_assumptions with finish
 
-variable [layout : Layout] [hv : Executable.ValidLayout (layout palias)]
-
 /-- `palias_correct`, read at the machine as the baseline judgment. -/
 theorem palias_correct_run (d : MachineData) :
     Eventually (straightlineStep (layout palias))
-      (fun s => s.1.regs.rdx.toNat = 2) (d, layout.start) := by
-  have h := palias_correct.le_wp d trivial
-  refine (Program.sound h).mono (fun _ _ h => h) ?_
-  rintro mid (hq | ⟨l, -, hf⟩)
-  · exact hq
-  · exact Program.bot_elim hf
+      (fun s => s.1.regs.rdx.toNat = 2) (d, layout.start) :=
+  Program.run_of_triple palias_correct trivial
