@@ -893,6 +893,61 @@ theorem Program.label_addrOf_drop [layout : Layout] {p : Program}
     rw [htake, hpt] at hdz
     exact hfresh (Program.mem_labels_of_cell (heq ▸ Layout.frag_mem hdz))
 
+/-- Behind a laid-out program whose last cell is an instruction the text runs
+out. -/
+theorem Executable.directivesFromAddress_end [layout : Layout] {p : Program}
+    [Executable.ValidLayout (layout p)] {dlast : Directive}
+    (hlast : p[p.length - 1]? = some dlast) (hd : dlast.isLabel = false) :
+    (layout p).directivesFromAddress ((layout p).addrOf p.length) = [] := by
+  have hlen : (layout p).2.length = p.length := by
+    rw [Layout.apply_snd, Layout.frag_length]
+  have hcell : (layout p).2[p.length - 1]? = some (dlast, layout.size (p.length - 1)) := by
+    rw [layout_getElem, hlast]; rfl
+  have hfresh : ∀ k, k < p.length → (layout p).addrOf k ≠ (layout p).addrOf p.length := by
+    intro k hk
+    refine Executable.addrOf_ne_of_valid (layout p) hk (by rw [hcell]; rfl) ?_
+    intro l z hz
+    rw [hcell] at hz
+    simp only [Option.some.injEq, Prod.mk.injEq] at hz
+    rw [hz.1] at hd
+    simp [Directive.isLabel] at hd
+  rw [Executable.directivesFromAddress_addrOf (layout p) p.length (by omega) hfresh]
+  exact List.drop_eq_nil_of_le (by omega)
+
+/-- The empty exit channel holds nowhere. -/
+theorem Executable.bot_elim {a : Int64} {s : MachineData} {C : Prop}
+    (h : (⊥ : Int64 → MachineData → Prop) a s) : C :=
+  ((Lean.Order.bot_le (α := Int64 → MachineData → Prop) (fun _ _ => False)) a s h).elim
+
+open MachineWP in
+/-- A triple on a laid-out program, read at the machine as the baseline
+judgment: from the start address the segment judgment reaches the triple's
+postcondition. -/
+theorem Program.run_of_triple [CodeEnv] [layout : Layout] {p : Program}
+    [Executable.ValidLayout (layout p)] {P : MachineData → Prop}
+    {Q : Unit → MachineData → Prop} {s : MachineData} {dlast : Directive}
+    (ht : ⦃ P ⦄ p ⦃ Q ⦄) (hs : P s)
+    (henv : cenv = layout p := by rfl)
+    (hlast : p[p.length - 1]? = some dlast := by rfl)
+    (hd : dlast.isLabel = false := by rfl) :
+    Eventually (straightlineStep (layout p)) (fun st => Q () st.1) (s, layout.start) := by
+  have h : (layout p).wp p (Q ()) ⊥ s := henv ▸ ht.le_wp s hs
+  obtain ⟨hsits, hafter⟩ := Executable.walk_addrOf (p := p) p [] 0 (by simp)
+  rw [Nat.zero_add] at hafter
+  have hev := h ((layout p).addrOf 0) hsits
+  rw [hafter, Executable.addrOf_zero, Layout.apply_fst] at hev
+  have hbnd : ∀ st : MachineState,
+      ((st.2 = (layout p).addrOf p.length ∧ Q () st.1)
+        ∨ (⊥ : Int64 → MachineData → Prop) st.2 st.1) →
+      (layout p).directivesFromAddress st.2 = [] := by
+    rintro ⟨s', a⟩ (⟨rfl, -⟩ | hbot)
+    · exact Executable.directivesFromAddress_end hlast hd
+    · exact Executable.bot_elim hbot
+  refine (Executable.bridge (Executable.codeWF_of_valid (layout p)) hbnd _ hev).mono
+    (fun _ _ hx => hx) ?_
+  rintro ⟨s', a⟩ (⟨-, hq⟩ | hbot)
+  · exact hq
+  · exact Executable.bot_elim hbot
 
 end Derive
 
