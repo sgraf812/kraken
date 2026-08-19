@@ -19,33 +19,20 @@ open Lean.Order
 
 set_option mvcgen.warning false
 
-/-- The prologue: it sets the base `rdx` holds on entry to the loop. -/
-abbrev p3.entry : Program := parse("
+/-- The program: the prologue sets the base, the loop squares `rdx` and counts
+`rbx` down, and the tail is what the loop exits to. -/
+def p3 : Program := parse("
 init:
   mov $2, %rdx
-")
-
-/-- The loop body: it squares `rdx` and counts `rbx` down, jumping to `_end`
-at zero and back to `start` otherwise. -/
-abbrev p3.body : Program := parse("
+start:
   sub $0, %rbx
   jz _end
   mulx %rdx, %rdx, %rax
   sub $1, %rbx
   jmp start
-")
-
-/-- The loop: its header label, then the body. -/
-abbrev p3.loop : Program := Directive.label "start" :: p3.body
-
-/-- The tail the loop exits to. -/
-abbrev p3.exit : Program := parse("
 _end:
   nop
 ")
-
-/-- The program a run of `p3` executes: the prologue, the loop, the tail. -/
-def p3 : Program := p3.entry ++ p3.loop ++ p3.exit
 
 /-- What a run of `p3` computes from the machine it starts on. -/
 def p3_spec (d : MachineData) : Nat := 2 ^ 2 ^ d.regs.rbx.toNat
@@ -92,7 +79,7 @@ private abbrev p3_table (d : MachineData) : Label → MachineData → Prop
 variable [layout : Layout] [Executable.ValidLayout (layout p3)]
 
 /-- The ambient code of the example: `p3`, laid out. -/
-local instance : CodeEnv := ⟨layout p3⟩
+local instance p3.env : CodeEnv := ⟨layout p3⟩
 
 theorem p3_correct (d : MachineData) (h_bounds : p3_spec d < 2 ^ 64)
     (h_rax : d.regs.rax = 0) :
@@ -101,7 +88,7 @@ theorem p3_correct (d : MachineData) (h_bounds : p3_spec d < 2 ^ 64)
     ⦃ fun _ s => s.regs.rdx.toNat = p3_spec d ∧ s.regs.rax = 0 ⦄ := by
   simp only [p3_spec] at h_bounds ⊢
   apply MachineWP.cfg (p3_table d) (fun _ s => s.regs.rbx.toNat)
-  cfg_cases [p3, p3.entry, p3.loop, p3.body, p3.exit]
+  cfg_cases [p3]
   · vcgen simplifying_assumptions with finish
   · vcgen simplifying_assumptions with finish
   · vcgen simplifying_assumptions with finish

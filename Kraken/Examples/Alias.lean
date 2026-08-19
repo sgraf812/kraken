@@ -15,21 +15,16 @@ open Lean.Order
 
 set_option mvcgen.warning false
 
-/-- The prologue: it sets `rdx` and jumps to `fin`. -/
-abbrev palias.entry : Program := parse("
+/-- The program: the prologue sets `rdx` and jumps to `fin`, and the tail
+carries an alias label directly in front of the jump target. -/
+def palias : Program := parse("
 init:
   mov $2, %rdx
   jmp fin
-")
-
-/-- The tail, with an alias label directly in front of the jump target. -/
-abbrev palias.exit : Program := Directive.label "alias" :: parse("
+alias:
 fin:
   nop
 ")
-
-/-- The program: the prologue, then the aliased tail. -/
-def palias : Program := palias.entry ++ palias.exit
 
 /-- The jump edge goes forward in the text. -/
 private theorem idx_init_lt_fin :
@@ -57,7 +52,7 @@ local instance palias.env : CodeEnv := ⟨layout palias⟩
 theorem palias_correct :
     ⦃ fun _ => True ⦄ palias ⦃ fun _ s => s.regs.rdx.toNat = 2 ⦄ := by
   apply MachineWP.cfg palias_table (fun _ _ => 0)
-  cfg_cases [palias, palias.entry, palias.exit]
+  cfg_cases [palias]
   · vcgen simplifying_assumptions with finish
   · vcgen simplifying_assumptions with finish
   · vcgen simplifying_assumptions with finish
