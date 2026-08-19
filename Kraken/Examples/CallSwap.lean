@@ -125,11 +125,11 @@ theorem pswap_correct (d : MachineData)
     refine Triple.intro fun s hs => ?_
     obtain ⟨rfl, hn⟩ := hs
     refine (MachineWP.call_spec (P := fun u => u = s) _ _ "swap" pswap.body
-      pswap_body_placed ?_).le_wp s ⟨rfl, hslot⟩
+      pswap_body_placed (by rintro u rfl; exact hslot) ?_).le_wp s rfl
     intro ra₁ v₁
     refine pswap_call ra₁ v₁ s (fun s' hrax hrbx hrsp hslot' => ?_)
     refine (MachineWP.call_spec (P := fun u => u = s') _ _ "swap" pswap.body
-      pswap_body_placed ?_).le_wp s' ⟨rfl, hslot'⟩
+      pswap_body_placed (by rintro u rfl; exact hslot') ?_).le_wp s' rfl
     intro ra₂ v₂
     refine pswap_call ra₂ v₂ s' (fun s'' hrax' hrbx' hrsp' _ => ?_)
     refine (MachineWP.jmp_label_spec _ _ "done").le_wp s'' ?_

@@ -388,18 +388,19 @@ return address continues the caller's wp of the cells behind the call. An exit
 anywhere else is the caller's own. -/
 theorem MachineWP.call_spec {P : MachineData → Prop} (asz osz : Width) (l : Label)
     (body : Program) (hplace : cenv.sits (cenv.labels.label l) body)
+    (hslot : ∀ s, P s → (Mem.loadInt s.dmem
+      (s.regs.get64 .rsp - Width.W64.bytesv) Width.W64.bytes).isSome = true)
     (hbody : ∀ (ra : Int64) (v : Int),
       ⦃ fun t => P (t.popWith v) ∧ t.retAddr = some ra ⦄
         body
       ⦃ (fun _ _ => False);
         fun a s' => if a = ra then WP.wp p Q E s' else E a s' ⦄) :
-    ⦃ fun s => P s ∧ (Mem.loadInt s.dmem
-        (s.regs.get64 .rsp - Width.W64.bytesv) Width.W64.bytes).isSome = true ⦄
+    ⦃ P ⦄
       (Directive.instr (.regular asz osz
           (.call (.rel (.sub (.label l) .after_current_instruction)))) :: p)
     ⦃ Q; E ⦄ := by
-  refine Triple.intro fun s h => ?_
-  obtain ⟨hP, hmapped⟩ := h
+  refine Triple.intro fun s hP => ?_
+  have hmapped := hslot s hP
   intro pc hpl
   obtain ⟨z, rest, hseg, hpl'⟩ := hpl
   obtain ⟨v, hv⟩ := Option.isSome_iff_exists.mp hmapped
