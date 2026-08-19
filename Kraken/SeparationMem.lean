@@ -54,19 +54,6 @@ private theorem Std.ExtHashMap.union_union_override {key value : Type} [BEq key]
     · rfl
   · rfl
 
-private theorem List.mapM_loop_id_some {α : Type} (xs : List α) (acc : List α) :
-    List.mapM.loop id (xs.map some) acc = some (acc.reverse ++ xs) := by
-  induction xs generalizing acc with
-  | nil =>
-    simp [List.mapM.loop]
-  | cons x xs ih =>
-    simp [List.mapM.loop, ih (x :: acc)]
-
-private theorem List.allSome_map_some {α : Type} (l : List α) : List.allSome (l.map some) = some l := by
-  dsimp [List.allSome, List.mapM]
-  rw [List.mapM_loop_id_some l []]
-  simp
-
 private theorem List.range_get_eq_map_some {α : Type} (l : List α) :
     (List.range l.length).map (fun i => if h : i < l.length then some (l.get ⟨i, h⟩) else none) = l.map some := by
   apply List.ext_get

@@ -114,6 +114,14 @@ Register reads are characterized by rewriting, so discharging queries only the
 registers the postcondition mentions and a state literal's register file is
 never unfolded. -/
 
+@[simp, grind =] theorem Reg64s.set64_set64 (s : Reg64s) (r : Reg64) (v w : BitVec 64) :
+    (s.set64 r v).set64 r w = s.set64 r w := by
+  cases r <;> simp [Reg64s.set64]
+
+@[simp, grind =] theorem Reg64s.set64_get64 (s : Reg64s) (r : Reg64) :
+    s.set64 r (s.get64 r) = s := by
+  cases r <;> simp [Reg64s.set64, Reg64s.get64]
+
 @[simp, grind =] theorem Reg64s.get64_set64 (s : Reg64s) (r r' : Reg64) (v : BitVec 64) :
     (s.set64 r v).get64 r' = if r' = r then v else s.get64 r' := by
   cases r <;> cases r' <;> simp [Reg64s.set64, Reg64s.get64]

@@ -63,54 +63,55 @@ private theorem pswap_body_placed : cenv.sits (cenv.labels.label "swap") pswap.b
 omit [Executable.ValidLayout (layout pswap)] in
 /-- The procedure: it exchanges the two registers, pops the return address and
 returns to it, and leaves memory as it found it. -/
-private theorem pswap_body_spec (ra : Int64) (rax rbx rsp : BitVec 64) (dmem : DataMem)
-    (hload : Mem.loadInt dmem rsp Width.W64.bytes = some ra.toBitVec.toInt) :
+private theorem pswap_body_spec (ra : Int64) (rax rbx rsp : BitVec 64) (dmem : DataMem) :
     ⦃ fun t => t.regs.get64 .rax = rax ∧ t.regs.get64 .rbx = rbx
-        ∧ t.regs.get64 .rsp = rsp ∧ t.dmem = dmem ⦄
+        ∧ t.regs.get64 .rsp = rsp ∧ t.dmem = dmem ∧ t.retAddr = some ra ⦄
       pswap.body
     ⦃ (fun _ _ => False);
       fun a s' => a = ra ∧ s'.regs.get64 .rax = rbx ∧ s'.regs.get64 .rbx = rax
         ∧ s'.regs.get64 .rsp = rsp + Width.W64.bytesv ∧ s'.dmem = dmem ⦄ := by
-  have hround : Int64.ofBitVec (BitVec.ofInt Width.W64.bits ra.toBitVec.toInt) = ra := by
-    apply Int64.toBitVec_inj.mp
-    simp
   vcgen simplifying_assumptions with finish
 
-/-- The stack slot a call writes reads back what the call wrote. -/
-private abbrev SlotRoundtrip : Prop :=
-  ∀ (m : DataMem) (a v : BitVec 64),
-    Mem.loadInt (Mem.storeInt m a Width.W64.bytes v.toInt) a Width.W64.bytes = some v.toInt
-
 omit [Executable.ValidLayout (layout pswap)] in
-/-- One call of the procedure: the run enters at the label with the return
-address on the stack, and comes back with the registers exchanged, the stack
-pointer restored, and memory as the call left it. -/
-private theorem pswap_call (hmem : SlotRoundtrip) (ra : Int64) (s : MachineData)
+/-- One call of the procedure, as the premise of the call rule: the callee
+enters with the caller's state pushed, and returns with the two registers
+exchanged, the stack pointer restored, and the slot it used still mapped. -/
+private theorem pswap_call (ra : Int64) (v : Int) (s : MachineData)
     {K : MachineData → Prop} {E : Int64 → MachineData → Prop}
     (hK : ∀ s' : MachineData,
       s'.regs.get64 .rax = s.regs.get64 .rbx → s'.regs.get64 .rbx = s.regs.get64 .rax →
       s'.regs.get64 .rsp = s.regs.get64 .rsp →
-      s'.dmem = Mem.storeInt s.dmem (s.regs.get64 .rsp - Width.W64.bytesv)
-        Width.W64.bytes ra.toBitVec.toInt → K s') :
-    cenv.wp pswap.body (fun _ => False)
-      (fun a s' => if a = ra then K s' else E a s') (s.pushRa ra) := by
-  have hload : Mem.loadInt
-      (Mem.storeInt s.dmem (s.regs.get64 .rsp - Width.W64.bytesv) Width.W64.bytes
-        ra.toBitVec.toInt)
-      (s.regs.get64 .rsp - Width.W64.bytesv) Width.W64.bytes = some ra.toBitVec.toInt :=
-    hmem _ _ _
-  have hrun := (pswap_body_spec ra (s.regs.get64 .rax) (s.regs.get64 .rbx)
-      (s.regs.get64 .rsp - Width.W64.bytesv) _ hload).le_wp (s.pushRa ra)
-      ⟨rfl, rfl, rfl, rfl⟩
+      (Mem.loadInt s'.dmem (s'.regs.get64 .rsp - Width.W64.bytesv)
+        Width.W64.bytes).isSome = true → K s') :
+    ⦃ fun t => (fun u => u = s) (t.popWith v) ∧ t.retAddr = some ra ⦄
+      pswap.body
+    ⦃ (fun _ _ => False); fun a s' => if a = ra then K s' else E a s' ⦄ := by
+  refine Triple.intro fun t ht => ?_
+  rw [MachineWP.wp_eq]
+  obtain ⟨hpop, hret⟩ := ht
+  have hslot : (Mem.loadInt t.dmem (t.regs.get64 .rsp) Width.W64.bytes).isSome = true := by
+    rw [MachineData.retAddr_eq] at hret
+    cases h : Mem.loadInt t.dmem (t.regs.get64 .rsp) Width.W64.bytes with
+    | none => rw [h] at hret; exact absurd hret (by simp)
+    | some _ => rfl
+  have hregs : s.regs.get64 .rax = t.regs.get64 .rax ∧ s.regs.get64 .rbx = t.regs.get64 .rbx
+      ∧ s.regs.get64 .rsp = t.regs.get64 .rsp + Width.W64.bytesv := by
+    rw [← hpop]
+    simp [MachineData.popWith]
+  have hrun := (pswap_body_spec ra (t.regs.get64 .rax) (t.regs.get64 .rbx)
+    (t.regs.get64 .rsp) t.dmem).le_wp t ⟨rfl, rfl, rfl, rfl, hret⟩
   rw [MachineWP.wp_eq] at hrun
   refine Executable.wp_mono (fun _ hq => hq) ?_ hrun
-  rintro a s' ⟨rfl, hrax, hrbx, hrsp, hdmem⟩
+  rintro a s' ⟨rfl, hrax', hrbx', hrsp', hdmem⟩
   rw [if_pos rfl]
-  refine hK s' hrax hrbx ?_ hdmem
-  rw [hrsp]
-  apply BitVec.sub_add_cancel
+  refine hK s' ?_ ?_ ?_ ?_
+  · rw [hrax', hregs.2.1]
+  · rw [hrbx', hregs.1]
+  · rw [hrsp', hregs.2.2]
+  · rw [hdmem, hrsp', BitVec.add_sub_cancel]
+    exact hslot
 
-theorem pswap_correct (hmem : SlotRoundtrip) (d : MachineData)
+theorem pswap_correct (d : MachineData)
     (hslot : (Mem.loadInt d.dmem (d.regs.get64 .rsp - Width.W64.bytesv)
       Width.W64.bytes).isSome = true) :
     ⦃ fun s => s = d ⦄
@@ -123,18 +124,14 @@ theorem pswap_correct (hmem : SlotRoundtrip) (d : MachineData)
   · -- the caller: two calls, then the jump to the tail
     refine Triple.intro fun s hs => ?_
     obtain ⟨rfl, hn⟩ := hs
-    refine (MachineWP.call_spec (P := fun t => t = s) _ _ "swap" pswap.body
+    refine (MachineWP.call_spec (P := fun u => u = s) _ _ "swap" pswap.body
       pswap_body_placed ?_).le_wp s ⟨rfl, hslot⟩
-    rintro ra₁ t rfl
-    refine pswap_call hmem ra₁ t (fun s' hrax hrbx hrsp hdmem => ?_)
-    have hslot' : (Mem.loadInt s'.dmem (s'.regs.get64 .rsp - Width.W64.bytesv)
-        Width.W64.bytes).isSome = true := by
-      rw [hdmem, hrsp, hmem]
-      rfl
+    intro ra₁ v₁
+    refine pswap_call ra₁ v₁ s (fun s' hrax hrbx hrsp hslot' => ?_)
     refine (MachineWP.call_spec (P := fun u => u = s') _ _ "swap" pswap.body
       pswap_body_placed ?_).le_wp s' ⟨rfl, hslot'⟩
-    rintro ra₂ u rfl
-    refine pswap_call hmem ra₂ u (fun s'' hrax' hrbx' hrsp' _ => ?_)
+    intro ra₂ v₂
+    refine pswap_call ra₂ v₂ s' (fun s'' hrax' hrbx' hrsp' _ => ?_)
     refine (MachineWP.jmp_label_spec _ _ "done").le_wp s'' ?_
     refine Table.ofLabels_at ⟨by decide, ⟨?_, ?_, ?_⟩, Or.inr ⟨hn, by decide⟩⟩
     · rw [hrax', hrbx]
@@ -146,7 +143,7 @@ theorem pswap_correct (hmem : SlotRoundtrip) (d : MachineData)
     vcgen simplifying_assumptions with finish
 
 /-- `pswap_correct`, read at the machine as the baseline judgment. -/
-theorem pswap_correct_run (hmem : SlotRoundtrip) (d : MachineData)
+theorem pswap_correct_run (d : MachineData)
     (hslot : (Mem.loadInt d.dmem (d.regs.get64 .rsp - Width.W64.bytesv)
       Width.W64.bytes).isSome = true) :
     Eventually (straightlineStep (layout pswap))
@@ -154,4 +151,4 @@ theorem pswap_correct_run (hmem : SlotRoundtrip) (d : MachineData)
         ∧ s.1.regs.get64 .rbx = d.regs.get64 .rbx
         ∧ s.1.regs.get64 .rsp = d.regs.get64 .rsp)
       (d, layout.start) :=
-  Program.run_of_triple (pswap_correct hmem d hslot) rfl
+  Program.run_of_triple (pswap_correct d hslot) rfl
