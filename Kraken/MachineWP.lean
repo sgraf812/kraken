@@ -627,6 +627,56 @@ theorem Executable.codeWF_of_valid (e : Executable) [hv : Executable.ValidLayout
       rfl
     exact this
 
+/-- Unfold a placement at a cell that is not a label. -/
+theorem Executable.sits_cons_of_not_label {e : Executable} {pc : Int64} {d : Directive}
+    {q : Program} (hd : d.isLabel = false) :
+    e.sits pc (d :: q) = ∃ z rest, e.codeAt pc = (d, z) :: rest ∧ e.sits (pc + .ofNat z) q := by
+  cases d with
+  | label l => simp [Directive.isLabel] at hd
+  | instr i => rfl
+  | byteArray a => rfl
+
+/-- Unfold the fall-through address past a cell that is not a label. -/
+theorem Executable.after_cons_of_not_label {e : Executable} {pc : Int64} {d : Directive}
+    {q : Program} {z : Nat} {rest : List (Directive × Nat)} (hd : d.isLabel = false)
+    (hcode : e.codeAt pc = (d, z) :: rest) :
+    e.after pc (d :: q) = e.after (pc + .ofNat z) q := by
+  cases d with
+  | label l => simp [Directive.isLabel] at hd
+  | instr i => simp only [Executable.after, hcode]
+  | byteArray a => simp only [Executable.after, hcode]
+
+/-- Walking a label-free fragment laid out at an address: it sits there, and
+the walk ends where the text behind it begins. -/
+theorem Executable.walk_of_dfa [Layout] {e : Executable} (hwf : e.CodeWF) :
+    ∀ (body rest : Program) (pc : Int64) (n : Nat),
+      (∀ d ∈ body, d.isLabel = false) →
+      e.directivesFromAddress pc = Layout.frag n (body ++ rest) →
+      e.sits pc body ∧
+        e.directivesFromAddress (e.after pc body) = Layout.frag (n + body.length) rest := by
+  intro body
+  induction body with
+  | nil =>
+    intro rest pc n _ hdfa
+    exact ⟨trivial, by simpa [Executable.after] using hdfa⟩
+  | cons d body' ih =>
+    intro rest pc n hfree hdfa
+    have hd : d.isLabel = false := hfree d List.mem_cons_self
+    have hfree' : ∀ d' ∈ body', d'.isLabel = false :=
+      fun d' hd' => hfree d' (List.mem_cons_of_mem _ hd')
+    rw [List.cons_append, Layout.frag_cons] at hdfa
+    have hcode : e.codeAt pc = (d, Layout.size n) :: Layout.frag (n + 1) (body' ++ rest) := by
+      rw [Executable.codeAt, hdfa, List.dropWhile_cons, if_neg (by simpa using hd)]
+    have hadv := hwf.advance pc d (Layout.size n) _ hcode
+    obtain ⟨hsits', hafter'⟩ := ih rest (pc + .ofNat (Layout.size n)) (n + 1) hfree' hadv
+    refine ⟨?_, ?_⟩
+    · rw [Executable.sits_cons_of_not_label hd]
+      exact ⟨_, _, hcode, hsits'⟩
+    · rw [Executable.after_cons_of_not_label hd hcode, hafter']
+      congr 1
+      simp only [List.length_cons]
+      omega
+
 end Derive
 
 /-! ## Linking fragments
