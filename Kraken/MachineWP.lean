@@ -115,6 +115,12 @@ precondition is the tail's wp at the record update the instruction performs,
 a jump's precondition is `E` at the target's address. Proofs unfold one cell
 of the interpreter and advance the placement. -/
 
+/-- The state a call leaves behind: the return address on the stack. -/
+def MachineData.pushRa (s : MachineData) (ra : Int64) : MachineData :=
+  { s with regs := s.regs.set64 .rsp (s.regs.get64 .rsp - Width.W64.bytesv),
+           dmem := Mem.storeInt s.dmem (s.regs.get64 .rsp - Width.W64.bytesv)
+             Width.W64.bytes ra.toBitVec.toInt }
+
 section Specs
 
 open MachineWP
@@ -315,6 +321,69 @@ private theorem step_here {post : @Post MachineState} {s : MachineData} {pc : In
       rw [BitVec.add_comm, BitVec.sub_add_cancel]
     simp only [hcancel]
     exact Eventually.done _ (Or.inr h)
+
+/-- A return jumps to the address the stack holds. -/
+@[spec] theorem MachineWP.ret_spec (asz osz : Width) :
+    ⦃ fun s =>
+        ((Mem.loadInt s.dmem (s.regs.get64 .rsp) Width.W64.bytes).isSome = true)
+          ⊓ (∀ i : Int, Mem.loadInt s.dmem (s.regs.get64 .rsp) Width.W64.bytes = some i →
+              E (Int64.ofBitVec (BitVec.ofInt Width.W64.bits i))
+                { s with
+                    regs := s.regs.set64 .rsp (s.regs.get64 .rsp + Width.W64.bytesv) }) ⦄
+      (Directive.instr (.regular asz osz .ret) :: p)
+    ⦃ Q; E ⦄ := by
+  refine Triple.intro fun s h => ?_
+  intro pc hpl
+  obtain ⟨z, rest, hseg, hpl'⟩ := hpl
+  simp only [meet_prop_eq_and] at h
+  obtain ⟨hmapped, hE⟩ := h
+  obtain ⟨i, hi⟩ := Option.isSome_iff_exists.mp hmapped
+  refine step_cps _ _ _ ⟨_, _, _, hseg, Or.inr ?_⟩
+  simp only [Directive.interp, Instr.interp, Operation.interp, MachineData.load, hi,
+    Effects.All]
+  exact Eventually.done _ (Or.inr (hE i hi))
+
+/-- One call, with the callee's run as its premise: the machine pushes the
+address behind the call cell and enters the callee at its label, and the
+callee's return at that address continues the caller's run. `ra` is the return
+address; the callee may also stop in the caller's exit channel. -/
+theorem MachineWP.call_spec {P : MachineData → Prop} (asz osz : Width) (l : Label) (body : Program)
+    (hplace : cenv.sits (cenv.labels.label l) body)
+    (hbody : ∀ (ra : Int64) (s : MachineData), P s →
+      cenv.wp body (fun _ => False) (fun a s' => if a = ra then WP.wp p Q E s' else E a s')
+        (s.pushRa ra)) :
+    ⦃ fun s => P s ∧ (Mem.loadInt s.dmem
+        (s.regs.get64 .rsp - Width.W64.bytesv) Width.W64.bytes).isSome = true ⦄
+      (Directive.instr (.regular asz osz
+          (.call (.rel (.sub (.label l) .after_current_instruction)))) :: p)
+    ⦃ Q; E ⦄ := by
+  refine Triple.intro fun s h => ?_
+  obtain ⟨hP, hmapped⟩ := h
+  intro pc hpl
+  obtain ⟨z, rest, hseg, hpl'⟩ := hpl
+  obtain ⟨i, hi⟩ := Option.isSome_iff_exists.mp hmapped
+  have hcancel : Int64.ofBitVec
+      (pc + Int64.ofNat z + (cenv.labels.label l - (pc + Int64.ofNat z))).toBitVec
+      = cenv.labels.label l := by
+    rw [Int64.ofBitVec_toBitVec]
+    apply Int64.toBitVec_inj.mp
+    simp only [Int64.toBitVec_add, Int64.toBitVec_sub]
+    rw [BitVec.add_comm, BitVec.sub_add_cancel]
+  refine step_cps _ _ _ ⟨_, _, _, hseg, Or.inr ?_⟩
+  simp only [Directive.interp, Instr.interp, Operation.interp, RelRegOrMem.interp,
+    ConstExpr.interp, MachineData.store, hi, Effects.All, hcancel]
+  refine eventually_trans _ _ _ _
+    (hbody (pc + Int64.ofNat z) s hP (cenv.labels.label l) hplace) ?_
+  rintro ⟨s', a⟩ (⟨-, hbot⟩ | hret)
+  · exact hbot.elim
+  · dsimp only at hret
+    by_cases ha : a = pc + Int64.ofNat z
+    · rw [if_pos ha] at hret
+      rw [after_instr hseg]
+      subst ha
+      exact hret _ hpl'
+    · rw [if_neg ha] at hret
+      exact Eventually.done _ (Or.inr hret)
 
 @[spec] theorem MachineWP.jcc_spec (asz osz : Width) (cc : CondCode) (l : Label) :
     ⦃ fun s =>
