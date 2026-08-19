@@ -10,6 +10,7 @@ pc values: `E : Int64 → MachineData → Prop`. A label exit is
 fact the rules consume: the segment map advances cell by cell.
 -/
 import Kraken.SegmentExtract
+import Kraken.SegmentWPSound
 
 open Std.Internal.Do
 open Lean.Order
@@ -41,12 +42,22 @@ that is not a label. -/
 def Executable.codeAt (e : Executable) (pc : Int64) : List (Directive × Nat) :=
   (e.directivesFromAddress pc).dropWhile (fun c => c.1.isLabel)
 
+/-- Running the cell `(d, z)` at `st`: either every resolution falls through,
+into `post` at the address behind the cell, or every resolution jumps, into
+`post` at the target. Each disjunct poisons the other continuation, which is
+the shape `Directive.interp_sound` consumes. -/
+def Executable.stepAt (e : Executable) (d : Directive) (z : Nat) (st : MachineState)
+    (post : @Post MachineState) : Prop :=
+  (@Directive.interp e.labels d st.1 (.mk st.2 (st.2 + .ofNat z))
+      (fun s' => .done (s', 0)) (fun _ _ => .unimplemented "jump")).All
+    (fun m => post (m.1, st.2 + .ofNat z))
+  ∨ (@Directive.interp e.labels d st.1 (.mk st.2 (st.2 + .ofNat z))
+      (fun _ => .unimplemented "fallthrough") (fun pc' s' => .done (s', pc'))).All post
+
 /-- One instruction of the ambient code, run from `st`. -/
 def Executable.instrStep (e : Executable) (st : MachineState) (post : @Post MachineState) :
     Prop :=
-  ∃ d z rest, e.codeAt st.2 = (d, z) :: rest ∧
-    (@Directive.interp e.labels d st.1 (.mk st.2 (st.2 + .ofNat z))
-      (fun s' => .done (s', st.2 + .ofNat z)) (fun pc' s' => .done (s', pc'))).All post
+  ∃ d z rest, e.codeAt st.2 = (d, z) :: rest ∧ e.stepAt d z st post
 
 /-- The fragment `q` sits at `pc`: a label costs no address, and every other
 cell is the next instruction there. -/
@@ -112,7 +123,7 @@ variable [CodeEnv] {Q : Unit → MachineData → Prop} {E : Int64 → MachineDat
   {p : Program}
 
 local macro "wp_step" : tactic =>
-  `(tactic| simp only [Directive.interp, Instr.interp,
+  `(tactic| simp only [Executable.stepAt, Directive.interp, Instr.interp,
       Operation.interp, Operand.interp, RegOrMem.interp, RelRegOrMem.interp, ConstExpr.interp,
       MachineData.set, MachineData.setReg, Reg64s.get_low64, Reg64s.set_low64, Effects.All,
       or_false, false_or])
@@ -129,9 +140,7 @@ instruction. -/
 private theorem step_here {post : @Post MachineState} {s : MachineData} {pc : Int64}
     {d : Directive} {z : Nat} {rest : List (Directive × Nat)}
     (hseg : cenv.codeAt pc = (d, z) :: rest)
-    (hall : (@Directive.interp cenv.labels d s (.mk pc (pc + .ofNat z))
-        (fun s' => .done (s', pc + .ofNat z)) (fun pc' s' => .done (s', pc'))).All
-      (fun st => Eventually cenv.instrStep post st)) :
+    (hall : cenv.stepAt d z (s, pc) (fun st => Eventually cenv.instrStep post st)) :
     Eventually cenv.instrStep post (s, pc) :=
   step_cps _ _ _ ⟨d, z, rest, hseg, hall⟩
 
@@ -285,6 +294,7 @@ private theorem step_here {post : @Post MachineState} {s : MachineData} {pc : In
     rw [after_instr hseg]
     refine step_here hseg ?_
     wp_step
+    refine Or.inl ?_
     intro af
     exact h af _ hpl'
 
@@ -321,8 +331,8 @@ private theorem step_here {post : @Post MachineState} {s : MachineData} {pc : In
     cases hc : CondCode.interp cc s.status <;>
       simp only [hc, Bool.false_eq_true, ite_true, ite_false, meet_prop_eq_and,
         Effects.All] at h ⊢
-    · exact h.2 trivial _ hpl'
-    · exact Eventually.done _ (Or.inr (h.1 trivial))
+    · exact Or.inl (h.2 trivial _ hpl')
+    · exact Or.inr (Eventually.done _ (Or.inr (h.1 trivial)))
 
 end Specs
 
@@ -347,6 +357,136 @@ theorem Eventually.wf_ind {State : Type} {trans : State → Post → Prop}
     rintro mid (hp | ⟨hI', hr⟩)
     · exact Eventually.done _ hp
     · exact ih mid hr hI'
+
+/-! ## The bridge to the segment judgment
+
+`instrStep` runs one instruction; kraken's `straightlineStep` runs a whole
+segment, from the pc until a jump or the end of the text. An instruction
+chain therefore refines a segment chain, and the two agree when the
+postcondition can hold only where the text has run out. -/
+
+/-- What the bridge needs of the ambient code: a label occupies no bytes, and
+behind an instruction cell the segment map continues with the cells behind
+it. -/
+structure Executable.CodeWF (e : Executable) : Prop where
+  label_size : ∀ c ∈ e.2, c.1.isLabel = true → c.2 = 0
+  advance : ∀ pc d z rest, e.codeAt pc = (d, z) :: rest →
+    e.directivesFromAddress (pc + .ofNat z) = rest
+
+private theorem int64_add_zero (pc : Int64) : pc + Int64.ofNat 0 = pc := by
+  apply Int64.toBitVec_inj.mp
+  simp
+
+private theorem mem_takeWhile {α} {p : α → Bool} {l : List α} {a : α}
+    (h : a ∈ l.takeWhile p) : p a = true := by
+  induction l with
+  | nil => simp at h
+  | cons x xs ih =>
+    by_cases hp : p x
+    · rw [List.takeWhile_cons, if_pos hp] at h
+      rcases List.mem_cons.mp h with rfl | h'
+      · exact hp
+      · exact ih h'
+    · rw [List.takeWhile_cons, if_neg hp] at h
+      simp at h
+
+/-- One segment burst, as a step of the omni-judgment. -/
+private theorem step_burst [Layout] {e : Executable} {post : @Post MachineState}
+    {st : MachineState}
+    (h : (Executable.straightline e st .done).All
+      (fun m => Eventually (straightlineStep e) post m)) :
+    Eventually (straightlineStep e) post st := by
+  refine step_cps _ _ _ ?_
+  unfold straightlineStep at h ⊢
+  exact h
+
+/-- A run of label cells at the head of a segment changes nothing. -/
+private theorem interp_label_prefix [Labels] :
+    ∀ (ls X : List (Directive × Nat)) (s : MachineData) (pc : Int64)
+      (ret : Int64 → MachineData → Effects),
+      (∀ c ∈ ls, c.1.isLabel = true ∧ c.2 = 0) →
+      Directives.interp (ls ++ X) s pc ret = Directives.interp X s pc ret := by
+  intro ls
+  induction ls with
+  | nil => intro X s pc ret _; rfl
+  | cons c ls ih =>
+    intro X s pc ret hls
+    obtain ⟨hlab, hz⟩ := hls c List.mem_cons_self
+    obtain ⟨d, z⟩ := c
+    cases d with
+    | label l =>
+      simp only at hz
+      subst hz
+      simp only [List.cons_append, Directives.interp, Directive.interp, int64_add_zero]
+      exact ih X s pc ret (fun c hc => hls c (List.mem_cons_of_mem _ hc))
+    | instr i => simp [Directive.isLabel] at hlab
+    | byteArray a => simp [Directive.isLabel] at hlab
+
+/-- One segment, cut at its first instruction: the instruction runs, and a
+fall-through continues with the segment behind it. -/
+theorem Executable.straightline_cons {e : Executable} (hwf : e.CodeWF)
+    {pc : Int64} {s : MachineData} {d : Directive} {z : Nat}
+    {rest : List (Directive × Nat)} (hcode : e.codeAt pc = (d, z) :: rest) :
+    Executable.straightline e (s, pc) .done
+      = @Directive.interp e.labels d s (.mk pc (pc + .ofNat z))
+          (fun s' => Executable.straightline e (s', pc + .ofNat z) .done)
+          (fun pc' s' => .done (s', pc')) := by
+  letI := e.labels
+  have hsplit : e.directivesFromAddress pc
+      = (e.directivesFromAddress pc).takeWhile (fun c => c.1.isLabel) ++ (d, z) :: rest := by
+    conv => lhs; rw [← List.takeWhile_append_dropWhile (p := fun c => c.1.isLabel)
+      (l := e.directivesFromAddress pc)]
+    rw [show (e.directivesFromAddress pc).dropWhile (fun c => c.1.isLabel)
+      = (d, z) :: rest from hcode]
+  have hsub : ∀ c ∈ e.directivesFromAddress pc, c ∈ e.2 := by
+    intro c hc
+    unfold Executable.directivesFromAddress at hc
+    exact (List.drop_sublist _ _).subset hc
+  have hls : ∀ c ∈ (e.directivesFromAddress pc).takeWhile (fun c => c.1.isLabel),
+      c.1.isLabel = true ∧ c.2 = 0 := by
+    intro c hc
+    have hlab : c.1.isLabel = true :=
+      mem_takeWhile (p := fun c : Directive × Nat => c.1.isLabel) hc
+    have hmem : c ∈ e.directivesFromAddress pc :=
+      (List.takeWhile_sublist _).subset hc
+    exact ⟨hlab, hwf.label_size c (hsub c hmem) hlab⟩
+  show @Directives.interp e.labels (e.directivesFromAddress pc) s pc
+    (fun pc' s' => .done (s', pc')) = _
+  rw [hsplit, interp_label_prefix _ _ _ _ _ hls]
+  simp only [Directives.interp]
+  congr 1
+  funext s'
+  show Directives.interp rest s' (pc + .ofNat z) _ = _
+  rw [← hwf.advance pc d z rest hcode]
+  rfl
+
+/-- An instruction chain is a segment chain, when the postcondition can hold
+only where the text has run out. -/
+theorem Executable.bridge [Layout] {e : Executable} (hwf : e.CodeWF)
+    {post : @Post MachineState}
+    (hbnd : ∀ st, post st → e.directivesFromAddress st.2 = []) :
+    ∀ st, Eventually e.instrStep post st → Eventually (straightlineStep e) post st := by
+  have key : ∀ st, Eventually e.instrStep post st →
+      (Executable.straightline e st .done).All
+        (fun m => Eventually (straightlineStep e) post m) := by
+    intro st h
+    induction h with
+    | done st hp =>
+      show (@Directives.interp e.labels (e.directivesFromAddress st.2) st.1 st.2 _).All _
+      rw [hbnd st hp]
+      simp only [Directives.interp, Effects.All]
+      exact Eventually.done _ hp
+    | step st mid_p htrans _ ih =>
+      obtain ⟨d, z, rest, hcode, hstep⟩ := htrans
+      rw [Executable.straightline_cons hwf hcode]
+      letI := e.labels
+      exact Directive.interp_sound (next := fun s' => mid_p (s', st.2 + .ofNat z))
+        (jmp := mid_p)
+        (fun s' hmid => ih (s', st.2 + .ofNat z) hmid)
+        (fun st' hmid => step_burst (ih st' hmid))
+        hstep
+  intro st h
+  exact step_burst (key st h)
 
 /-! ## Linking fragments
 
