@@ -87,8 +87,6 @@ private theorem pswap_body_spec (ra : Int64) (s : MachineData) :
     ⦃ fun t => t = s.pushRa ra ∧ SwapPre s ⦄
       pswap.body
     ⦃ (fun _ _ => False); fun a s' => a = ra ∧ SwapPost s s' ⦄ := by
-  refine Triple.intro fun t ht => ?_
-  obtain ⟨rfl, hpre⟩ := ht
   vcgen simplifying_assumptions with finish
 
 theorem pswap_correct (d : MachineData) (hslot : SwapPre d) :
@@ -102,7 +100,7 @@ theorem pswap_correct (d : MachineData) (hslot : SwapPre d) :
   apply MachineWP.cfg (pswap_table d)
   cfg_cases [pswap]
   · vcgen [hcall] simplifying_assumptions with finish
-  · exact Triple.intro fun s hs => hs.1.elim
+  · vcgen simplifying_assumptions with finish
   · vcgen simplifying_assumptions with finish
 
 /-- `pswap_correct`, read at the machine as the baseline judgment. -/
