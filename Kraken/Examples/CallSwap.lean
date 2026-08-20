@@ -93,8 +93,7 @@ theorem pswap_correct (d : MachineData) (hslot : SwapPre d) :
     ⦃ fun _ s => s.regs.get64 .rax = d.regs.get64 .rax
         ∧ s.regs.get64 .rbx = d.regs.get64 .rbx
         ∧ s.regs.get64 .rsp = d.regs.get64 .rsp ⦄ := by
-  have hcall := MachineWP.fun_spec_from_label (Pre := SwapPre) (Post := SwapPost)
-    "swap" pswap.body pswap_body_placed pswap_body_spec
+  have hcall := MachineWP.fun_spec_from_label pswap_body_placed pswap_body_spec
   apply MachineWP.cfg (pswap_table d) (fun _ _ => 0)
   cfg_cases [pswap]
   · vcgen [hcall] simplifying_assumptions with finish

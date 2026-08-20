@@ -445,7 +445,7 @@ state to the one the caller resumes in, so neither mentions the return address.
 The tail and the channels stay open: one `have` per procedure serves every call
 site. -/
 theorem MachineWP.fun_spec_from_label {Pre : MachineData → Prop}
-    {Post : MachineData → MachineData → Prop} (l : Label) (body : Program)
+    {Post : MachineData → MachineData → Prop} {l : Label} {body : Program}
     (hplace : cenv.sits (cenv.labels.label l) body)
     (hbody : ∀ (ra : Int64) (s : MachineData),
       ⦃ fun t => t = s.pushRa ra ∧ Pre s ⦄
