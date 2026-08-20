@@ -66,7 +66,7 @@ private theorem pswap_placed : @Program.Placed ⟨layout pswap⟩ pswap "start" 
 
 /-- The procedure sits at its label. -/
 private theorem pswap_body_placed : cenv.sits (cenv.labels.label "swap") pswap.body :=
-  pswap_placed.block "swap" ⟨"swap", pswap.body, some "done"⟩ (by decide)
+  pswap_placed.block "swap" ⟨"swap", pswap.body, some "done"⟩ rfl
 
 /-- What the procedure needs of its caller: the slot the call writes is
 mapped, so the return address has somewhere to go. -/

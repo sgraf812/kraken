@@ -407,7 +407,7 @@ theorem Program.blockAtAux_of_getElem : ∀ {bs : List (Label × Program)}
     | zero =>
       simp only [List.getElem?_cons_zero, Option.some.injEq, Prod.mk.injEq] at h
       obtain ⟨rfl, rfl⟩ := h
-      simp only [Program.blockAtAux, if_pos rfl]
+      simp only [Program.blockAtAux]
       congr 1
       cases bs <;> rfl
     | succ j =>

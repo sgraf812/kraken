@@ -125,27 +125,27 @@ def MachineData.retAddr (t : MachineData) : Option Int64 :=
     t.retAddr = (Mem.loadInt t.dmem (t.regs.get64 .rsp) Width.W64.bytes).map
       (fun i => Int64.ofBitVec (BitVec.ofInt Width.W64.bits i)) := rfl
 
-@[simp, grind =] theorem MachineData.regs_pushRa (s : MachineData) (ra : Int64) :
+@[grind =] theorem MachineData.regs_pushRa (s : MachineData) (ra : Int64) :
     (s.pushRa ra).regs = s.regs.set64 .rsp (s.regs.get64 .rsp - Width.W64.bytesv) := rfl
 
-@[simp, grind =] theorem MachineData.dmem_pushRa (s : MachineData) (ra : Int64) :
+@[grind =] theorem MachineData.dmem_pushRa (s : MachineData) (ra : Int64) :
     (s.pushRa ra).dmem = Mem.storeInt s.dmem (s.regs.get64 .rsp - Width.W64.bytesv)
       Width.W64.bytes ra.toBitVec.toInt := rfl
 
 /-- A load at the address a store wrote reads the stored value back. -/
-@[simp, grind =] theorem Mem.loadInt_storeInt_64 (m : DataMem) (a : BitVec 64) (v : Int) :
+@[grind =] theorem Mem.loadInt_storeInt_64 (m : DataMem) (a : BitVec 64) (v : Int) :
     (m.storeInt a Width.W64.bytes v).loadInt a Width.W64.bytes
       = some (Int.ofBytes (Int.toBytes Width.W64.bytes v)) :=
   Mem.loadInt_storeInt m a _ v (by decide)
 
 /-- Reading back a pushed address: the bytes a store wrote decode to it. -/
-@[simp, grind =] theorem Int64.ofBitVec_ofBytes_toBytes (ra : Int64) :
+@[grind =] theorem Int64.ofBitVec_ofBytes_toBytes (ra : Int64) :
     Int64.ofBitVec (BitVec.ofInt Width.W64.bits
         (Int.ofBytes (Int.toBytes Width.W64.bytes ra.toBitVec.toInt))) = ra := by
   rw [BitVec.ofInt_ofBytes_toBytes 64 8 rfl, Int64.ofBitVec_toBitVec]
 
 /-- A push leaves on the stack the address it pushed. -/
-@[simp, grind =] theorem MachineData.retAddr_pushRa (s : MachineData) (ra : Int64) :
+@[grind =] theorem MachineData.retAddr_pushRa (s : MachineData) (ra : Int64) :
     (s.pushRa ra).retAddr = some ra := by
   have hbound : Width.W64.bytes ≤ 2 ^ 64 := by decide
   simp only [MachineData.retAddr, MachineData.pushRa, Reg64s.get64_set64, reduceIte,
@@ -581,9 +581,12 @@ theorem Executable.bridge [Layout] {e : Executable} (hwf : e.CodeWF)
       obtain ⟨d, z, rest, hcode, hstep⟩ := htrans
       rw [Executable.straightline_cons hwf hcode]
       letI := e.labels
-      exact Directive.interp_sound (next := fun s' => mid_p (s', st.2 + .ofNat z))
-        (jmp := mid_p)
-        (fun s' hmid => ih (s', st.2 + .ofNat z) hmid)
+      -- name the address behind the cell, so the transport unifies syntactically
+      -- instead of reducing 64-bit arithmetic under a metavariable
+      unfold Executable.stepAt at hstep
+      generalize hnext : st.2 + (Int64.ofNat z) = pc' at hstep ⊢
+      exact Directive.interp_sound (next := fun s' => mid_p (s', pc')) (jmp := mid_p)
+        (fun s' hmid => ih (s', pc') hmid)
         (fun st' hmid => step_burst (ih st' hmid))
         hstep
   intro st h
@@ -882,7 +885,7 @@ private theorem consume {e : Executable} (hwf : e.CodeWF) :
     · have hdf : d.isLabel = false := by simpa using hd
       rw [Executable.sits_cons_of_not_label hdf] at hsits
       obtain ⟨z, rest, hcode, hsits'⟩ := hsits
-      obtain ⟨pre, hpre, hcnt⟩ := ih (pc + .ofNat z) hsits'
+      obtain ⟨pre, hpre, hcnt⟩ := ih (pc + (Int64.ofNat z : Int64)) hsits'
       refine ⟨(e.directivesFromAddress pc).takeWhile (fun c => c.1.isLabel) ++ (d, z) :: pre,
         ?_, ?_⟩
       · rw [Executable.after_cons_of_not_label hdf hcode, List.append_assoc,
@@ -1325,13 +1328,13 @@ theorem MachineWP.cfg [CodeEnv] {p p' : Program} {P : MachineData → Prop}
   · intro l
     cases hb : Program.blockAt p l with
     | none => exact trivial
-    | some blk => simpa [hb] using hpl.block l blk hb
+    | some blk => simpa using hpl.block l blk hb
   · intro l s₀
     cases hb : Program.blockAt p l with
     | none =>
       exact Triple.intro fun s hpre => absurd hpre.1.1 (by simp [hb])
     | some blk =>
-      simp only [hb, Option.elim]
+      simp only [Option.elim]
       refine Triple.intro fun s hpre => ?_
       obtain ⟨⟨-, hTl⟩, rfl⟩ := hpre
       have hidx : Program.blockIdx p l < (Program.view p).2.length :=

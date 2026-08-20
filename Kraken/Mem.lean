@@ -167,7 +167,7 @@ theorem List.map_range_getElem? {α : Type} (l : List α) :
   · simp
   · intro n h1 h2
     simp only [List.length_map, List.length_range] at h1
-    simp [List.getElem_map, List.getElem?_eq_getElem, h1]
+    simp [List.getElem_map, h1]
 
 /-- A load reads back the bytes the store at that address wrote. -/
 theorem Mem.loadBytes_storeBytes {w} (m : Mem w) (a : BitVec w) (bs : List UInt8)
