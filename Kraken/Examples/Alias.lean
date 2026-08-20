@@ -51,7 +51,7 @@ local instance palias.env : CodeEnv := ⟨layout palias⟩
 
 theorem palias_correct :
     ⦃ fun _ => True ⦄ palias ⦃ fun _ s => s.regs.rdx.toNat = 2 ⦄ := by
-  apply MachineWP.cfg palias_table (fun _ _ => 0)
+  apply MachineWP.cfg palias_table
   cfg_cases [palias]
   · vcgen simplifying_assumptions with finish
   · vcgen simplifying_assumptions with finish

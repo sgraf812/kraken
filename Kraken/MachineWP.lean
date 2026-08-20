@@ -24,11 +24,6 @@ class CodeEnv where
 /-- The ambient code. -/
 abbrev cenv [CodeEnv] : Executable := CodeEnv.env
 
-private theorem int64_ofNat_add (a b : Nat) :
-    Int64.ofNat (a + b) = Int64.ofNat a + Int64.ofNat b := by
-  apply Int64.toBitVec_inj.mp
-  simp
-
 /-! ## The step relation and the wp
 
 `instrStep` runs exactly the cell at the current pc: the machine's own
@@ -89,8 +84,8 @@ theorem Executable.wp_mono {e : Executable} {q : Program}
     {Q₁ Q₂ : MachineData → Prop} {E₁ E₂ : Int64 → MachineData → Prop}
     (hQ : ∀ s, Q₁ s → Q₂ s) (hE : ∀ a s, E₁ a s → E₂ a s)
     {s : MachineData} (h : e.wp q Q₁ E₁ s) : e.wp q Q₂ E₂ s := fun pc hpl =>
-  (h pc hpl).mono (fun _ _ ht => ht)
-    (fun st hst => hst.imp (fun ⟨ha, hq⟩ => ⟨ha, hQ _ hq⟩) (hE _ _))
+  eventually_weaken _ _ _ _
+    (fun st hst => hst.imp (fun ⟨ha, hq⟩ => ⟨ha, hQ _ hq⟩) (hE _ _)) (h pc hpl)
 
 namespace MachineWP
 
@@ -143,12 +138,6 @@ def MachineData.retAddr (t : MachineData) : Option Int64 :=
       = some (Int.ofBytes (Int.toBytes Width.W64.bytes v)) :=
   Mem.loadInt_storeInt m a _ v (by decide)
 
-@[grind =] theorem MachineData.pushRa_eq (s : MachineData) (ra : Int64) :
-    s.pushRa ra =
-      { s with regs := s.regs.set64 .rsp (s.regs.get64 .rsp - Width.W64.bytesv),
-               dmem := Mem.storeInt s.dmem (s.regs.get64 .rsp - Width.W64.bytesv)
-                 Width.W64.bytes ra.toBitVec.toInt } := rfl
-
 /-- Reading back a pushed address: the bytes a store wrote decode to it. -/
 @[simp, grind =] theorem Int64.ofBitVec_ofBytes_toBytes (ra : Int64) :
     Int64.ofBitVec (BitVec.ofInt Width.W64.bits
@@ -192,23 +181,40 @@ private theorem step_here {post : @Post MachineState} {s : MachineData} {pc : In
     Eventually cenv.instrStep post (s, pc) :=
   step_cps _ _ _ ⟨d, z, rest, hseg, hall⟩
 
+/-- The rule of a cell that runs and falls through: its interpretation stops
+at the state the cell computes, so the tail's wp there is the cell's
+precondition. Each entry of the dictionary below is this rule at one
+instruction, with the reduction of its interpretation as the only content. -/
+private theorem fallthrough_spec {i : Instr} {f : MachineData → MachineData}
+    (hcell : ∀ (s : MachineData) (rng : Std.Rco Int64) (P : MachineState → Prop),
+      P (f s, 0) → (@Directive.interp cenv.labels (Directive.instr i) s rng
+        (fun s' => .done (s', 0)) (fun _ _ => .unimplemented "jump")).All P) :
+    ⦃ fun s => WP.wp p Q E (f s) ⦄ (Directive.instr i :: p) ⦃ Q; E ⦄ :=
+  Triple.intro fun s h => by
+    intro pc hpl
+    obtain ⟨z, rest, hseg, hpl'⟩ := hpl
+    rw [after_instr hseg]
+    exact step_here hseg (Or.inl (hcell s _ _ (h _ hpl')))
+
+/-- The rule of a cell whose fall-through leaves a value unspecified: the
+tail's wp must hold whatever the machine picks. -/
+private theorem fallthrough_nondet_spec {α : Type} [NondetSupportingType α] {i : Instr}
+    {f : MachineData → α → MachineData}
+    (hcell : ∀ (s : MachineData) (rng : Std.Rco Int64) (P : MachineState → Prop),
+      (∀ v : α, P (f s v, 0)) → (@Directive.interp cenv.labels (Directive.instr i) s rng
+        (fun s' => .done (s', 0)) (fun _ _ => .unimplemented "jump")).All P) :
+    ⦃ fun s => ∀ v : α, WP.wp p Q E (f s v) ⦄ (Directive.instr i :: p) ⦃ Q; E ⦄ :=
+  Triple.intro fun s h => by
+    intro pc hpl
+    obtain ⟨z, rest, hseg, hpl'⟩ := hpl
+    rw [after_instr hseg]
+    exact step_here hseg (Or.inl (hcell s _ _ (fun v => h v _ hpl')))
+
 @[spec] theorem MachineWP.nil_spec :
     ⦃ fun s => Q () s ⦄ ([] : Program) ⦃ Q; E ⦄ :=
   Triple.intro fun s h => by
     intro pc _
     exact Eventually.done _ (Or.inl ⟨rfl, h⟩)
-
-@[spec] theorem MachineWP.nil_append_spec (bs : Program) :
-    ⦃ fun s => WP.wp bs Q E s ⦄ (([] : Program) ++ bs) ⦃ Q; E ⦄ :=
-  Triple.intro fun s h => by rw [List.nil_append]; exact h
-
-@[spec] theorem MachineWP.cons_append_spec (a : Directive) (as bs : Program) :
-    ⦃ fun s => WP.wp (a :: (as ++ bs)) Q E s ⦄ ((a :: as) ++ bs) ⦃ Q; E ⦄ :=
-  Triple.intro fun s h => by rw [List.cons_append]; exact h
-
-@[spec] theorem MachineWP.append_assoc_spec (as bs cs : Program) :
-    ⦃ fun s => WP.wp (as ++ (bs ++ cs)) Q E s ⦄ ((as ++ bs) ++ cs) ⦃ Q; E ⦄ :=
-  Triple.intro fun s h => by rw [List.append_assoc]; exact h
 
 /-- A label costs no step and no address. -/
 @[spec] theorem MachineWP.label_spec (l : Label) :
@@ -218,25 +224,13 @@ private theorem step_here {post : @Post MachineState} {s : MachineData} {pc : In
 @[spec] theorem MachineWP.nop_spec (asz osz : Width) (n : Nat) :
     ⦃ fun s => WP.wp p Q E s ⦄
       (Directive.instr (.regular asz osz (.nop n)) :: p) ⦃ Q; E ⦄ :=
-  Triple.intro fun s h => by
-    intro pc hpl
-    obtain ⟨z, rest, hseg, hpl'⟩ := hpl
-    rw [after_instr hseg]
-    refine step_here hseg ?_
-    wp_step
-    exact h _ hpl'
+  fallthrough_spec (fun s rng P hP => by wp_step; exact hP)
 
 @[spec] theorem MachineWP.mov_reg_imm_spec (asz : Width) (r : Reg64) (i : Int64) :
     ⦃ fun s => WP.wp p Q E { s with regs := s.regs.set64 r (BitVec.setWidth 64 i.toBitVec) } ⦄
       (Directive.instr (.regular asz .W64 (.mov (.reg (.low r .W64)) (.imm (.int64 i)))) :: p)
     ⦃ Q; E ⦄ :=
-  Triple.intro fun s h => by
-    intro pc hpl
-    obtain ⟨z, rest, hseg, hpl'⟩ := hpl
-    rw [after_instr hseg]
-    refine step_here hseg ?_
-    wp_step
-    exact h _ hpl'
+  fallthrough_spec (fun s rng P hP => by wp_step; exact hP)
 
 @[spec] theorem MachineWP.sub_reg_imm_spec (asz : Width) (r : Reg64) (i : Int64) :
     ⦃ fun s =>
@@ -252,13 +246,7 @@ private theorem step_here {post : @Post MachineState} {s : MachineData} {pc : In
                   of := v.signed != b.signed - a.signed } } ⦄
       (Directive.instr (.regular asz .W64 (.sub (.reg (.low r .W64)) (.imm (.int64 i)))) :: p)
     ⦃ Q; E ⦄ :=
-  Triple.intro fun s h => by
-    intro pc hpl
-    obtain ⟨z, rest, hseg, hpl'⟩ := hpl
-    rw [after_instr hseg]
-    refine step_here hseg ?_
-    wp_step
-    exact h _ hpl'
+  fallthrough_spec (fun s rng P hP => by wp_step; exact hP)
 
 @[spec] theorem MachineWP.add_reg_imm_spec (asz : Width) (r : Reg64) (i : Int64) :
     ⦃ fun s =>
@@ -274,13 +262,7 @@ private theorem step_here {post : @Post MachineState} {s : MachineData} {pc : In
                   of := v.signed != a.signed + b.signed } } ⦄
       (Directive.instr (.regular asz .W64 (.add (.reg (.low r .W64)) (.imm (.int64 i)))) :: p)
     ⦃ Q; E ⦄ :=
-  Triple.intro fun s h => by
-    intro pc hpl
-    obtain ⟨z, rest, hseg, hpl'⟩ := hpl
-    rw [after_instr hseg]
-    refine step_here hseg ?_
-    wp_step
-    exact h _ hpl'
+  fallthrough_spec (fun s rng P hP => by wp_step; exact hP)
 
 @[spec] theorem MachineWP.adc_reg_reg_spec (asz : Width) (rd rs : Reg64) :
     ⦃ fun s =>
@@ -298,13 +280,7 @@ private theorem step_here {post : @Post MachineState} {s : MachineData} {pc : In
       (Directive.instr (.regular asz .W64
           (.adc (.reg (.low rd .W64)) (.regOrMem (.reg (.low rs .W64))))) :: p)
     ⦃ Q; E ⦄ :=
-  Triple.intro fun s h => by
-    intro pc hpl
-    obtain ⟨z, rest, hseg, hpl'⟩ := hpl
-    rw [after_instr hseg]
-    refine step_here hseg ?_
-    wp_step
-    exact h _ hpl'
+  fallthrough_spec (fun s rng P hP => by wp_step; exact hP)
 
 @[spec] theorem MachineWP.mulx_reg_spec (asz : Width) (hi lo rs : Reg64) :
     ⦃ fun s =>
@@ -315,13 +291,7 @@ private theorem step_here {post : @Post MachineState} {s : MachineData} {pc : In
       (Directive.instr (.regular asz .W64
           (.mulx (.low hi .W64) (.low lo .W64) (.reg (.low rs .W64)))) :: p)
     ⦃ Q; E ⦄ :=
-  Triple.intro fun s h => by
-    intro pc hpl
-    obtain ⟨z, rest, hseg, hpl'⟩ := hpl
-    rw [after_instr hseg]
-    refine step_here hseg ?_
-    wp_step
-    exact h _ hpl'
+  fallthrough_spec (fun s rng P hP => by wp_step; exact hP)
 
 @[spec] theorem MachineWP.xor_reg_reg_spec (asz : Width) (rd rs : Reg64) :
     ⦃ fun s =>
@@ -336,15 +306,7 @@ private theorem step_here {post : @Post MachineState} {s : MachineData} {pc : In
       (Directive.instr (.regular asz .W64
           (.xor (.reg (.low rd .W64)) (.regOrMem (.reg (.low rs .W64))))) :: p)
     ⦃ Q; E ⦄ :=
-  Triple.intro fun s h => by
-    intro pc hpl
-    obtain ⟨z, rest, hseg, hpl'⟩ := hpl
-    rw [after_instr hseg]
-    refine step_here hseg ?_
-    wp_step
-    refine Or.inl ?_
-    intro af
-    exact h af _ hpl'
+  fallthrough_nondet_spec (fun s rng P hP => by wp_step; exact hP)
 
 @[spec] theorem MachineWP.jmp_label_spec (asz osz : Width) (l : Label) :
     ⦃ fun s => E (cenv.labels.label l) s ⦄
@@ -499,34 +461,14 @@ theorem MachineWP.fun_spec_from_label {Pre : MachineData → Prop}
 
 end Specs
 
-/-! ## The general loop rule
-
-`Eventually` is a least fixpoint, so one well-founded induction turns finitely
-many local steps into one global run. `I` describes every state the run may
-re-enter, and `r` orders those states. `Program.cfg` is the instance where `I`
-is a finite table keyed by pc, and `r` is the lex order of variant and block
-position. -/
-
-theorem Eventually.wf_ind {State : Type} {trans : State → Post → Prop}
-    {r : State → State → Prop} (hwf : WellFounded r) {I post : @Post State}
-    (hstep : ∀ st, I st →
-      Eventually trans (fun st' => post st' ∨ (I st' ∧ r st' st)) st) :
-    ∀ st, I st → Eventually trans post st := by
-  intro st
-  induction st using hwf.induction with
-  | _ st ih =>
-    intro hI
-    refine eventually_trans _ _ _ _ (hstep st hI) ?_
-    rintro mid (hp | ⟨hI', hr⟩)
-    · exact Eventually.done _ hp
-    · exact ih mid hr hI'
-
 /-! ## The bridge to the segment judgment
 
 `instrStep` runs one instruction; kraken's `straightlineStep` runs a whole
 segment, from the pc until a jump or the end of the text. An instruction
 chain therefore refines a segment chain, and the two agree when the
 postcondition can hold only where the text has run out. -/
+
+private theorem int64_add_zero (pc : Int64) : pc + Int64.ofNat 0 = pc := by simp
 
 /-- What the bridge needs of the ambient code: a label occupies no bytes, and
 behind an instruction cell the segment map continues with the cells behind
@@ -535,10 +477,6 @@ structure Executable.CodeWF (e : Executable) : Prop where
   label_size : ∀ c ∈ e.2, c.1.isLabel = true → c.2 = 0
   advance : ∀ pc d z rest, e.codeAt pc = (d, z) :: rest →
     e.directivesFromAddress (pc + .ofNat z) = rest
-
-private theorem int64_add_zero (pc : Int64) : pc + Int64.ofNat 0 = pc := by
-  apply Int64.toBitVec_inj.mp
-  simp
 
 private theorem mem_takeWhile {α} {p : α → Bool} {l : List α} {a : α}
     (h : a ∈ l.takeWhile p) : p a = true := by
@@ -680,20 +618,6 @@ private theorem dropWhile_eq_drop {α} (p : α → Bool) (l : List α) :
     · refine ⟨0, ?_, by intro i a hi; omega⟩
       rw [List.dropWhile_cons, if_neg hx, List.drop_zero]
 
-private theorem dropWhile_head {α} {p : α → Bool} : ∀ {l : List α} {a rest},
-    l.dropWhile p = a :: rest → p a = false := by
-  intro l
-  induction l with
-  | nil => intro a rest h; simp at h
-  | cons x xs ih =>
-    intro a rest h
-    by_cases hx : p x
-    · rw [List.dropWhile_cons, if_pos hx] at h
-      exact ih h
-    · rw [List.dropWhile_cons, if_neg hx] at h
-      simp only [List.cons.injEq] at h
-      exact h.1 ▸ (by simpa using hx)
-
 private theorem addrOf_succ_of_none (e : Executable) {n : Nat} (h : e.2[n]? = none) :
     e.addrOf (n + 1) = e.addrOf n := by
   have hle : e.2.length ≤ n := by
@@ -722,7 +646,7 @@ private theorem addrOf_add_of_labels (e : Executable) [Executable.ValidLayout e]
         | label l =>
           have hz : z = 0 := Executable.ValidLayout.label_size (k + n) l z hc
           rw [Executable.addrOf_succ e hc, hz]
-          exact int64_add_zero _
+          simp
         | instr i => simp [Directive.isLabel] at hlab
         | byteArray a => simp [Directive.isLabel] at hlab
     rw [show k + (n + 1) = k + n + 1 from rfl, hstep]
@@ -756,8 +680,10 @@ theorem Executable.codeWF_of_valid (e : Executable) [hv : Executable.ValidLayout
       rw [List.getElem?_drop] at h0
       simpa using h0
     have hdlab : d.isLabel = false := by
-      have := dropWhile_head (p := fun c : Directive × Nat => c.1.isLabel)
-        (l := e.directivesFromAddress pc) hcode
+      have := List.head?_dropWhile_not (p := fun c : Directive × Nat => c.1.isLabel)
+        (l := e.directivesFromAddress pc)
+      rw [show (e.directivesFromAddress pc).dropWhile (fun c => c.1.isLabel) = (d, z) :: rest
+        from hcode] at this
       simpa using this
     have haddr : e.addrOf (k + j) = pc := by
       rw [addrOf_add_of_labels e j ?_, hkaddr]
@@ -817,14 +743,6 @@ first position (`Executable.walk_addrOf`), and a label's address is the
 address of its cell (`Program.label_addrOf_drop`). The whole text sits at one
 address only (`Executable.entry_of_sits`): a placement consumes one cell per
 non-label directive, and the text has no cell to spare. -/
-
-private theorem dropWhile_append_of_all {α} {q : α → Bool} {as bs : List α}
-    (h : ∀ a ∈ as, q a = true) : (as ++ bs).dropWhile q = bs.dropWhile q := by
-  induction as with
-  | nil => rfl
-  | cons a as ih =>
-    rw [List.cons_append, List.dropWhile_cons, if_pos (h a List.mem_cons_self)]
-    exact ih (fun a' ha' => h a' (List.mem_cons_of_mem _ ha'))
 
 private theorem countP_frag [Layout] (f : Directive → Bool) :
     ∀ (n : Nat) (q : Program), (Layout.frag n q).countP (fun c => f c.1) = q.countP f := by
@@ -891,7 +809,7 @@ theorem Executable.codeAt_addrOf [layout : Layout] {p : Program}
     exact (Option.some.inj h).symm
   have hhead : p.drop i = d :: p.drop (i + 1) := by
     rw [List.drop_eq_getElem_cons hi, hget]
-  rw [Executable.codeAt, hdfa, hdrop, dropWhile_append_of_all hslice, hhead,
+  rw [Executable.codeAt, hdfa, hdrop, List.dropWhile_append_of_pos hslice, hhead,
     Layout.frag_cons, List.dropWhile_cons, if_neg (by simpa using hd)]
 
 /-- Walking a fragment of a laid-out program: it sits at the address of its
@@ -923,7 +841,7 @@ theorem Executable.walk_addrOf [layout : Layout] {p : Program}
         | byteArray a => simp [Directive.isLabel] at hd
       have hstep : (layout p).addrOf (i + 1) = (layout p).addrOf i := by
         rw [addrOf_step hp, size_label hp]
-        exact int64_add_zero _
+        simp
       rw [hstep] at hsits hafter
       refine ⟨hsits, ?_⟩
       rw [show (layout p).after ((layout p).addrOf i) (Directive.label l :: body)
@@ -1106,8 +1024,8 @@ theorem Program.run_of_triple [CodeEnv] [layout : Layout] {p : Program}
     rintro ⟨s', a⟩ (⟨rfl, -⟩ | hbot)
     · exact Executable.directivesFromAddress_end hlast hd
     · exact Executable.bot_elim hbot
-  refine (Executable.bridge (Executable.codeWF_of_valid (layout p)) hbnd _ hev).mono
-    (fun _ _ hx => hx) ?_
+  refine eventually_weaken _ _ _ _ ?_
+    (Executable.bridge (Executable.codeWF_of_valid (layout p)) hbnd _ hev)
   rintro ⟨s', a⟩ (⟨-, hq⟩ | hbot)
   · exact hq
   · exact Executable.bot_elim hbot
@@ -1186,8 +1104,8 @@ structure Program.Placed [CodeEnv] (p : Program) (l₀ : Label) : Prop where
   next : ∀ l blk l', Program.blockAt p l = some blk → blk.next = some l' →
     cenv.after (cenv.labels.label l) blk.body = cenv.labels.label l'
   /-- The last block ends where the text ends. -/
-  last : ∀ pc, cenv.sits pc p → ∀ l blk, Program.blockAt p l = some blk →
-    blk.next = none → cenv.after (cenv.labels.label l) blk.body = cenv.after pc p
+  last : ∀ l blk, Program.blockAt p l = some blk → blk.next = none →
+    cenv.after (cenv.labels.label l) blk.body = cenv.after (cenv.labels.label l₀) p
 
 /-- The placement facts of a laid-out program: every block sits at its label's
 address, and falls through to the address of the label behind it. -/
@@ -1249,7 +1167,7 @@ theorem Program.placed_of_layout [layout : Layout] {p p' : Program}
       · rw [List.getElem?_eq_none (by omega)] at hcell; cases hcell
     have hstep : (layout p).addrOf (t.length + 1) = (layout p).addrOf t.length := by
       rw [addrOf_step hcell, size_label hcell]
-      exact int64_add_zero _
+      simp
     have hbody : p.drop (t.length + 1)
         = blk.body ++ ((Program.view p).2.drop (i + 1)).flatMap Program.blockCells := by
       rw [← List.drop_drop, hdrop]
@@ -1282,9 +1200,10 @@ theorem Program.placed_of_layout [layout : Layout] {p p' : Program}
       rw [Program.fromLabel_view hnd hi', Program.drop_flatMap_cons hi']
       exact List.cons_ne_nil _ _
     rw [hlabel, hafter, Program.label_addrOf_drop hnd htail hne']
-  · intro pc hplace l blk hb hn
+  · intro l blk hb hn
     obtain ⟨pos, i, hlt, hnext, hbody, hlabel, -, hafter⟩ := hpos l blk hb
-    show (layout p).after ((layout p).labels.label l) blk.body = (layout p).after pc p
+    show (layout p).after ((layout p).labels.label l) blk.body
+      = (layout p).after ((layout p).labels.label l₀) p
     rw [hn] at hnext
     have hnone : (Program.view p).2[i + 1]? = none := by
       cases h : (Program.view p).2[i + 1]? with
@@ -1301,7 +1220,7 @@ theorem Program.placed_of_layout [layout : Layout] {p p' : Program}
       have h := congrArg List.length hbody
       rw [List.length_drop] at h
       omega
-    rw [hlabel, hafter, hlenb, ← hwhole, Executable.entry_of_sits hne hplace]
+    rw [hlabel, hafter, hlenb, ← hwhole, hentry]
 
 /-- A label-keyed table, read at an address. -/
 def Table.ofLabels [CodeEnv] (tl : Label → MachineData → Prop) :
@@ -1368,7 +1287,7 @@ entry there and the variant not increased, and a jump exit lands on a mapped
 table entry along `Program.EdgeLt`. -/
 theorem MachineWP.cfg [CodeEnv] {p p' : Program} {P : MachineData → Prop}
     {Q : Unit → MachineData → Prop} {l₀ : Label}
-    (T : Label → MachineData → Prop) (var : Label → MachineData → Nat)
+    (T : Label → MachineData → Prop) (var : Label → MachineData → Nat := fun _ _ => 0)
     (hblocks : ∀ l blk, Program.blockAt p l = some blk → ∀ n : Nat,
       ⦃ fun s => T l s ∧ var l s = n ⦄ blk.body
       ⦃ (match blk.next with
@@ -1402,7 +1321,7 @@ theorem MachineWP.cfg [CodeEnv] {p p' : Program} {P : MachineData → Prop}
       simp [Program.view, Program.blockAtAux]
     have hrun := key l₀ s ⟨h0, hT⟩
     rw [hpl.entry pc hplace] at hrun
-    exact hrun.mono (fun _ _ ht => ht) (fun st hst => Or.inl hst)
+    exact eventually_weaken _ _ _ _ (fun st hst => Or.inl hst) hrun
   · intro l
     cases hb : Program.blockAt p l with
     | none => exact trivial
@@ -1432,7 +1351,9 @@ theorem MachineWP.cfg [CodeEnv] {p p' : Program} {P : MachineData → Prop}
           omega
         | none =>
           rw [hnx] at hq
-          exact Or.inl ⟨(hpl.last pc hplace l blk hb hnx).symm ▸ rfl, hq⟩
+          have hend : cenv.after (cenv.labels.label l) blk.body = cenv.after pc p := by
+            rw [hpl.last l blk hb hnx, hpl.entry pc hplace]
+          exact Or.inl ⟨hend.symm ▸ rfl, hq⟩
       · rintro a s' ⟨l', hlab, hsome', hTl', hedge⟩
         refine Or.inr ⟨l', hlab, ⟨hsome', hTl'⟩, ?_⟩
         have hle' : Program.blockIdx p l' ≤ (Program.view p).2.length := hK l'

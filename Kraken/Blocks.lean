@@ -80,16 +80,6 @@ label of the program, re-enters at that label's cell. The re-entry closure is
 a least fixpoint, taken by `Eventually` inside the definition; no statement
 mentions it. -/
 
-/-- The omni-semantics judgment is monotone in its transition relation and in
-its postcondition. -/
-theorem Eventually.mono {State : Type} {trans₁ trans₂ : State → Post → Prop}
-    {P Q : @Post State} {st : State} (h : Eventually trans₁ P st)
-    (htrans : ∀ st' post, trans₁ st' post → trans₂ st' post) (hPQ : ∀ s, P s → Q s) :
-    Eventually trans₂ Q st := by
-  induction h with
-  | done st hp => exact Eventually.done st (hPQ st hp)
-  | step st mid_p ht _ ih => exact Eventually.step st mid_p (htrans st mid_p ht) ih
-
 /-- The suffix of a program at the last cell carrying `label l`; `[]` when the
 program has no such cell. Re-entry at the last occurrence keeps a suffix's
 scope a restriction of its host's scope. -/

@@ -59,10 +59,14 @@ variable [layout : Layout] [Executable.ValidLayout (layout pswap)]
 /-- The ambient code of the example: `pswap`, laid out. -/
 local instance pswap.env : CodeEnv := ⟨layout pswap⟩
 
+/-- Where `pswap` sits: the placement the control-flow rule and the call rule
+both read. -/
+private theorem pswap_placed : @Program.Placed ⟨layout pswap⟩ pswap "start" :=
+  Program.placed_of_layout (by decide) rfl (by decide)
+
 /-- The procedure sits at its label. -/
 private theorem pswap_body_placed : cenv.sits (cenv.labels.label "swap") pswap.body :=
-  (Program.placed_of_layout (p := pswap) (l₀ := "start") (by decide) (by rfl) (by decide)).block
-    "swap" ⟨"swap", pswap.body, some "done"⟩ (by decide)
+  pswap_placed.block "swap" ⟨"swap", pswap.body, some "done"⟩ (by decide)
 
 /-- What the procedure needs of its caller: the slot the call writes is
 mapped, so the return address has somewhere to go. -/
@@ -94,7 +98,8 @@ theorem pswap_correct (d : MachineData) (hslot : SwapPre d) :
         ∧ s.regs.get64 .rbx = d.regs.get64 .rbx
         ∧ s.regs.get64 .rsp = d.regs.get64 .rsp ⦄ := by
   have hcall := MachineWP.fun_spec_from_label pswap_body_placed pswap_body_spec
-  apply MachineWP.cfg (pswap_table d) (fun _ _ => 0)
+  have hpl := pswap_placed
+  apply MachineWP.cfg (pswap_table d)
   cfg_cases [pswap]
   · vcgen [hcall] simplifying_assumptions with finish
   · exact Triple.intro fun s hs => hs.1.elim
