@@ -38,6 +38,10 @@ abbrev pswap.body : Program := parse("
   ret
 ")
 
+/-- The jump edge of the caller goes forward in the text. -/
+@[grind .] private theorem pswap_idx_start_lt_done :
+    Program.blockIdx pswap "start" < Program.blockIdx pswap "done" := by decide
+
 /-- The jump target of the caller is mapped. -/
 @[grind .] private theorem pswap_done_isSome :
     (Program.blockAt pswap "done").isSome := by decide
@@ -60,88 +64,45 @@ private theorem pswap_body_placed : cenv.sits (cenv.labels.label "swap") pswap.b
   (Program.placed_of_layout (p := pswap) (l₀ := "start") (by decide) (by rfl) (by decide)).block
     "swap" ⟨"swap", pswap.body, some "done"⟩ (by decide)
 
+/-- What the procedure needs of its caller: the slot the call writes is
+mapped, so the return address has somewhere to go. -/
+private abbrev SwapPre (s : MachineData) : Prop :=
+  (Mem.loadInt s.dmem (s.regs.get64 .rsp - Width.W64.bytesv)
+    Width.W64.bytes).isSome = true
+
+/-- What the procedure leaves the caller: the two registers exchanged, the
+stack pointer restored, and the slot it used still mapped. -/
+private abbrev SwapPost (s s' : MachineData) : Prop :=
+  s'.regs.get64 .rax = s.regs.get64 .rbx ∧ s'.regs.get64 .rbx = s.regs.get64 .rax
+    ∧ s'.regs.get64 .rsp = s.regs.get64 .rsp ∧ SwapPre s'
+
 omit [Executable.ValidLayout (layout pswap)] in
-/-- The procedure: it exchanges the two registers, pops the return address and
-returns to it, and leaves memory as it found it. -/
-private theorem pswap_body_spec (ra : Int64) (rax rbx rsp : BitVec 64) (dmem : DataMem) :
-    ⦃ fun t => t.regs.get64 .rax = rax ∧ t.regs.get64 .rbx = rbx
-        ∧ t.regs.get64 .rsp = rsp ∧ t.dmem = dmem ∧ t.retAddr = some ra ⦄
+/-- The procedure, from the state its caller pushed: it exchanges the two
+registers and returns to the address on the stack. -/
+private theorem pswap_body_spec (ra : Int64) (s : MachineData) :
+    ⦃ fun t => t = s.pushRa ra ∧ SwapPre s ⦄
       pswap.body
-    ⦃ (fun _ _ => False);
-      fun a s' => a = ra ∧ s'.regs.get64 .rax = rbx ∧ s'.regs.get64 .rbx = rax
-        ∧ s'.regs.get64 .rsp = rsp + Width.W64.bytesv ∧ s'.dmem = dmem ⦄ := by
+    ⦃ (fun _ _ => False); fun a s' => a = ra ∧ SwapPost s s' ⦄ := by
+  refine Triple.intro fun t ht => ?_
+  obtain ⟨rfl, hpre⟩ := ht
   vcgen simplifying_assumptions with finish
 
-omit [Executable.ValidLayout (layout pswap)] in
-/-- One call of the procedure, as the premise of the call rule: the callee
-enters on the caller's state pushed with the return address, and returns with
-the two registers exchanged, the stack pointer restored, and the slot it used
-still mapped. -/
-private theorem pswap_call (ra : Int64) (s : MachineData)
-    {K : MachineData → Prop} {E : Int64 → MachineData → Prop}
-    (hslot : (Mem.loadInt s.dmem (s.regs.get64 .rsp - Width.W64.bytesv)
-      Width.W64.bytes).isSome = true)
-    (hK : ∀ s' : MachineData,
-      s'.regs.get64 .rax = s.regs.get64 .rbx → s'.regs.get64 .rbx = s.regs.get64 .rax →
-      s'.regs.get64 .rsp = s.regs.get64 .rsp →
-      (Mem.loadInt s'.dmem (s'.regs.get64 .rsp - Width.W64.bytesv)
-        Width.W64.bytes).isSome = true → K s') :
-    ⦃ fun t => t = s.pushRa ra ⦄
-      pswap.body
-    ⦃ (fun _ _ => False); fun a s' => if a = ra then K s' else E a s' ⦄ := by
-  refine Triple.intro fun t ht => ?_
-  subst ht
-  rw [MachineWP.wp_eq]
-  have hrun := (pswap_body_spec ra (s.regs.get64 .rax) (s.regs.get64 .rbx)
-    (s.regs.get64 .rsp - Width.W64.bytesv) (s.pushRa ra).dmem).le_wp (s.pushRa ra)
-    ⟨by simp [MachineData.pushRa], by simp [MachineData.pushRa],
-      by simp [MachineData.pushRa], rfl, MachineData.retAddr_pushRa s ra⟩
-  rw [MachineWP.wp_eq] at hrun
-  refine Executable.wp_mono (fun _ hq => hq) ?_ hrun
-  rintro a s' ⟨hra, hrax, hrbx, hrsp, hdmem⟩
-  rw [if_pos hra]
-  refine hK s' hrax hrbx ?_ ?_
-  · rw [hrsp, BitVec.sub_add_cancel]
-  · rw [hdmem, hrsp, BitVec.sub_add_cancel]
-    simp only [MachineData.pushRa, Reg64s.get64_set64, reduceIte]
-    rw [Mem.loadInt_storeInt _ _ _ _ (by decide)]
-    rfl
-
-theorem pswap_correct (d : MachineData)
-    (hslot : (Mem.loadInt d.dmem (d.regs.get64 .rsp - Width.W64.bytesv)
-      Width.W64.bytes).isSome = true) :
+theorem pswap_correct (d : MachineData) (hslot : SwapPre d) :
     ⦃ fun s => s = d ⦄
       pswap
     ⦃ fun _ s => s.regs.get64 .rax = d.regs.get64 .rax
         ∧ s.regs.get64 .rbx = d.regs.get64 .rbx
         ∧ s.regs.get64 .rsp = d.regs.get64 .rsp ⦄ := by
+  have hcall := MachineWP.fun_spec_from_label (Pre := SwapPre) (Post := SwapPost)
+    "swap" pswap.body pswap_body_placed pswap_body_spec
   apply MachineWP.cfg (pswap_table d) (fun _ _ => 0)
   cfg_cases [pswap]
-  · -- the caller: two calls, then the jump to the tail
-    refine Triple.intro fun s hs => ?_
-    obtain ⟨rfl, hn⟩ := hs
-    refine (MachineWP.call_spec (P := fun ra u => u = s.pushRa ra) _ _ "swap" pswap.body
-      pswap_body_placed ?_).le_wp s ⟨fun _ => rfl, hslot⟩
-    intro ra₁
-    refine pswap_call ra₁ s hslot (fun s' hrax hrbx hrsp hslot' => ?_)
-    refine (MachineWP.call_spec (P := fun ra u => u = s'.pushRa ra) _ _ "swap" pswap.body
-      pswap_body_placed ?_).le_wp s' ⟨fun _ => rfl, hslot'⟩
-    intro ra₂
-    refine pswap_call ra₂ s' hslot' (fun s'' hrax' hrbx' hrsp' _ => ?_)
-    refine (MachineWP.jmp_label_spec _ _ "done").le_wp s'' ?_
-    refine Table.ofLabels_at ⟨by decide, ⟨?_, ?_, ?_⟩, Or.inr ⟨hn, by decide⟩⟩
-    · rw [hrax', hrbx]
-    · rw [hrbx', hrax]
-    · rw [hrsp', hrsp]
-  · -- the procedure is entered by a call, never by an edge of the table
-    exact Triple.intro fun s hs => hs.1.elim
-  · -- the tail
-    vcgen simplifying_assumptions with finish
+  · vcgen [hcall] simplifying_assumptions with finish
+  · exact Triple.intro fun s hs => hs.1.elim
+  · vcgen simplifying_assumptions with finish
 
 /-- `pswap_correct`, read at the machine as the baseline judgment. -/
-theorem pswap_correct_run (d : MachineData)
-    (hslot : (Mem.loadInt d.dmem (d.regs.get64 .rsp - Width.W64.bytesv)
-      Width.W64.bytes).isSome = true) :
+theorem pswap_correct_run (d : MachineData) (hslot : SwapPre d) :
     Eventually (straightlineStep (layout pswap))
       (fun s => s.1.regs.get64 .rax = d.regs.get64 .rax
         ∧ s.1.regs.get64 .rbx = d.regs.get64 .rbx

@@ -130,6 +130,31 @@ def MachineData.retAddr (t : MachineData) : Option Int64 :=
     t.retAddr = (Mem.loadInt t.dmem (t.regs.get64 .rsp) Width.W64.bytes).map
       (fun i => Int64.ofBitVec (BitVec.ofInt Width.W64.bits i)) := rfl
 
+@[simp, grind =] theorem MachineData.regs_pushRa (s : MachineData) (ra : Int64) :
+    (s.pushRa ra).regs = s.regs.set64 .rsp (s.regs.get64 .rsp - Width.W64.bytesv) := rfl
+
+@[simp, grind =] theorem MachineData.dmem_pushRa (s : MachineData) (ra : Int64) :
+    (s.pushRa ra).dmem = Mem.storeInt s.dmem (s.regs.get64 .rsp - Width.W64.bytesv)
+      Width.W64.bytes ra.toBitVec.toInt := rfl
+
+/-- A load at the address a store wrote reads the stored value back. -/
+@[simp, grind =] theorem Mem.loadInt_storeInt_64 (m : DataMem) (a : BitVec 64) (v : Int) :
+    (m.storeInt a Width.W64.bytes v).loadInt a Width.W64.bytes
+      = some (Int.ofBytes (Int.toBytes Width.W64.bytes v)) :=
+  Mem.loadInt_storeInt m a _ v (by decide)
+
+@[grind =] theorem MachineData.pushRa_eq (s : MachineData) (ra : Int64) :
+    s.pushRa ra =
+      { s with regs := s.regs.set64 .rsp (s.regs.get64 .rsp - Width.W64.bytesv),
+               dmem := Mem.storeInt s.dmem (s.regs.get64 .rsp - Width.W64.bytesv)
+                 Width.W64.bytes ra.toBitVec.toInt } := rfl
+
+/-- Reading back a pushed address: the bytes a store wrote decode to it. -/
+@[simp, grind =] theorem Int64.ofBitVec_ofBytes_toBytes (ra : Int64) :
+    Int64.ofBitVec (BitVec.ofInt Width.W64.bits
+        (Int.ofBytes (Int.toBytes Width.W64.bytes ra.toBitVec.toInt))) = ra := by
+  rw [BitVec.ofInt_ofBytes_toBytes 64 8 rfl, Int64.ofBitVec_toBitVec]
+
 /-- A push leaves on the stack the address it pushed. -/
 @[simp, grind =] theorem MachineData.retAddr_pushRa (s : MachineData) (ra : Int64) :
     (s.pushRa ra).retAddr = some ra := by
@@ -413,6 +438,46 @@ theorem MachineWP.call_spec {P : Int64 → MachineData → Prop} (asz osz : Widt
       exact hexit _ hpl'
     · rw [if_neg ha] at hexit
       exact Eventually.done _ (Or.inr hexit)
+
+/-- The spec of a procedure at a label, in the form `vcgen` steps a call with.
+`Pre` is what the procedure needs of the caller's state and `Post` relates that
+state to the one the caller resumes in, so neither mentions the return address.
+The tail and the channels stay open: one `have` per procedure serves every call
+site. -/
+theorem MachineWP.fun_spec_from_label {Pre : MachineData → Prop}
+    {Post : MachineData → MachineData → Prop} (l : Label) (body : Program)
+    (hplace : cenv.sits (cenv.labels.label l) body)
+    (hbody : ∀ (ra : Int64) (s : MachineData),
+      ⦃ fun t => t = s.pushRa ra ∧ Pre s ⦄
+        body
+      ⦃ (fun _ _ => False); fun a s' => a = ra ∧ Post s s' ⦄) :
+    ∀ ⦃asz osz : Width⦄ ⦃p : Program⦄ ⦃Q : Unit → MachineData → Prop⦄
+      ⦃E : Int64 → MachineData → Prop⦄,
+      ⦃ fun s => (Pre s)
+          ⊓ ((Mem.loadInt s.dmem (s.regs.get64 .rsp - Width.W64.bytesv)
+              Width.W64.bytes).isSome = true)
+          ⊓ (∀ s' : MachineData, Post s s' → WP.wp p Q E s') ⦄
+        (Directive.instr (.regular asz osz
+            (.call (.rel (.sub (.label l) .after_current_instruction)))) :: p)
+      ⦃ Q; E ⦄ := by
+  intro asz osz p Q E
+  refine Triple.intro fun s h => ?_
+  simp only [meet_prop_eq_and] at h
+  obtain ⟨⟨hpre, hmapped⟩, hcont⟩ := h
+  refine (MachineWP.call_spec
+    (P := fun ra t => ∃ s₀ : MachineData, t = s₀.pushRa ra ∧ Pre s₀
+      ∧ ∀ s' : MachineData, Post s₀ s' → WP.wp p Q E s')
+    asz osz l body hplace ?_).le_wp s ⟨fun ra => ⟨s, rfl, hpre, hcont⟩, hmapped⟩
+  intro ra
+  refine Triple.intro fun t ht => ?_
+  obtain ⟨s₀, rfl, hpre₀, hcont₀⟩ := ht
+  rw [MachineWP.wp_eq]
+  have hrun := (hbody ra s₀).le_wp (s₀.pushRa ra) ⟨rfl, hpre₀⟩
+  rw [MachineWP.wp_eq] at hrun
+  refine Executable.wp_mono (fun _ hq => hq) ?_ hrun
+  rintro a s' ⟨rfl, hpost⟩
+  rw [if_pos rfl]
+  exact hcont₀ s' hpost
 
 @[spec] theorem MachineWP.jcc_spec (asz osz : Width) (cc : CondCode) (l : Label) :
     ⦃ fun s =>
