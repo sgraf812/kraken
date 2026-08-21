@@ -89,9 +89,9 @@ theorem p3_correct (d : MachineData) (h_bounds : p3_spec d < 2 ^ 64)
   simp only [p3_spec] at h_bounds ⊢
   apply MachineWP.cfg (p3_table d) (fun _ s => s.regs.rbx.toNat)
   cfg_cases [p3]
-  · vcgen simplifying_assumptions with finish
-  · vcgen simplifying_assumptions with finish
-  · vcgen simplifying_assumptions with finish
+  · vcgen with finish
+  · vcgen with finish
+  · vcgen with finish
 
 /-- `p3_correct`, read at the machine as the baseline judgment. -/
 theorem p3_correct_run (d : MachineData) (h_bounds : p3_spec d < 2 ^ 64)

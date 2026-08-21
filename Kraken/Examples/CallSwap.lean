@@ -87,7 +87,7 @@ private theorem pswap_body_spec (ra : Int64) (s : MachineData) :
     ⦃ fun t => t = s.pushRa ra ∧ SwapPre s ⦄
       pswap.body
     ⦃ (fun _ _ => False); fun a s' => a = ra ∧ SwapPost s s' ⦄ := by
-  vcgen simplifying_assumptions with finish
+  vcgen with finish
 
 theorem pswap_correct (d : MachineData) (hslot : SwapPre d) :
     ⦃ fun s => s = d ⦄
