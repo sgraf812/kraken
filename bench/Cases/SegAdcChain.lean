@@ -8,7 +8,7 @@ computes the sum wherever the chain sits.
 -/
 import Kraken.MachineWP
 
-open Std.Internal.Do
+open Std.WP
 open MachineWP
 
 namespace SegAdcChain

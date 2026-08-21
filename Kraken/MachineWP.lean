@@ -12,7 +12,7 @@ fact the rules consume: the segment map advances cell by cell.
 import Kraken.SegmentExtract
 import Kraken.InterpSound
 
-open Std.Internal.Do
+open Std.WP
 open Lean.Order
 
 /-! ## The ambient code -/

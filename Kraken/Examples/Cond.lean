@@ -1,7 +1,7 @@
 import Kraken.X64M
 import Std.Tactic.BVDecide
 
-open Std.Internal.Do
+open Std.WP
 open Kraken
 
 set_option mvcgen.warning false

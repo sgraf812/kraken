@@ -9,7 +9,7 @@ one goal per block.
 -/
 import Kraken.Specs
 
-open Std.Internal.Do
+open Std.WP
 open Lean.Order
 
 /-! ### Fragments

@@ -18,7 +18,7 @@ set_option grind.warning false
 set_option maxRecDepth 1000000
 set_option maxHeartbeats 10000000
 
-open Lean Order Parser Meta Elab Tactic Sym Std Internal.Do
+open Lean Order Parser Meta Elab Tactic Sym Std Std.WP
 
 #eval do IO.println "== stepping only, no state simplification"; (← IO.getStdout).flush
 #eval runBenchUsingTactic ``AddChain.Goal [``AddChain.chain]

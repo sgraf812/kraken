@@ -10,8 +10,8 @@ ownership of a memory range between `dmem` and the device.
 -/
 import Kraken.X64M
 
-open Std.Internal.Do
-open Std.Internal.Do.WPMonad
+open Std.WP
+open Std.WP.WPMonad
 open Lean.Order
 
 namespace Kraken

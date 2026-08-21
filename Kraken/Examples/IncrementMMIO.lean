@@ -6,7 +6,7 @@ state lives in `σ`, so it would survive a jump.
 -/
 import Kraken.Device
 
-open Std.Internal.Do
+open Std.WP
 open Kraken
 
 set_option mvcgen.warning false

@@ -7,7 +7,7 @@ completion marker. All four transfers of the MMIO/DMA matrix, with device state 
 -/
 import Kraken.Device
 
-open Std.Internal.Do
+open Std.WP
 open Kraken
 
 set_option mvcgen.warning false

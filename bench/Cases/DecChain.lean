@@ -6,7 +6,7 @@ Contrast `AddChain`, whose initial value is symbolic.
 -/
 import Kraken.X64M
 
-open Std.Internal.Do
+open Std.WP
 open Kraken
 
 namespace DecChain

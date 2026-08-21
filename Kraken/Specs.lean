@@ -9,8 +9,8 @@ import Kraken.OmniSemantics
 import Kraken.GrindFold
 import Std.Tactic.Do
 
-open Std.Internal.Do
-open Std.Internal.Do.WPMonad
+open Std.WP
+open Std.WP.WPMonad
 
 set_option mvcgen.warning false
 set_option grind.warning false

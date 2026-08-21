@@ -5,7 +5,7 @@ which discharge path closed each memory VC.
 -/
 import Kraken.X64M
 import Kraken.Tactics
-open Std.Internal.Do
+open Std.WP
 open Kraken
 
 set_option mvcgen.warning false

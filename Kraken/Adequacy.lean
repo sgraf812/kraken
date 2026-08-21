@@ -29,7 +29,7 @@ so the encoding declines to commit a value there too.
 -/
 import Kraken.X64M
 
-open Std.Internal.Do
+open Std.WP
 
 set_option linter.unusedSimpArgs false
 

@@ -11,7 +11,7 @@ baseline step), the fold of the two agrees.
 -/
 import Kraken.Adequacy
 
-open Std.Internal.Do
+open Std.WP
 
 set_option linter.unusedSimpArgs false
 

@@ -6,8 +6,8 @@ Authors: Sebastian Graf
 module
 public import Lean
 public import Std.Tactic.Do
-public import Std.Internal.Do
-public import Std.Internal.Do.Triple.SpecLemmas
+public import Std.Do
+public import Std.Do.Triple.SpecLemmas
 open Lean Parser Meta Elab Tactic Sym
 
 def timeItMs {α : Type} (k : MetaM α) : MetaM (α × UInt64) := do

@@ -15,7 +15,7 @@ set_option grind.warning false
 set_option maxRecDepth 1000000
 set_option maxHeartbeats 10000000
 
-open Lean Order Parser Meta Elab Tactic Sym Std Internal.Do
+open Lean Order Parser Meta Elab Tactic Sym Std Std.WP
 
 #eval runBenchUsingTactic ``AdcChain.Goal [``AdcChain.prog, ``AdcChain.chain]
   `(tactic| vcgen -internalize simplifying_assumptions) `(tactic| bv_decide) [40, 160, 640]

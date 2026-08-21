@@ -7,7 +7,7 @@ stepping, discharge and kernel time separately.
 -/
 import Kraken.X64M
 
-open Std.Internal.Do
+open Std.WP
 open Kraken
 
 namespace MovChain

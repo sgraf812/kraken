@@ -74,4 +74,4 @@ open Lean Elab Command in
 run_cmd liftTermElabM do
   for n in Kraken.Fold.stateLemmaNames do
     Sym.Simp.addSymSimpTheorem Sym.Simp.symSimpExtension n .global
-  Sym.Simp.addSymSimpDecl Sym.Simp.symSimpExtension "sym_simp" ``Reg64.idx .global
+  Sym.Simp.addSymSimpDecl Sym.Simp.symSimpExtension ``Reg64.idx .global

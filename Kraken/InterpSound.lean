@@ -10,7 +10,7 @@ instruction set. The machine-founded weakest precondition
 import Kraken.Blocks
 import Kraken.SegmentExtract
 
-open Std.Internal.Do
+open Std.WP
 
 namespace InterpSound
 

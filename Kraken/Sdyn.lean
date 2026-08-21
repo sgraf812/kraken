@@ -3,7 +3,7 @@ The dynamic-stack benchmark on the `X64M` instruction semantics.
 
 The nine-instruction program spills to and reloads from a caller stack region
 through a dynamically computed frame. Its correctness is proved with the
-`Std.Internal.Do` weakest-precondition / `vcgen` pipeline: the memory side goals
+`Std.Do` weakest-precondition / `vcgen` pipeline: the memory side goals
 `Mem.loadInt … = some ?i` are discharged by `easm` from the separation-derived
 `h_load` facts, concretizing the loaded values that feed the register
 postcondition. The separation preamble is the encoding-independent memory theory
@@ -12,7 +12,7 @@ shared with the reference proof.
 import Kraken.X64M
 import Kraken.Tactics
 import Kraken.SeparationMem
-open Std.Internal.Do
+open Std.WP
 open Std.ExtHashMap
 open Kraken
 

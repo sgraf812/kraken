@@ -30,8 +30,8 @@ polymorphic in `D`. Memory operands are evaluated through the baseline
 -/
 import Kraken.Specs
 
-open Std.Internal.Do
-open Std.Internal.Do.WPMonad
+open Std.WP
+open Std.WP.WPMonad
 open Lean.Order
 
 /-! ## The monadic instruction semantics -/

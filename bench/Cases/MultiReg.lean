@@ -8,7 +8,7 @@ must look through per queried register.
 -/
 import Kraken.X64M
 
-open Std.Internal.Do
+open Std.WP
 open Kraken
 
 namespace MultiReg

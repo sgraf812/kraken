@@ -9,7 +9,7 @@ import Kraken.Parser
 import Kraken.MachineWP
 
 open Kraken.Parser
-open Std.Internal.Do
+open Std.WP
 open MachineWP
 open Lean.Order
 
