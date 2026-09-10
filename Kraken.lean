@@ -24,3 +24,4 @@ import Kraken.Device
 import Kraken.Tactics
 import Kraken.Easm
 import Kraken.MachineWP
+import Kraken.SepWP
