@@ -4,7 +4,7 @@ store followed by a reload of the same cell. The `Kraken.easm` trace reports
 which discharge path closed each memory VC.
 -/
 import Kraken.X64M
-import Kraken.Tactics
+import Kraken.Easm
 open Std.WP
 open Kraken
 

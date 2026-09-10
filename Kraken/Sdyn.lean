@@ -10,7 +10,7 @@ postcondition. The separation preamble is the encoding-independent memory theory
 shared with the reference proof.
 -/
 import Kraken.X64M
-import Kraken.Tactics
+import Kraken.Easm
 import Kraken.SeparationMem
 open Std.WP
 open Std.ExtHashMap

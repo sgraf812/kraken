@@ -7,7 +7,7 @@ carry so the result is determined.
 -/
 import Kraken.X64M
 
-open Std.Internal.Do
+open Std.WP
 open Kraken
 
 namespace AdcChain

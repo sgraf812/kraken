@@ -74,14 +74,14 @@ theorem execDirs_eq_liftDirs {D} (ds : List (Directive × Nat))
 
 /-- Lifted baseline of a straightline segment: from the current `rip`, run the
 lifted baseline of the directives at that address. -/
-def liftStraightlineFrom {D : Type} (e : Executable) : X64M D Unit := do
+def liftStraightlineFrom {D : Type} (e : _root_.Executable) : X64M D Unit := do
   let pc ← getThe Int64
   liftDirs (e.directivesFromAddress pc)
 
 /-- A straightline segment of the control-flow driver equals its lifted baseline
 whenever the directives at that address are encoded. This is the body each fuel
 step of `execProgram` runs, so it carries the driver's per-segment adequacy. -/
-theorem execStraightlineFrom_eq {D} (e : Executable)
+theorem execStraightlineFrom_eq {D} (e : _root_.Executable)
     (h : ∀ pc d sz, (d, sz) ∈ e.directivesFromAddress pc →
       (withCurSize sz (execDir d) : X64M D Unit) = liftDir d sz) :
     (execStraightlineFrom e : X64M D Unit) = liftStraightlineFrom e := by
@@ -92,7 +92,7 @@ theorem execStraightlineFrom_eq {D} (e : Executable)
 
 /-- Lifted baseline control-flow driver: the fuel-bounded loop that catches a
 jump and resumes at the target, built from lifted baseline segments. -/
-def liftProgram {D : Type} (e : Executable) : Nat → X64M D Unit
+def liftProgram {D : Type} (e : _root_.Executable) : Nat → X64M D Unit
   | 0 => pure ()
   | fuel + 1 =>
     tryCatch (liftStraightlineFrom e) fun exc =>
@@ -103,7 +103,7 @@ def liftProgram {D : Type} (e : Executable) : Nat → X64M D Unit
 /-- Whole-run control-flow adequacy: the k-fold driver equals the lifted baseline
 driver at every fuel, whenever the reachable directives are encoded. A jump is
 caught identically on both sides, so the fuel induction closes by congruence. -/
-theorem execProgram_eq_liftProgram {D} (e : Executable) (fuel : Nat)
+theorem execProgram_eq_liftProgram {D} (e : _root_.Executable) (fuel : Nat)
     (h : ∀ pc d sz, (d, sz) ∈ e.directivesFromAddress pc →
       (withCurSize sz (execDir d) : X64M D Unit) = liftDir d sz) :
     (execProgram e fuel : X64M D Unit) = liftProgram e fuel := by
@@ -138,7 +138,7 @@ reach lands in a suffix of the program, so each reachable directive is one of th
 three, each adequate. The k-fold driver on the loop equals the lifted baseline at
 every fuel. -/
 
-def loopExe : Executable :=
+def loopExe : _root_.Executable :=
   ( 0,
     [ (.label "loop", 0),
       (.instr (.regular .W64 .W64 (.dec (.reg (.low .rax .W64)))), 3),
@@ -149,7 +149,12 @@ theorem loopExe_adequate (fuel : Nat) :
   apply execProgram_eq_liftProgram
   intro pc d sz hmem
   simp only [loopExe, Executable.directivesFromAddress] at hmem
-  have hmem2 := List.mem_of_mem_drop hmem
+  have hmem2 : (d, sz) ∈ (Kraken.Executable.withAddresses
+      ((0 : Int64), [((Directive.label "loop" : Directive), 0),
+        (.instr (.regular .W64 .W64 (.dec (.reg (.low .rax .W64)))), 3),
+        (.instr (.regular .W64 .W64 (.jcc .nz "loop")), 2)])).map (·.2) :=
+    List.map_subset _ (List.dropWhile_subset _) hmem
+  rw [Kraken.Executable.withAddresses_map_snd] at hmem2
   simp only [List.mem_cons, List.mem_singleton, List.not_mem_nil, or_false, Prod.mk.injEq] at hmem2
   rcases hmem2 with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
   · exact liftDir_label _ _

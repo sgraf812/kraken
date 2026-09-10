@@ -536,11 +536,11 @@ do-block, so a loop is verified by running the body a fixed number of times. A
 machine state at the jump survives into the handler; the handler sets `rip` to the
 target, replacing whatever `rip` the interrupted segment reached. -/
 
-def execStraightlineFrom {D : Type} (e : Executable) : X64M D Unit := do
+def execStraightlineFrom {D : Type} (e : _root_.Executable) : X64M D Unit := do
   let pc ← getThe Int64
   execDirs (e.directivesFromAddress pc)
 
-def execProgram {D : Type} (e : Executable) : Nat → X64M D Unit
+def execProgram {D : Type} (e : _root_.Executable) : Nat → X64M D Unit
   | 0 => pure ()
   | fuel + 1 =>
     tryCatch (execStraightlineFrom e) fun exc =>

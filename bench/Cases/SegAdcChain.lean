@@ -8,6 +8,7 @@ computes the sum wherever the chain sits.
 -/
 import Kraken.MachineWP
 
+open Kraken
 open Std.WP
 open MachineWP
 

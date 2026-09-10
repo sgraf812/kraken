@@ -5,7 +5,7 @@ indexed `get64` and the per-field accessors), the `MachineData` record
 projections, and the `StatusFlags`/`BitVec` reductions the flag and address
 arithmetic normalize with.
 -/
-import Kraken.OmniSemantics
+import Kraken.X64.OmniSemantics
 import Kraken.GrindFold
 import Std.Tactic.Do
 

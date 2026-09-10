@@ -9,6 +9,12 @@ one goal per block.
 -/
 import Kraken.Specs
 
+/-- A layout applied to a program, at the X64 `Executable` abbreviation: dot
+notation on the result resolves through the `Executable` namespace. -/
+instance (priority := high) : CoeFun Layout (fun _ => Program → Executable) :=
+  ⟨Kraken.Layout.apply⟩
+
+
 open Std.WP
 open Lean.Order
 

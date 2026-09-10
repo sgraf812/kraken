@@ -718,7 +718,7 @@ def MachineM.step? : EStateM.Result X64Exit MachineData Int64 → Option Machine
 /-- The monadic straightline run's outcome is a valid postcondition of the
 baseline's straightline judgment, stated as the body of `straightlineStep`:
 every baseline behavior from `(s, pc)` equals the outcome. -/
-theorem Executable.straightlineM_adequate (e : Executable) (s : MachineData) (pc : Int64)
+theorem Executable.straightlineM_adequate (e : _root_.Executable) (s : MachineData) (pc : Int64)
     {st : MachineState} (h : MachineM.step? (e.straightlineM pc s) = some st) :
     (e.straightline (s, pc) .done).All (· = st) := by
   unfold Executable.straightlineM at h
@@ -735,7 +735,7 @@ theorem Executable.straightlineM_adequate (e : Executable) (s : MachineData) (pc
 
 /-- The single-step sibling of `straightlineM_adequate`, over the directives at
 one address. -/
-theorem Executable.stepM_adequate (e : Executable) (s : MachineData) (pc : Int64)
+theorem Executable.stepM_adequate (e : _root_.Executable) (s : MachineData) (pc : Int64)
     {st : MachineState} (h : MachineM.step? (e.stepM pc s) = some st) :
     (e.step (s, pc) .done).All (· = st) := by
   unfold Executable.stepM at h

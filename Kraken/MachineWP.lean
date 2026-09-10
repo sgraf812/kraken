@@ -4,7 +4,7 @@ baseline interpreter: a fragment `q`, placed anywhere in the ambient code,
 runs its cells and every stop lands in the fall-through postcondition at the
 placement's end, or in the exit channel at the pc it stopped at. Exits are
 pc values: `E : Int64 → MachineData → Prop`. A label exit is
-`E (cenv.labels.label l)`; a computed exit is `E` at the value.
+`E ((_root_.Executable.labels cenv).label l)`; a computed exit is `E` at the value.
 
 `CodeEnv` binds the ambient code once, together with the one wellformedness
 fact the rules consume: the segment map advances cell by cell.
@@ -12,6 +12,7 @@ fact the rules consume: the segment map advances cell by cell.
 import Kraken.SegmentExtract
 import Kraken.InterpSound
 
+open Kraken
 open Std.WP
 open Lean.Order
 
@@ -19,10 +20,16 @@ open Lean.Order
 
 /-- The ambient executable. -/
 class CodeEnv where
-  env : Executable
+  env : _root_.Executable
 
 /-- The ambient code. -/
-abbrev cenv [CodeEnv] : Executable := CodeEnv.env
+abbrev cenv [CodeEnv] : Kraken.Executable Directive := CodeEnv.env
+
+/- Upstream marks `Executable.labels` reducible for the kstep pipeline. The
+grind patterns of the spec dictionary key on `labels` as a stable head, so it
+is semireducible here and in every file that consumes the dictionary. -/
+set_option allowUnsafeReducibility true in
+attribute [semireducible] _root_.Executable.labels
 
 /-! ## The step relation and the wp
 
@@ -34,35 +41,35 @@ the granularity the per-instruction rules need. -/
 /-- The cells at an address, past the labels that share it. A label occupies
 no bytes, so several cells sit at one address; the machine runs the first one
 that is not a label. -/
-def Executable.codeAt (e : Executable) (pc : Int64) : List (Directive × Nat) :=
+def Kraken.Executable.codeAt (e : Kraken.Executable Directive) (pc : Int64) : List (Directive × Nat) :=
   (e.directivesFromAddress pc).dropWhile (fun c => c.1.isLabel)
 
 /-- Running the cell `(d, z)` at `st`: either every resolution falls through,
 into `post` at the address behind the cell, or every resolution jumps, into
 `post` at the target. Each disjunct poisons the other continuation, which is
 the shape `Directive.interp_sound` consumes. -/
-def Executable.stepAt (e : Executable) (d : Directive) (z : Nat) (st : MachineState)
+def Kraken.Executable.stepAt (e : Kraken.Executable Directive) (d : Directive) (z : Nat) (st : MachineState)
     (post : @Post MachineState) : Prop :=
-  (@Directive.interp e.labels d st.1 (.mk st.2 (st.2 + .ofNat z))
+  (@Directive.interp (_root_.Executable.labels e) d st.1 (.mk st.2 (st.2 + .ofNat z))
       (fun s' => .done (s', 0)) (fun _ _ => .unimplemented "jump")).All
     (fun m => post (m.1, st.2 + .ofNat z))
-  ∨ (@Directive.interp e.labels d st.1 (.mk st.2 (st.2 + .ofNat z))
+  ∨ (@Directive.interp (_root_.Executable.labels e) d st.1 (.mk st.2 (st.2 + .ofNat z))
       (fun _ => .unimplemented "fallthrough") (fun pc' s' => .done (s', pc'))).All post
 
 /-- One instruction of the ambient code, run from `st`. -/
-def Executable.instrStep (e : Executable) (st : MachineState) (post : @Post MachineState) :
+def Kraken.Executable.instrStep (e : Kraken.Executable Directive) (st : MachineState) (post : @Post MachineState) :
     Prop :=
   ∃ d z rest, e.codeAt st.2 = (d, z) :: rest ∧ e.stepAt d z st post
 
 /-- The fragment `q` sits at `pc`: a label costs no address, and every other
 cell is the next instruction there. -/
-def Executable.sits (e : Executable) (pc : Int64) : Program → Prop
+def Kraken.Executable.sits (e : Kraken.Executable Directive) (pc : Int64) : Program → Prop
   | [] => True
   | .label _ :: q => e.sits pc q
   | d :: q => ∃ z rest, e.codeAt pc = (d, z) :: rest ∧ e.sits (pc + .ofNat z) q
 
 /-- The address behind the fragment `q` placed at `pc`. -/
-def Executable.after (e : Executable) (pc : Int64) : Program → Int64
+def Kraken.Executable.after (e : Kraken.Executable Directive) (pc : Int64) : Program → Int64
   | [] => pc
   | .label _ :: q => e.after pc q
   | _ :: q =>
@@ -74,13 +81,13 @@ def Executable.after (e : Executable) (pc : Int64) : Program → Int64
 code, the machine eventually falls through to the placement's end with `Q`,
 or stops at a pc satisfying `E`. Re-entry inside the fragment is free: the
 judgment is the fixpoint `Eventually`, so a back edge simply keeps stepping. -/
-def Executable.wp (e : Executable) (q : Program) (Q : MachineData → Prop)
+def Kraken.Executable.wp (e : Kraken.Executable Directive) (q : Program) (Q : MachineData → Prop)
     (E : Int64 → MachineData → Prop) (s : MachineData) : Prop :=
   ∀ (pc : Int64), e.sits pc q →
     Eventually (e.instrStep)
       (fun st => (st.2 = e.after pc q ∧ Q st.1) ∨ E st.2 st.1) (s, pc)
 
-theorem Executable.wp_mono {e : Executable} {q : Program}
+theorem Kraken.Executable.wp_mono {e : Kraken.Executable Directive} {q : Program}
     {Q₁ Q₂ : MachineData → Prop} {E₁ E₂ : Int64 → MachineData → Prop}
     (hQ : ∀ s, Q₁ s → Q₂ s) (hE : ∀ a s, E₁ a s → E₂ a s)
     {s : MachineData} (h : e.wp q Q₁ E₁ s) : e.wp q Q₂ E₂ s := fun pc hpl =>
@@ -187,7 +194,7 @@ precondition. Each entry of the dictionary below is this rule at one
 instruction, with the reduction of its interpretation as the only content. -/
 private theorem fallthrough_spec {i : Instr} {f : MachineData → MachineData}
     (hcell : ∀ (s : MachineData) (rng : Std.Rco Int64) (P : MachineState → Prop),
-      P (f s, 0) → (@Directive.interp cenv.labels (Directive.instr i) s rng
+      P (f s, 0) → (@Directive.interp (_root_.Executable.labels cenv) (Directive.instr i) s rng
         (fun s' => .done (s', 0)) (fun _ _ => .unimplemented "jump")).All P) :
     ⦃ fun s => WP.wp p Q E (f s) ⦄ (Directive.instr i :: p) ⦃ Q; E ⦄ :=
   Triple.intro fun s h => by
@@ -201,7 +208,7 @@ tail's wp must hold whatever the machine picks. -/
 private theorem fallthrough_nondet_spec {α : Type} [NondetSupportingType α] {i : Instr}
     {f : MachineData → α → MachineData}
     (hcell : ∀ (s : MachineData) (rng : Std.Rco Int64) (P : MachineState → Prop),
-      (∀ v : α, P (f s v, 0)) → (@Directive.interp cenv.labels (Directive.instr i) s rng
+      (∀ v : α, P (f s v, 0)) → (@Directive.interp (_root_.Executable.labels cenv) (Directive.instr i) s rng
         (fun s' => .done (s', 0)) (fun _ _ => .unimplemented "jump")).All P) :
     ⦃ fun s => ∀ v : α, WP.wp p Q E (f s v) ⦄ (Directive.instr i :: p) ⦃ Q; E ⦄ :=
   Triple.intro fun s h => by
@@ -309,7 +316,7 @@ private theorem fallthrough_nondet_spec {α : Type} [NondetSupportingType α] {i
   fallthrough_nondet_spec (fun s rng P hP => by wp_step; exact hP)
 
 @[spec] theorem MachineWP.jmp_label_spec (asz osz : Width) (l : Label) :
-    ⦃ fun s => E (cenv.labels.label l) s ⦄
+    ⦃ fun s => E ((_root_.Executable.labels cenv).label l) s ⦄
       (Directive.instr (.regular asz osz
           (.jmp (.rel (.sub (.label l) .after_current_instruction)))) :: p)
     ⦃ Q; E ⦄ :=
@@ -318,8 +325,8 @@ private theorem fallthrough_nondet_spec {α : Type} [NondetSupportingType α] {i
     obtain ⟨z, rest, hseg, hpl'⟩ := hpl
     refine step_here hseg ?_
     wp_step
-    have hcancel : pc + .ofNat z + (cenv.labels.label l - (pc + .ofNat z))
-        = cenv.labels.label l := by
+    have hcancel : pc + .ofNat z + ((_root_.Executable.labels cenv).label l - (pc + .ofNat z))
+        = (_root_.Executable.labels cenv).label l := by
       apply Int64.toBitVec_inj.mp
       simp only [Int64.toBitVec_add, Int64.toBitVec_sub]
       rw [BitVec.add_comm, BitVec.sub_add_cancel]
@@ -359,7 +366,7 @@ the push, quantified over the address the machine pushes, and the callee's exit
 at that address continues the caller's wp of the cells behind the call. An exit
 anywhere else is the caller's own. -/
 theorem MachineWP.call_spec {P : Int64 → MachineData → Prop} (asz osz : Width) (l : Label)
-    (body : Program) (hplace : cenv.sits (cenv.labels.label l) body)
+    (body : Program) (hplace : cenv.sits ((_root_.Executable.labels cenv).label l) body)
     (hbody : ∀ ra : Int64,
       ⦃ P ra ⦄
         body
@@ -377,8 +384,8 @@ theorem MachineWP.call_spec {P : Int64 → MachineData → Prop} (asz osz : Widt
   obtain ⟨z, rest, hseg, hpl'⟩ := hpl
   obtain ⟨v, hv⟩ := Option.isSome_iff_exists.mp hmapped
   have hcancel : Int64.ofBitVec
-      (pc + Int64.ofNat z + (cenv.labels.label l - (pc + Int64.ofNat z))).toBitVec
-      = cenv.labels.label l := by
+      (pc + Int64.ofNat z + ((_root_.Executable.labels cenv).label l - (pc + Int64.ofNat z))).toBitVec
+      = (_root_.Executable.labels cenv).label l := by
     rw [Int64.ofBitVec_toBitVec]
     apply Int64.toBitVec_inj.mp
     simp only [Int64.toBitVec_add, Int64.toBitVec_sub]
@@ -389,7 +396,7 @@ theorem MachineWP.call_spec {P : Int64 → MachineData → Prop} (asz osz : Widt
   have hrun := (hbody (pc + Int64.ofNat z)).le_wp (s.pushRa (pc + Int64.ofNat z))
     (hP (pc + Int64.ofNat z))
   rw [MachineWP.wp_eq] at hrun
-  refine eventually_trans _ _ _ _ (hrun (cenv.labels.label l) hplace) ?_
+  refine eventually_trans _ _ _ _ (hrun ((_root_.Executable.labels cenv).label l) hplace) ?_
   rintro ⟨s', a⟩ (⟨-, hbot⟩ | hexit)
   · exact hbot.elim
   · dsimp only at hexit
@@ -408,7 +415,7 @@ The tail and the channels stay open: one `have` per procedure serves every call
 site. -/
 theorem MachineWP.fun_spec_from_label {Pre : MachineData → Prop}
     {Post : MachineData → MachineData → Prop} {l : Label} {body : Program}
-    (hplace : cenv.sits (cenv.labels.label l) body)
+    (hplace : cenv.sits ((_root_.Executable.labels cenv).label l) body)
     (hbody : ∀ (ra : Int64) (s : MachineData),
       ⦃ fun t => t = s.pushRa ra ∧ Pre s ⦄
         body
@@ -443,7 +450,7 @@ theorem MachineWP.fun_spec_from_label {Pre : MachineData → Prop}
 
 @[spec] theorem MachineWP.jcc_spec (asz osz : Width) (cc : CondCode) (l : Label) :
     ⦃ fun s =>
-        (cc.interp s.status = true → E (cenv.labels.label l) s)
+        (cc.interp s.status = true → E ((_root_.Executable.labels cenv).label l) s)
           ⊓ (cc.interp s.status = false → WP.wp p Q E s) ⦄
       (Directive.instr (.regular asz osz (.jcc cc l)) :: p)
     ⦃ Q; E ⦄ :=
@@ -473,7 +480,7 @@ private theorem int64_add_zero (pc : Int64) : pc + Int64.ofNat 0 = pc := by simp
 /-- What the bridge needs of the ambient code: a label occupies no bytes, and
 behind an instruction cell the segment map continues with the cells behind
 it. -/
-structure Executable.CodeWF (e : Executable) : Prop where
+structure Kraken.Executable.CodeWF (e : Kraken.Executable Directive) : Prop where
   label_size : ∀ c ∈ e.2, c.1.isLabel = true → c.2 = 0
   advance : ∀ pc d z rest, e.codeAt pc = (d, z) :: rest →
     e.directivesFromAddress (pc + .ofNat z) = rest
@@ -492,7 +499,7 @@ private theorem mem_takeWhile {α} {p : α → Bool} {l : List α} {a : α}
       simp at h
 
 /-- One segment burst, as a step of the omni-judgment. -/
-private theorem step_burst [Layout] {e : Executable} {post : @Post MachineState}
+private theorem step_burst [_root_.Layout] {e : Kraken.Executable Directive} {post : @Post MachineState}
     {st : MachineState}
     (h : (Executable.straightline e st .done).All
       (fun m => Eventually (straightlineStep e) post m)) :
@@ -525,14 +532,14 @@ private theorem interp_label_prefix [Labels] :
 
 /-- One segment, cut at its first instruction: the instruction runs, and a
 fall-through continues with the segment behind it. -/
-theorem Executable.straightline_cons {e : Executable} (hwf : e.CodeWF)
+theorem Kraken.Executable.straightline_cons {e : Kraken.Executable Directive} (hwf : e.CodeWF)
     {pc : Int64} {s : MachineData} {d : Directive} {z : Nat}
     {rest : List (Directive × Nat)} (hcode : e.codeAt pc = (d, z) :: rest) :
     Executable.straightline e (s, pc) .done
-      = @Directive.interp e.labels d s (.mk pc (pc + .ofNat z))
+      = @Directive.interp (_root_.Executable.labels e) d s (.mk pc (pc + .ofNat z))
           (fun s' => Executable.straightline e (s', pc + .ofNat z) .done)
           (fun pc' s' => .done (s', pc')) := by
-  letI := e.labels
+  letI := (_root_.Executable.labels e)
   have hsplit : e.directivesFromAddress pc
       = (e.directivesFromAddress pc).takeWhile (fun c => c.1.isLabel) ++ (d, z) :: rest := by
     conv => lhs; rw [← List.takeWhile_append_dropWhile (p := fun c => c.1.isLabel)
@@ -541,8 +548,11 @@ theorem Executable.straightline_cons {e : Executable} (hwf : e.CodeWF)
       = (d, z) :: rest from hcode]
   have hsub : ∀ c ∈ e.directivesFromAddress pc, c ∈ e.2 := by
     intro c hc
-    unfold Executable.directivesFromAddress at hc
-    exact (List.drop_sublist _ _).subset hc
+    unfold Kraken.Executable.directivesFromAddress at hc
+    have hmem : c ∈ e.withAddresses.map (·.2) :=
+      List.map_subset _ (List.dropWhile_subset _) hc
+    rwa [show e.withAddresses.map (·.2) = e.2 from Executable.withAddresses_map_snd e.2 e.1]
+      at hmem
   have hls : ∀ c ∈ (e.directivesFromAddress pc).takeWhile (fun c => c.1.isLabel),
       c.1.isLabel = true ∧ c.2 = 0 := by
     intro c hc
@@ -551,7 +561,7 @@ theorem Executable.straightline_cons {e : Executable} (hwf : e.CodeWF)
     have hmem : c ∈ e.directivesFromAddress pc :=
       (List.takeWhile_sublist _).subset hc
     exact ⟨hlab, hwf.label_size c (hsub c hmem) hlab⟩
-  show @Directives.interp e.labels (e.directivesFromAddress pc) s pc
+  show @Directives.interp (_root_.Executable.labels e) (e.directivesFromAddress pc) s pc
     (fun pc' s' => .done (s', pc')) = _
   rw [hsplit, interp_label_prefix _ _ _ _ _ hls]
   simp only [Directives.interp]
@@ -563,7 +573,7 @@ theorem Executable.straightline_cons {e : Executable} (hwf : e.CodeWF)
 
 /-- An instruction chain is a segment chain, when the postcondition can hold
 only where the text has run out. -/
-theorem Executable.bridge [Layout] {e : Executable} (hwf : e.CodeWF)
+theorem Kraken.Executable.bridge [_root_.Layout] {e : Kraken.Executable Directive} (hwf : e.CodeWF)
     {post : @Post MachineState}
     (hbnd : ∀ st, post st → e.directivesFromAddress st.2 = []) :
     ∀ st, Eventually e.instrStep post st → Eventually (straightlineStep e) post st := by
@@ -573,14 +583,14 @@ theorem Executable.bridge [Layout] {e : Executable} (hwf : e.CodeWF)
     intro st h
     induction h with
     | done st hp =>
-      show (@Directives.interp e.labels (e.directivesFromAddress st.2) st.1 st.2 _).All _
+      show (@Directives.interp (_root_.Executable.labels e) (e.directivesFromAddress st.2) st.1 st.2 _).All _
       rw [hbnd st hp]
       simp only [Directives.interp, Effects.All]
       exact Eventually.done _ hp
     | step st mid_p htrans _ ih =>
       obtain ⟨d, z, rest, hcode, hstep⟩ := htrans
       rw [Executable.straightline_cons hwf hcode]
-      letI := e.labels
+      letI := (_root_.Executable.labels e)
       -- name the address behind the cell, so the transport unifies syntactically
       -- instead of reducing 64-bit arithmetic under a metavariable
       unfold Executable.stepAt at hstep
@@ -621,7 +631,7 @@ private theorem dropWhile_eq_drop {α} (p : α → Bool) (l : List α) :
     · refine ⟨0, ?_, by intro i a hi; omega⟩
       rw [List.dropWhile_cons, if_neg hx, List.drop_zero]
 
-private theorem addrOf_succ_of_none (e : Executable) {n : Nat} (h : e.2[n]? = none) :
+private theorem addrOf_succ_of_none (e : Kraken.Executable Directive) {n : Nat} (h : e.2[n]? = none) :
     e.addrOf (n + 1) = e.addrOf n := by
   have hle : e.2.length ≤ n := by
     by_cases hlt : n < e.2.length
@@ -631,7 +641,7 @@ private theorem addrOf_succ_of_none (e : Executable) {n : Nat} (h : e.2[n]? = no
   rw [List.take_of_length_le (by omega), List.take_of_length_le hle]
 
 /-- A run of label cells occupies no bytes, so the address does not move. -/
-private theorem addrOf_add_of_labels (e : Executable) [Executable.ValidLayout e] {k : Nat} :
+private theorem addrOf_add_of_labels (e : Kraken.Executable Directive) [Executable.ValidLayout e] {k : Nat} :
     ∀ (j : Nat), (∀ i a, i < j → e.2[k + i]? = some a → a.1.isLabel = true) →
       e.addrOf (k + j) = e.addrOf k := by
   intro j
@@ -656,7 +666,7 @@ private theorem addrOf_add_of_labels (e : Executable) [Executable.ValidLayout e]
     exact ih (fun i a hi hg => h i a (by omega) hg)
 
 /-- A laid-out program is wellformed code. -/
-theorem Executable.codeWF_of_valid (e : Executable) [hv : Executable.ValidLayout e] :
+theorem Kraken.Executable.codeWF_of_valid (e : Kraken.Executable Directive) [hv : Executable.ValidLayout e] :
     e.CodeWF where
   label_size := by
     intro c hc hlab
@@ -720,7 +730,7 @@ theorem Executable.codeWF_of_valid (e : Executable) [hv : Executable.ValidLayout
     exact this
 
 /-- Unfold a placement at a cell that is not a label. -/
-theorem Executable.sits_cons_of_not_label {e : Executable} {pc : Int64} {d : Directive}
+theorem Kraken.Executable.sits_cons_of_not_label {e : Kraken.Executable Directive} {pc : Int64} {d : Directive}
     {q : Program} (hd : d.isLabel = false) :
     e.sits pc (d :: q) = ∃ z rest, e.codeAt pc = (d, z) :: rest ∧ e.sits (pc + .ofNat z) q := by
   cases d with
@@ -729,7 +739,7 @@ theorem Executable.sits_cons_of_not_label {e : Executable} {pc : Int64} {d : Dir
   | byteArray a => rfl
 
 /-- Unfold the fall-through address past a cell that is not a label. -/
-theorem Executable.after_cons_of_not_label {e : Executable} {pc : Int64} {d : Directive}
+theorem Kraken.Executable.after_cons_of_not_label {e : Kraken.Executable Directive} {pc : Int64} {d : Directive}
     {q : Program} {z : Nat} {rest : List (Directive × Nat)} (hd : d.isLabel = false)
     (hcode : e.codeAt pc = (d, z) :: rest) :
     e.after pc (d :: q) = e.after (pc + .ofNat z) q := by
@@ -747,7 +757,7 @@ address of its cell (`Program.label_addrOf_drop`). The whole text sits at one
 address only (`Executable.entry_of_sits`): a placement consumes one cell per
 non-label directive, and the text has no cell to spare. -/
 
-private theorem countP_frag [Layout] (f : Directive → Bool) :
+private theorem countP_frag [_root_.Layout] (f : Directive → Bool) :
     ∀ (n : Nat) (q : Program), (Layout.frag n q).countP (fun c => f c.1) = q.countP f := by
   intro n q
   induction q generalizing n with
@@ -755,29 +765,29 @@ private theorem countP_frag [Layout] (f : Directive → Bool) :
   | cons d q ih => rw [Layout.frag_cons, List.countP_cons, List.countP_cons, ih]
 
 /-- The cell of a laid-out program at a position. -/
-private theorem layout_getElem [layout : Layout] (p : Program) (i : Nat) :
-    (layout p).2[i]? = (p[i]?).map (fun d => (d, layout.size i)) := by
+private theorem layout_getElem [layout : _root_.Layout] (p : Program) (i : Nat) :
+    (layout p).2[i]? = (p[i]?).map (fun d => (d, Kraken.Layout.size Directive i)) := by
   rw [Layout.apply_snd, Layout.frag_getElem?, Nat.zero_add]
 
 /-- A label occupies no bytes. -/
-private theorem size_label [layout : Layout] {p : Program}
+private theorem size_label [layout : _root_.Layout] {p : Program}
     [hv : Executable.ValidLayout (layout p)] {i : Nat} {l : Label}
-    (hp : p[i]? = some (Directive.label l)) : layout.size i = 0 :=
+    (hp : p[i]? = some (Directive.label l)) : Kraken.Layout.size Directive i = 0 :=
   hv.label_size i l _ (by rw [layout_getElem, hp]; rfl)
 
 /-- Stepping one position advances the address by that position's size. -/
-private theorem addrOf_step [layout : Layout] {p : Program} {i : Nat} {d : Directive}
+private theorem addrOf_step [layout : _root_.Layout] {p : Program} {i : Nat} {d : Directive}
     (hp : p[i]? = some d) :
-    (layout p).addrOf (i + 1) = (layout p).addrOf i + .ofNat (layout.size i) :=
+    (layout p).addrOf (i + 1) = (layout p).addrOf i + .ofNat (Kraken.Layout.size Directive i) :=
   Executable.addrOf_succ _ (by rw [layout_getElem, hp]; rfl)
 
 /-- The cells at the address of a position that holds an instruction: the text
 from that position on. -/
-theorem Executable.codeAt_addrOf [layout : Layout] {p : Program}
+theorem Kraken.Executable.codeAt_addrOf [layout : _root_.Layout] {p : Program}
     [Executable.ValidLayout (layout p)] {i : Nat} {d : Directive}
     (hd : d.isLabel = false) (hp : p[i]? = some d) :
     (layout p).codeAt ((layout p).addrOf i)
-      = (d, layout.size i) :: Layout.frag (i + 1) (p.drop (i + 1)) := by
+      = (d, Kraken.Layout.size Directive i) :: Layout.frag (i + 1) (p.drop (i + 1)) := by
   have hi : i < p.length := by
     by_cases h : i < p.length
     · exact h
@@ -817,7 +827,7 @@ theorem Executable.codeAt_addrOf [layout : Layout] {p : Program}
 
 /-- Walking a fragment of a laid-out program: it sits at the address of its
 first position, and the walk ends at the address of the position behind it. -/
-theorem Executable.walk_addrOf [layout : Layout] {p : Program}
+theorem Kraken.Executable.walk_addrOf [layout : _root_.Layout] {p : Program}
     [Executable.ValidLayout (layout p)] :
     ∀ (body rest : Program) (i : Nat), p.drop i = body ++ rest →
       (layout p).sits ((layout p).addrOf i) body
@@ -865,7 +875,7 @@ theorem Executable.walk_addrOf [layout : Layout] {p : Program}
 
 /-- A placement consumes one cell per non-label directive: the segment at the
 placement's start is the segment behind it, with those cells in front. -/
-private theorem consume {e : Executable} (hwf : e.CodeWF) :
+private theorem consume {e : Kraken.Executable Directive} (hwf : e.CodeWF) :
     ∀ (q : Program) (pc : Int64), e.sits pc q →
       ∃ pre, e.directivesFromAddress pc = pre ++ e.directivesFromAddress (e.after pc q)
         ∧ pre.countP (fun c => !c.1.isLabel) = q.countP (fun d => !d.isLabel) := by
@@ -903,7 +913,7 @@ private theorem consume {e : Executable} (hwf : e.CodeWF) :
 
 /-- The one address a laid-out program sits at: its start. Every non-label
 directive consumes a cell, and the text has exactly as many. -/
-theorem Executable.entry_of_sits [layout : Layout] {p : Program}
+theorem Kraken.Executable.entry_of_sits [layout : _root_.Layout] {p : Program}
     [Executable.ValidLayout (layout p)] (hne : 0 < p.countP (fun d => !d.isLabel))
     {pc : Int64} (h : (layout p).sits pc p) : pc = (layout p).addrOf 0 := by
   obtain ⟨pre, hpre, hcnt⟩ := consume (Executable.codeWF_of_valid (layout p)) p pc h
@@ -939,11 +949,11 @@ theorem Executable.entry_of_sits [layout : Layout] {p : Program}
   exact this
 
 /-- The address of a label, from the position its scope suffix starts at. -/
-theorem Program.label_addrOf_drop [layout : Layout] {p : Program}
+theorem Program.label_addrOf_drop [layout : _root_.Layout] {p : Program}
     [hv : Executable.ValidLayout (layout p)] (hnd : (Program.labels p).Nodup)
     {l : Label} {i : Nat} (hdrop : p.drop i = Program.fromLabel p l)
     (hne : Program.fromLabel p l ≠ []) :
-    (layout p).labels.label l = (layout p).addrOf i := by
+    (_root_.Executable.labels (layout p)).label l = (layout p).addrOf i := by
   obtain ⟨t, rest, hsplit, hfl, hfresh, hlen⟩ := Program.fromLabel_split hnd hne
   have hplen : p.length = t.length + (Program.fromLabel p l).length := by
     have h := congrArg List.length hsplit
@@ -962,7 +972,7 @@ theorem Program.label_addrOf_drop [layout : Layout] {p : Program}
     have h0 : (p.drop i)[0]? = some (Directive.label l) := by rw [hdrop, hfl]; rfl
     rw [List.getElem?_drop] at h0
     simpa using h0
-  have hlay : (layout p).2[i]? = some (Directive.label l, layout.size i) := by
+  have hlay : (layout p).2[i]? = some (Directive.label l, Kraken.Layout.size Directive i) := by
     rw [layout_getElem, hcell]; rfl
   refine Executable.label_addrOf (layout p) l i ?_ ?_
   · rw [hlay, hv.label_size i l _ hlay]
@@ -979,13 +989,13 @@ theorem Program.label_addrOf_drop [layout : Layout] {p : Program}
 
 /-- Behind a laid-out program whose last cell is an instruction the text runs
 out. -/
-theorem Executable.directivesFromAddress_end [layout : Layout] {p : Program}
+theorem Kraken.Executable.directivesFromAddress_end [layout : _root_.Layout] {p : Program}
     [Executable.ValidLayout (layout p)] {dlast : Directive}
     (hlast : p[p.length - 1]? = some dlast) (hd : dlast.isLabel = false) :
     (layout p).directivesFromAddress ((layout p).addrOf p.length) = [] := by
   have hlen : (layout p).2.length = p.length := by
     rw [Layout.apply_snd, Layout.frag_length]
-  have hcell : (layout p).2[p.length - 1]? = some (dlast, layout.size (p.length - 1)) := by
+  have hcell : (layout p).2[p.length - 1]? = some (dlast, Kraken.Layout.size Directive (p.length - 1)) := by
     rw [layout_getElem, hlast]; rfl
   have hfresh : ∀ k, k < p.length → (layout p).addrOf k ≠ (layout p).addrOf p.length := by
     intro k hk
@@ -999,7 +1009,7 @@ theorem Executable.directivesFromAddress_end [layout : Layout] {p : Program}
   exact List.drop_eq_nil_of_le (by omega)
 
 /-- The empty exit channel holds nowhere. -/
-theorem Executable.bot_elim {a : Int64} {s : MachineData} {C : Prop}
+theorem Kraken.Executable.bot_elim {a : Int64} {s : MachineData} {C : Prop}
     (h : (⊥ : Int64 → MachineData → Prop) a s) : C :=
   ((Lean.Order.bot_le (α := Int64 → MachineData → Prop) (fun _ _ => False)) a s h).elim
 
@@ -1007,14 +1017,14 @@ open MachineWP in
 /-- A triple on a laid-out program, read at the machine as the baseline
 judgment: from the start address the segment judgment reaches the triple's
 postcondition. -/
-theorem Program.run_of_triple [CodeEnv] [layout : Layout] {p : Program}
+theorem Program.run_of_triple [CodeEnv] [layout : _root_.Layout] {p : Program}
     [Executable.ValidLayout (layout p)] {P : MachineData → Prop}
     {Q : Unit → MachineData → Prop} {s : MachineData} {dlast : Directive}
     (ht : ⦃ P ⦄ p ⦃ Q ⦄) (hs : P s)
     (henv : cenv = layout p := by rfl)
     (hlast : p[p.length - 1]? = some dlast := by rfl)
     (hd : dlast.isLabel = false := by rfl) :
-    Eventually (straightlineStep (layout p)) (fun st => Q () st.1) (s, layout.start) := by
+    Eventually (straightlineStep (layout p)) (fun st => Q () st.1) (s, Kraken.Layout.start Directive) := by
   have h : (layout p).wp p (Q ()) ⊥ s := henv ▸ ht.le_wp s hs
   obtain ⟨hsits, hafter⟩ := Executable.walk_addrOf (p := p) p [] 0 (by simp)
   rw [Nat.zero_add] at hafter
@@ -1099,20 +1109,20 @@ syntax to the ambient addresses. -/
 /-- Where a label's block sits in the ambient code. -/
 structure Program.Placed [CodeEnv] (p : Program) (l₀ : Label) : Prop where
   /-- Every placement of the text starts at the entry label's address. -/
-  entry : ∀ pc, cenv.sits pc p → cenv.labels.label l₀ = pc
+  entry : ∀ pc, cenv.sits pc p → (_root_.Executable.labels cenv).label l₀ = pc
   /-- A block's body sits at its label's address. -/
   block : ∀ l blk, Program.blockAt p l = some blk →
-    cenv.sits (cenv.labels.label l) blk.body
+    cenv.sits ((_root_.Executable.labels cenv).label l) blk.body
   /-- A block that falls into another ends at that block's address. -/
   next : ∀ l blk l', Program.blockAt p l = some blk → blk.next = some l' →
-    cenv.after (cenv.labels.label l) blk.body = cenv.labels.label l'
+    cenv.after ((_root_.Executable.labels cenv).label l) blk.body = (_root_.Executable.labels cenv).label l'
   /-- The last block ends where the text ends. -/
   last : ∀ l blk, Program.blockAt p l = some blk → blk.next = none →
-    cenv.after (cenv.labels.label l) blk.body = cenv.after (cenv.labels.label l₀) p
+    cenv.after ((_root_.Executable.labels cenv).label l) blk.body = cenv.after ((_root_.Executable.labels cenv).label l₀) p
 
 /-- The placement facts of a laid-out program: every block sits at its label's
 address, and falls through to the address of the label behind it. -/
-theorem Program.placed_of_layout [layout : Layout] {p p' : Program}
+theorem Program.placed_of_layout [layout : _root_.Layout] {p p' : Program}
     [Executable.ValidLayout (layout p)] {l₀ : Label} (hwf : Program.WF p)
     (hp : p = Directive.label l₀ :: p')
     (hne : 0 < p.countP (fun d => !d.isLabel)) :
@@ -1130,7 +1140,7 @@ theorem Program.placed_of_layout [layout : Layout] {p p' : Program}
   have hne₀ : Program.fromLabel p l₀ ≠ [] := by
     rw [hfl₀, hp]
     exact List.cons_ne_nil _ _
-  have hentry : (layout p).labels.label l₀ = (layout p).addrOf 0 :=
+  have hentry : (_root_.Executable.labels (layout p)).label l₀ = (layout p).addrOf 0 :=
     Program.label_addrOf_drop hnd (l := l₀) (i := 0) (by rw [List.drop_zero, hfl₀]) hne₀
   have hwhole : (layout p).after ((layout p).addrOf 0) p
       = (layout p).addrOf p.length := by
@@ -1142,7 +1152,7 @@ theorem Program.placed_of_layout [layout : Layout] {p p' : Program}
         ∧ blk.next = ((Program.view p).2[i + 1]?).map (·.1)
         ∧ p.drop (pos + 1)
             = blk.body ++ ((Program.view p).2.drop (i + 1)).flatMap Program.blockCells
-        ∧ (layout p).labels.label l = (layout p).addrOf pos
+        ∧ (_root_.Executable.labels (layout p)).label l = (layout p).addrOf pos
         ∧ (layout p).sits ((layout p).addrOf pos) blk.body
         ∧ (layout p).after ((layout p).addrOf pos) blk.body
             = (layout p).addrOf (pos + 1 + blk.body.length) := by
@@ -1158,7 +1168,7 @@ theorem Program.placed_of_layout [layout : Layout] {p p' : Program}
         = Directive.label l
           :: (blk.body ++ ((Program.view p).2.drop (i + 1)).flatMap Program.blockCells) := by
       rw [hdropt, Program.fromLabel_view hnd hi, Program.drop_flatMap_cons hi]
-    have hlabel : (layout p).labels.label l = (layout p).addrOf t.length :=
+    have hlabel : (_root_.Executable.labels (layout p)).label l = (layout p).addrOf t.length :=
       Program.label_addrOf_drop hnd hdropt hne'
     have hcell : p[t.length]? = some (Directive.label l) := by
       have h0 : (p.drop t.length)[0]? = some (Directive.label l) := by rw [hdrop]; rfl
@@ -1188,7 +1198,7 @@ theorem Program.placed_of_layout [layout : Layout] {p p' : Program}
     exact hsits
   · intro l blk l' hb hn
     obtain ⟨pos, i, -, hnext, hbody, hlabel, -, hafter⟩ := hpos l blk hb
-    show (layout p).after ((layout p).labels.label l) blk.body = (layout p).labels.label l'
+    show (layout p).after ((_root_.Executable.labels (layout p)).label l) blk.body = (_root_.Executable.labels (layout p)).label l'
     rw [hn] at hnext
     obtain ⟨⟨l₁, b₁⟩, hi'⟩ : ∃ lb, (Program.view p).2[i + 1]? = some lb := by
       cases h : (Program.view p).2[i + 1]? with
@@ -1205,8 +1215,8 @@ theorem Program.placed_of_layout [layout : Layout] {p p' : Program}
     rw [hlabel, hafter, Program.label_addrOf_drop hnd htail hne']
   · intro l blk hb hn
     obtain ⟨pos, i, hlt, hnext, hbody, hlabel, -, hafter⟩ := hpos l blk hb
-    show (layout p).after ((layout p).labels.label l) blk.body
-      = (layout p).after ((layout p).labels.label l₀) p
+    show (layout p).after ((_root_.Executable.labels (layout p)).label l) blk.body
+      = (layout p).after ((_root_.Executable.labels (layout p)).label l₀) p
     rw [hn] at hnext
     have hnone : (Program.view p).2[i + 1]? = none := by
       cases h : (Program.view p).2[i + 1]? with
@@ -1228,11 +1238,11 @@ theorem Program.placed_of_layout [layout : Layout] {p p' : Program}
 /-- A label-keyed table, read at an address. -/
 def Table.ofLabels [CodeEnv] (tl : Label → MachineData → Prop) :
     Int64 → MachineData → Prop :=
-  fun a s => ∃ l, cenv.labels.label l = a ∧ tl l s
+  fun a s => ∃ l, (_root_.Executable.labels cenv).label l = a ∧ tl l s
 
 @[grind ←] theorem Table.ofLabels_at [CodeEnv] {tl : Label → MachineData → Prop}
     {l : Label} {s : MachineData} (h : tl l s) :
-    Table.ofLabels tl (cenv.labels.label l) s := ⟨l, rfl, h⟩
+    Table.ofLabels tl ((_root_.Executable.labels cenv).label l) s := ⟨l, rfl, h⟩
 
 /-- The block a block falls into: it is mapped, and it sits one position
 later in the text. -/
@@ -1314,7 +1324,7 @@ theorem MachineWP.cfg [CodeEnv] {p p' : Program} {P : MachineData → Prop}
     Program.blockIdx_le p
   have key := Program.link (post := fun st => st.2 = cenv.after pc p ∧ Q () st.1)
     (frag := fun l => (Program.blockAt p l).elim [] (·.body))
-    (entry := fun l => cenv.labels.label l)
+    (entry := fun l => (_root_.Executable.labels cenv).label l)
     (T := fun l s => (Program.blockAt p l).isSome ∧ T l s)
     (r := fun x y => Program.cfgMeasure p var x < Program.cfgMeasure p var y)
     (measure (Program.cfgMeasure p var)).wf ?_ ?_
@@ -1354,7 +1364,7 @@ theorem MachineWP.cfg [CodeEnv] {p p' : Program} {P : MachineData → Prop}
           omega
         | none =>
           rw [hnx] at hq
-          have hend : cenv.after (cenv.labels.label l) blk.body = cenv.after pc p := by
+          have hend : cenv.after ((_root_.Executable.labels cenv).label l) blk.body = cenv.after pc p := by
             rw [hpl.last l blk hb hnx, hpl.entry pc hplace]
           exact Or.inl ⟨hend.symm ▸ rfl, hq⟩
       · rintro a s' ⟨l', hlab, hsome', hTl', hedge⟩
