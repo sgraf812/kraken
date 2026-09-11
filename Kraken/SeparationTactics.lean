@@ -7,18 +7,22 @@ open Lean Elab Tactic Meta
 namespace Kraken.Tactic
 
 private partial def denoteClauses (predType : Expr) : List Expr → MetaM Expr
-  | [] => withLocalDeclD `m predType.bindingDomain! fun m => do
+  | [] => do
+    let predType ← whnf predType
+    withLocalDeclD `m predType.bindingDomain! fun m => do
       let body ← mkAppM ``Std.ExtHashMap.emp #[m]
       mkLambdaFVars #[m] body (etaReduce := true)
   | p :: ps => do
     let rest ← denoteClauses predType ps
     mkAppM ``Std.ExtHashMap.sep #[p, rest]
 
-private partial def reifyClauses (e : Expr) : MetaM (List Expr) := do
+partial def reifyClauses (e : Expr) : MetaM (List Expr) := do
   let e ← instantiateMVars e
-  if e.getAppFn.constName? == some ``Std.ExtHashMap.emp then
+  if e.getAppFn.constName? == some ``Std.ExtHashMap.emp
+      || e.getAppFn.constName? == some `MProp.emp then
     return []
-  if e.getAppFn.constName? == some ``Std.ExtHashMap.sep then
+  if e.getAppFn.constName? == some ``Std.ExtHashMap.sep
+      || e.getAppFn.constName? == some `MProp.sep then
     let args := e.getAppArgs
     let p ← reifyClauses args[args.size - 2]!
     let q ← reifyClauses args[args.size - 1]!
@@ -103,7 +107,14 @@ private partial def cancelClauses (predType : Expr) (lhs rhs : List Expr) : Meta
 private partial def alignClauses : List Expr → List Expr → MetaM (Option (List Expr))
   | [], [] => return some []
   | lhs, r :: rs => do
-    let some i ← lhs.toArray.findIdxM? (fun l => matchAtom l r) | return none
+    -- Alignment tolerates spelling differences the cancellation phase resolved
+    -- by unification: fall back to reducible defeq, and only when no atom
+    -- matches syntactically, so the common case pays nothing.
+    let i? ← lhs.toArray.findIdxM? (fun l => matchAtom l r)
+    let some i ← (match i? with
+      | some i => pure (some i)
+      | none => lhs.toArray.findIdxM? (fun l => withDefault (isDefEq l r)))
+      | return none
     let some rest ← alignClauses (lhs.eraseIdx i) rs | return none
     return some (lhs[i]! :: rest)
   | _, _ => return none
@@ -117,9 +128,11 @@ Returns some (rebuilt expr, unused clauses) otherwise.
 private partial def canonicalize (e : Expr) (clauses : List Expr) :
     MetaM (Option (Expr × List Expr)) := do
   let e ← instantiateMVars e
-  if e.getAppFn.constName? == some ``Std.ExtHashMap.emp then
+  if e.getAppFn.constName? == some ``Std.ExtHashMap.emp
+      || e.getAppFn.constName? == some `MProp.emp then
     return some (e, clauses)
-  if e.getAppFn.constName? == some ``Std.ExtHashMap.sep then
+  if e.getAppFn.constName? == some ``Std.ExtHashMap.sep
+      || e.getAppFn.constName? == some `MProp.sep then
     let args := e.getAppArgs
     let some (p, clauses) ← canonicalize args[args.size - 2]! clauses | return none
     let some (q, clauses) ← canonicalize args[args.size - 1]! clauses | return none
@@ -141,7 +154,7 @@ private def proveSeqEq (lhs rhs : Expr) : MetaM (Option Expr) :=
     Lean.Meta.AC.rewriteUnnormalizedRefl proof.mvarId!
     return some (← instantiateMVars proof)
 
-private def solveSepEq (lhs rhs : Expr) : MetaM (Option Expr) := do
+def solveSepEq (lhs rhs : Expr) : MetaM (Option Expr) := do
   let lhs ← instantiateMVars lhs
   let rhs ← instantiateMVars rhs
   if lhs == rhs then

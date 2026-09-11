@@ -108,14 +108,29 @@ namespace SepWP
 
 /-- Frame a memory resource onto an assertion: `∗` under the register, vector
 and flag layers. -/
-abbrev frameOp : MProp 64 → (Reg64s → RegZmms → StatusFlags → MProp 64)
+def frameOp : MProp 64 → (Reg64s → RegZmms → StatusFlags → MProp 64)
     → Reg64s → RegZmms → StatusFlags → MProp 64 :=
   EFrame.pointwise (EFrame.pointwise (EFrame.pointwise MProp.sep))
 
+instance (F : MProp 64) : PreservesSup (frameOp F) :=
+  inferInstanceAs (PreservesSup
+    (EFrame.pointwise (EFrame.pointwise (EFrame.pointwise MProp.sep)) F))
+
+@[simp, grind =] theorem frameOp_apply (F : MProp 64)
+    (P : Reg64s → RegZmms → StatusFlags → MProp 64) (r : Reg64s) (z : RegZmms)
+    (f : StatusFlags) : frameOp F P r z f = F ∗ P r z f := rfl
+
 /-- The exit-channel companion: the same frame, at every exit address. -/
-abbrev frameOpE : MProp 64 → (Int64 → Reg64s → RegZmms → StatusFlags → MProp 64)
+def frameOpE : MProp 64 → (Int64 → Reg64s → RegZmms → StatusFlags → MProp 64)
     → Int64 → Reg64s → RegZmms → StatusFlags → MProp 64 :=
   EFrame.pointwise frameOp
+
+instance (F : MProp 64) : PreservesSup (frameOpE F) :=
+  inferInstanceAs (PreservesSup (EFrame.pointwise frameOp F))
+
+@[simp, grind =] theorem frameOpE_apply (F : MProp 64)
+    (E : Int64 → Reg64s → RegZmms → StatusFlags → MProp 64) (a : Int64) (r : Reg64s)
+    (z : RegZmms) (f : StatusFlags) : frameOpE F E a r z f = F ∗ E a r z f := rfl
 
 /-! ## The instance -/
 
