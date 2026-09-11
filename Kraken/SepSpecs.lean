@@ -141,3 +141,82 @@ example [CodeEnv] {p : Program}
   exact SepWP.mov_store_reg_spec .rdx 136 .rax bs hlen
 
 end Smoke
+
+namespace SepWP
+
+variable [CodeEnv] {p : Program}
+  {Q : Unit → Reg64s → RegZmms → StatusFlags → MProp 64}
+  {E : Int64 → Reg64s → RegZmms → StatusFlags → MProp 64}
+
+/-- The empty program: its wp is the postcondition. -/
+theorem nil_spec :
+    ⦃ fun rg z f => Q () rg z f ⦄ ([] : Program) ⦃ Q; E ⦄ := by
+  refine SepWP.sep_intro fun F s hpre => ?_
+  intro pc _
+  exact Eventually.done _ (Or.inl ⟨rfl, hpre⟩)
+
+/-! ## Register instructions
+
+A register instruction owns no memory: its sep spec is the machine spec's
+record update, componentwise, with the wp of the tail at the updated
+registers and flags. -/
+
+/-- Load an immediate into a 64-bit register. -/
+theorem mov_reg_imm_spec (asz : Width) (r : Reg64) (i : Int64) :
+    ⦃ fun rg z f => WP.wp p Q E (rg.set64 r (BitVec.setWidth 64 i.toBitVec)) z f ⦄
+      (Directive.instr (.regular asz .W64
+          (.mov (.reg (.low r .W64)) (.imm (.int64 i)))) :: p)
+    ⦃ Q; E ⦄ := by
+  refine SepWP.sep_intro fun F s hpre => ?_
+  intro pc hpl
+  obtain ⟨z, rest, hseg, hpl'⟩ := hpl
+  rw [Kraken.Executable.after_cons_of_not_label rfl hseg]
+  refine step_cps _ _ _ ⟨_, _, _, hseg, Or.inl ?_⟩
+  simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
+    MachineData.set, MachineData.setReg, Reg64s.get_low64, Reg64s.set_low64, Effects.All]
+  exact SepWP.sep_elim (s := { s with regs := _ }) hpre _ hpl'
+
+/-! ## The load
+
+`add` from memory reads the slot and leaves it in place: the footprint comes
+back unchanged through the wand, and the register update carries the loaded
+value `Int.ofBytes bs`. -/
+
+/-- Add the 64-bit value at `disp(base)` into a register. -/
+theorem add_reg_mem_spec (rd b : Reg64) (d : Int64)
+    (bs : List UInt8) (hlen : bs.length = 8) :
+    ⦃ fun rg z f =>
+        let a := BitVec.ofInt 64 (Int.ofBytes bs)
+        let bv := rg.get64 rd
+        let v := a + bv
+        MProp.bytesAt bs (rg.get64 b + BitVec.ofInt 64 d.toInt)
+          ∗ (MProp.bytesAt bs (rg.get64 b + BitVec.ofInt 64 d.toInt)
+              -∗ WP.wp p Q E (rg.set64 rd v) z
+                  (StatusFlags.from_result v
+                    { cf := v.unsigned != a.unsigned + bv.unsigned,
+                      af := (v.take 4).unsigned != (a.take 4).unsigned + (bv.take 4).unsigned,
+                      of := v.signed != a.signed + bv.signed })) ⦄
+      (Directive.instr (.regular .W64 .W64
+          (.add (.reg (.low rd .W64))
+            (.regOrMem (.mem ⟨some (.reg b), none, .int64 d⟩)))) :: p)
+    ⦃ Q; E ⦄ := by
+  refine SepWP.sep_intro fun F s hpre => ?_
+  intro pc hpl
+  obtain ⟨z, rest, hseg, hpl'⟩ := hpl
+  rw [Kraken.Executable.after_cons_of_not_label rfl hseg]
+  rw [MProp.sep_left_comm] at hpre
+  have hload : Mem.loadInt s.dmem (s.regs.get64 b + BitVec.ofInt 64 d.toInt) 8
+      = some (Int.ofBytes bs) :=
+    Mem.loadInt_sep bs _ 8 _ s.dmem hpre hlen (by decide)
+  refine step_cps _ _ _ ⟨_, _, _, hseg, Or.inl ?_⟩
+  simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
+    RegOrMem.interp, MachineData.load, MachineData.set, MachineData.setReg,
+    Reg64s.get_low64, Reg64s.set_low64, AddrExpr.zeroExtend_interp_base_disp,
+    hload, Effects.All]
+  refine SepWP.sep_elim (s := { s with regs := _, status := _ }) ?_ _ hpl'
+  rw [MProp.sep_left_comm] at hpre
+  exact MProp.sep_mono_right F
+    (MProp.sep_wand_elim (MProp.bytesAt bs (s.regs.get64 b + BitVec.ofInt 64 d.toInt)) _)
+    _ hpre
+
+end SepWP
