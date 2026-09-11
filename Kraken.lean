@@ -25,3 +25,4 @@ import Kraken.Tactics
 import Kraken.Easm
 import Kraken.MachineWP
 import Kraken.SepWP
+import Kraken.SepSpecs
