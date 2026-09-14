@@ -107,7 +107,10 @@ in{indentExpr pre}"
 
 /-- Phase one: always frame; the state vector is the goal's own. -/
 def sepFrameProc : FrameInferenceProc := fun i => do
-  return .commit i.unframedApp.excessArgs (sepFrameSplit i)
+  -- Provisional: decline, so composite specs chain by ordinary `@[spec]`
+  -- application. A linearly-threaded region (one owned slot, `aluMem`) needs
+  -- no framing. Genuine framing (`dynamic_stack`) will `commit` here.
+  return .decline
 
 @[frameproc] def sepFP : FrameProc where
   prog := ``List
