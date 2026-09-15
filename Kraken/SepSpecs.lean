@@ -104,7 +104,7 @@ private theorem mov_store_reg_gen (asz : Width) (a : AddrExpr) (rs : Reg64)
 bytes at `base + disp` and, under the stored bytes, the wp of the tail. The
 old bytes `bs` are the one logical variable, solved by matching the footprint
 against the precondition. -/
-theorem mov_store_reg_spec (b : Reg64) (d : Int64) (rs : Reg64)
+@[spec] theorem mov_store_reg_spec (b : Reg64) (d : Int64) (rs : Reg64)
     (bs : List UInt8) (hlen : bs.length = 8) :
     ⦃ fun r z f => MProp.bytesAt bs (r.get64 b + BitVec.ofInt 64 d.toInt)
         ∗ (MProp.bytesAt (Int.toBytes 8 (r.get64 rs).toInt)
@@ -149,7 +149,7 @@ variable [CodeEnv] {p : Program}
   {E : Int64 → Reg64s → RegZmms → StatusFlags → MProp 64}
 
 /-- The empty program: its wp is the postcondition. -/
-theorem nil_spec :
+@[spec] theorem nil_spec :
     ⦃ fun rg z f => Q () rg z f ⦄ ([] : Program) ⦃ Q; E ⦄ := by
   refine SepWP.sep_intro fun F s hpre => ?_
   intro pc _
@@ -162,7 +162,7 @@ record update, componentwise, with the wp of the tail at the updated
 registers and flags. -/
 
 /-- Load an immediate into a 64-bit register. -/
-theorem mov_reg_imm_spec (asz : Width) (r : Reg64) (i : Int64) :
+@[spec] theorem mov_reg_imm_spec (asz : Width) (r : Reg64) (i : Int64) :
     ⦃ fun rg z f => WP.wp p Q E (rg.set64 r (BitVec.setWidth 64 i.toBitVec)) z f ⦄
       (Directive.instr (.regular asz .W64
           (.mov (.reg (.low r .W64)) (.imm (.int64 i)))) :: p)
@@ -183,7 +183,7 @@ back unchanged through the wand, and the register update carries the loaded
 value `Int.ofBytes bs`. -/
 
 /-- Add the 64-bit value at `disp(base)` into a register. -/
-theorem add_reg_mem_spec (rd b : Reg64) (d : Int64)
+@[spec] theorem add_reg_mem_spec (rd b : Reg64) (d : Int64)
     (bs : List UInt8) (hlen : bs.length = 8) :
     ⦃ fun rg z f =>
         let a := BitVec.ofInt 64 (Int.ofBytes bs)
