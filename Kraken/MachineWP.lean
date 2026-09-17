@@ -94,6 +94,36 @@ theorem Kraken.Executable.wp_mono {e : Kraken.Executable Directive} {q : Program
   eventually_weaken _ _ _ _
     (fun st hst => hst.imp (fun ⟨ha, hq⟩ => ⟨ha, hQ _ hq⟩) (hE _ _)) (h pc hpl)
 
+/-- The run of `d :: q` is the run of `d` with the run of `q` as its
+post: the machine falls through `d` to the address where `q` sits. -/
+theorem Kraken.Executable.wp_cons {e : Kraken.Executable Directive} {d : Directive} {q : Program}
+    {Q : MachineData → Prop} {E : Int64 → MachineData → Prop} {s : MachineData}
+    (h : e.wp [d] (fun s' => e.wp q Q E s') E s) : e.wp (d :: q) Q E s := by
+  intro pc hpl
+  have hcont : ∀ pc', e.sits pc' q → ∀ st : MachineState,
+      (st.2 = pc' ∧ e.wp q Q E st.1) ∨ E st.2 st.1 →
+      Eventually e.instrStep (fun st => (st.2 = e.after pc' q ∧ Q st.1) ∨ E st.2 st.1) st := by
+    intro pc' hq ⟨sd, spc⟩ hst
+    rcases hst with ⟨hpc, hwp⟩ | hE
+    · dsimp only at hpc hwp
+      subst hpc
+      exact hwp _ hq
+    · exact .done _ (Or.inr hE)
+  cases d with
+  | label l =>
+    have h1 := h pc trivial
+    exact eventually_trans _ _ _ _ h1 (hcont pc hpl)
+  | instr i =>
+    obtain ⟨z, rest, hcode, hq⟩ := hpl
+    have h1 := h pc ⟨z, rest, hcode, trivial⟩
+    simp only [Executable.after, hcode] at h1 ⊢
+    exact eventually_trans _ _ _ _ h1 (hcont _ hq)
+  | byteArray a =>
+    obtain ⟨z, rest, hcode, hq⟩ := hpl
+    have h1 := h pc ⟨z, rest, hcode, trivial⟩
+    simp only [Executable.after, hcode] at h1 ⊢
+    exact eventually_trans _ _ _ _ h1 (hcont _ hq)
+
 namespace MachineWP
 
 /-- A triple on a program is the machine-founded wp of the ambient code. -/
@@ -140,10 +170,6 @@ def MachineData.retAddr (t : MachineData) : Option Int64 :=
       Width.W64.bytes ra.toBitVec.toInt := rfl
 
 /-- A load at the address a store wrote reads the stored value back. -/
-@[grind =] theorem Mem.loadInt_storeInt_8 (m : DataMem) (a : BitVec 64) (v : Int) :
-    (m.storeInt a 8 v).loadInt a 8 = some (Int.ofBytes (Int.toBytes 8 v)) :=
-  Mem.loadInt_storeInt m a 8 v (by decide)
-
 @[grind =] theorem Mem.loadInt_storeInt_64 (m : DataMem) (a : BitVec 64) (v : Int) :
     (m.storeInt a Width.W64.bytes v).loadInt a Width.W64.bytes
       = some (Int.ofBytes (Int.toBytes Width.W64.bytes v)) :=
@@ -318,76 +344,6 @@ private theorem fallthrough_nondet_spec {α : Type} [NondetSupportingType α] {i
           (.xor (.reg (.low rd .W64)) (.regOrMem (.reg (.low rs .W64))))) :: p)
     ⦃ Q; E ⦄ :=
   fallthrough_nondet_spec (fun s rng P hP => by wp_step; exact hP)
-
-/-- The address a `disp(base)` expression computes, at 64-bit address size:
-the base register plus the displacement. No label, no program counter, so it
-is the same at every instruction range. -/
-theorem AddrExpr.zeroExtend_interp_base_disp [L : Labels] (b : Reg64) (d : Int64)
-    (regs : Reg64s) (rng : Std.Rco Int64) :
-    ((AddrExpr.interp (address_size := .mk .W64)
-        (a := ⟨some (.reg b), none, .int64 d⟩) regs rng).zeroExtend 64)
-      = regs.get64 b + BitVec.ofInt 64 d.toInt := by
-  simp only [AddrExpr.interp, ConstExpr.interp, BitVec.toAddressSize, Reg64s.get64]
-  have htake : ∀ x : BitVec 64, x.take Width.W64.bits = x := by
-    intro x; simp [BitVec.take, BitVec.extractLsb']
-  rw [htake, show ∀ x : BitVec 64, x.signed = x.toInt from fun _ => rfl, Int.add_zero,
-    show ∀ y : BitVec Width.W64.bits, BitVec.zeroExtend 64 y = y from fun _ => rfl,
-    BitVec.ofInt_add, BitVec.ofInt_toInt]
-
-/-- Store a 64-bit register at `disp(base)`. The tail runs on the state with
-the slot overwritten; the slot must already be mapped, or the store faults. -/
-@[spec] theorem MachineWP.mov_mem_reg_spec (b : Reg64) (d : Int64) (rs : Reg64) :
-    ⦃ fun s =>
-        ((Mem.loadInt s.dmem (s.regs.get64 b + BitVec.ofInt 64 d.toInt) 8).isSome = true)
-          ⊓ WP.wp p Q E ({ s with dmem := Mem.storeInt s.dmem (s.regs.get64 b + BitVec.ofInt 64 d.toInt) 8 (s.regs.get64 rs).toInt }) ⦄
-      (Directive.instr (.regular .W64 .W64
-          (.mov (.mem ⟨some (.reg b), none, .int64 d⟩)
-            (.regOrMem (.reg (.low rs .W64))))) :: p)
-    ⦃ Q; E ⦄ :=
-  Triple.intro fun s h => by
-    intro pc hpl
-    obtain ⟨z, rest, hseg, hpl'⟩ := hpl
-    rw [after_instr hseg]
-    simp only [meet_prop_eq_and] at h
-    obtain ⟨hmap, hwp⟩ := h
-    obtain ⟨v, hv⟩ := Option.isSome_iff_exists.mp hmap
-    refine step_here hseg (Or.inl ?_)
-    simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
-      RegOrMem.interp, MachineData.set, MachineData.store, Reg64s.get_low64,
-      AddrExpr.zeroExtend_interp_base_disp, hv, Effects.All]
-    exact hwp _ hpl'
-
-/-- Add the 64-bit value at `disp(base)` into a register. The tail runs on the
-state with the register and flags updated by the loaded value. -/
-@[spec] theorem MachineWP.add_reg_mem_spec (rd b : Reg64) (d : Int64) (v : Int) :
-    ⦃ fun s =>
-        (Mem.loadInt s.dmem (s.regs.get64 b + BitVec.ofInt 64 d.toInt) 8 = some v)
-          ⊓ WP.wp p Q E
-              { s with
-                  regs := s.regs.set64 rd (BitVec.ofInt 64 v + s.regs.get64 rd),
-                  status := StatusFlags.from_result (BitVec.ofInt 64 v + s.regs.get64 rd)
-                    { cf := (BitVec.ofInt 64 v + s.regs.get64 rd).unsigned
-                        != (BitVec.ofInt 64 v).unsigned + (s.regs.get64 rd).unsigned,
-                      af := ((BitVec.ofInt 64 v + s.regs.get64 rd).take 4).unsigned
-                        != ((BitVec.ofInt 64 v).take 4).unsigned + ((s.regs.get64 rd).take 4).unsigned,
-                      of := (BitVec.ofInt 64 v + s.regs.get64 rd).signed
-                        != (BitVec.ofInt 64 v).signed + (s.regs.get64 rd).signed } } ⦄
-      (Directive.instr (.regular .W64 .W64
-          (.add (.reg (.low rd .W64))
-            (.regOrMem (.mem ⟨some (.reg b), none, .int64 d⟩)))) :: p)
-    ⦃ Q; E ⦄ :=
-  Triple.intro fun s h => by
-    intro pc hpl
-    obtain ⟨z, rest, hseg, hpl'⟩ := hpl
-    rw [after_instr hseg]
-    simp only [meet_prop_eq_and] at h
-    obtain ⟨hload, hwp⟩ := h
-    refine step_here hseg (Or.inl ?_)
-    simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
-      RegOrMem.interp, MachineData.load, MachineData.set, MachineData.setReg,
-      Reg64s.get_low64, Reg64s.set_low64, AddrExpr.zeroExtend_interp_base_disp,
-      hload, Effects.All]
-    exact hwp _ hpl'
 
 @[spec] theorem MachineWP.jmp_label_spec (asz osz : Width) (l : Label) :
     ⦃ fun s => E ((_root_.Executable.labels cenv).label l) s ⦄
