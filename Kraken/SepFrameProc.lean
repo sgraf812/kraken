@@ -68,6 +68,23 @@ theorem split_emp {pre : MProp 64}
   rw [frameOp_apply, MProp.emp_sep]
   exact h
 
+/-- Normalize the register reads of an address: `(r.set64 x v).get64 y` reads
+through the write. The atoms of a precondition were stated at an earlier
+register file than the address the current instruction computes. -/
+def normalizeRegs (e : Expr) : MetaM (Expr × Option Expr) := do
+  let thms ← ({} : SimpTheorems).addConst ``Reg64s.get64_set64
+  let thms ← thms.addConst ``eq_self_iff_true
+  let ctx ← Simp.mkContext {} (simpTheorems := #[thms])
+  let (r, _) ← Meta.simp e ctx (simprocs := #[← Simp.getSimprocs])
+  return (r.expr, r.proof?)
+
+/-- The region atoms of a precondition: `bytesAt L a₀` whose bytes are not a
+stored value `Int.toBytes …`. -/
+def regionAtoms (pre : Expr) : MetaM (List Expr) := do
+  let clauses ← Kraken.Tactic.reifyClauses pre
+  return clauses.filter fun c =>
+    c.isAppOfArity ``MProp.bytesAt 3 && !(c.appFn!.appArg!.isAppOf ``Int.toBytes)
+
 /-- Phase two. The spec's precondition is `⌜φ⌝ ⊓ fp` or a bare `fp`. `fp` is
 the footprint: `solveSepEq` proves `pre = fp ∗ ?R` with `?R` a fresh clause
 that absorbs the remainder, assigning the spec's logical variables on the way.
@@ -91,24 +108,98 @@ def sepFrameSplit (i : FrameInferenceInfo) (goal : FrameGoal) :
       if a.isAppOfArity ``Lean.Order.CompleteLattice.ofProp 3 then (some a.appArg!, specPre.appArg!)
       else (none, specPre)
     else (none, specPre)
+  let sep ← mkConstS ``MProp.sep
+  -- Match against register-normalized spellings; `hpre : i.pre = pre'`,
+  -- `hfp : fp = fp'` are the normalization equations, or `none` when unchanged.
+  let (pre', hpre) ← normalizeRegs i.pre
+  let (fp', hfp) ← normalizeRegs fp
+  -- The footprint `bytesAt ?bs addr` pays with the atom at `addr`: the address
+  -- is compared syntactically, never unified, and `?bs` takes that atom's
+  -- bytes. When no atom sits at `addr`, a region is sliced at `addr`, and
+  -- its slot atom pays; the bound is a subgoal.
+  let mut pre'' := pre'
+  let mut hslice : Option Expr := none
+  let mut sliceGoals : List MVarId := []
+  let mut paid := false
+  if fp'.isAppOfArity ``MProp.bytesAt 3 then
+    let addr := fp'.appArg!
+    let payer? := (← Kraken.Tactic.reifyClauses pre').find? fun c =>
+      c.isAppOfArity ``MProp.bytesAt 3 && c.appArg! == addr
+    match payer? with
+    | some c =>
+      paid ← withConfig (fun c => { c with assignSyntheticOpaque := true }) <|
+        withTransparency .instances (isDefEq fp' c)
+      trace[Elab.Tactic.Do.vcgen] "sep frameproc: footprint paid by{indentExpr c}"
+    | none =>
+      for atom in ← regionAtoms pre' do
+        let L := atom.appFn!.appArg!
+        let a₀ := atom.appArg!
+        let hb ← mkFreshExprSyntheticOpaqueMVar
+          (← mkAppNS (← mkConstS ``MProp.SliceBound) #[L, a₀, addr])
+        let heq ← mkAppNS (← mkConstS ``MProp.bytesAt_slice) #[L, a₀, addr, hb]
+        let some (_, _, sliced) := (← instantiateMVarsS (← Sym.inferType heq)).eq? | continue
+        -- the slot atom of the slice sits at `addr`
+        let some slot := (← Kraken.Tactic.reifyClauses sliced).find? fun c =>
+            c.isAppOfArity ``MProp.bytesAt 3 && c.appArg! == addr | continue
+        unless ← withConfig (fun c => { c with assignSyntheticOpaque := true }) <|
+            withTransparency .instances (isDefEq fp' slot) do continue
+        let mprop ← mkAppNS (← mkConstS ``MProp) #[w64]
+        let ctx := Expr.lam `x mprop (pre'.replace fun e => if e == atom then some (.bvar 0) else none) .default
+        hslice := some (← mkAppNS (← mkConstS ``congrArg [.succ .zero, .succ .zero])
+          #[mprop, mprop, atom, sliced, ctx, heq])
+        pre'' := pre'.replace fun e => if e == atom then some sliced else none
+        sliceGoals := [hb.mvarId!]
+        paid := true
+        trace[Elab.Tactic.Do.vcgen] "sep frameproc: sliced{indentExpr atom}\nat{indentExpr addr}"
+        break
+  let fp' ← instantiateMVarsS fp'
   let R ← mkFreshExprMVar (← mkAppNS (← mkConstS ``MProp) #[w64])
-  let target ← mkAppNS (← mkConstS ``MProp.sep) #[w64, fp, R]
-  let hc? ← withConfig (fun c => { c with assignSyntheticOpaque := true }) <|
-    withTransparency .default <| Kraken.Tactic.solveSepEq i.pre target
+  let target ← mkAppNS sep #[w64, fp', R]
+  let hc? ← if paid then
+      withConfig (fun c => { c with assignSyntheticOpaque := true }) <|
+        withTransparency .default <| Kraken.Tactic.solveSepEq pre'' target
+    else pure none
+  if hc?.isNone then
+    trace[Elab.Tactic.Do.vcgen] "sep frameproc: no split of{indentExpr pre'}\nfor{indentExpr fp'}"
+  else
+    trace[Elab.Tactic.Do.vcgen] "sep frameproc: cancelled"
   match hc? with
   | some _ =>
     -- The naked remainder comes back as a clause list ending in `emp`. Rebuild
     -- the frame from its clauses and certify the split against that spelling.
     let clauses ← Kraken.Tactic.reifyClauses (← instantiateMVarsS R)
-    let sep ← mkConstS ``MProp.sep
     let R ← match clauses.reverse with
       | [] => mkAppNS (← mkConstS ``MProp.emp) #[w64]
       | c :: cs => cs.foldlM (fun acc c => mkAppNS sep #[w64, c, acc]) c
     let R ← shareCommon R
-    let target ← mkAppNS sep #[w64, ← instantiateMVarsS fp, R]
-    let some hc ← withTransparency .default (Kraken.Tactic.solveSepEq i.pre target)
+    trace[Elab.Tactic.Do.vcgen] "sep frameproc: frame{indentExpr R}"
+    let fp' ← instantiateMVarsS fp'
+    let target ← mkAppNS sep #[w64, fp', R]
+    let some hc'' ← withTransparency .default (Kraken.Tactic.solveSepEq pre'' target)
       | throwError "sep frameproc: the remainder{indentExpr R}\ndoes not recombine with the footprint"
+    trace[Elab.Tactic.Do.vcgen] "sep frameproc: recombined"
+    -- `hc : i.pre = fp ∗ R` from `i.pre = pre' = pre'' = fp' ∗ R = fp ∗ R`
+    let mprop ← mkAppNS (← mkConstS ``MProp) #[w64]
+    let eqTrans ← mkConstS ``Eq.trans [.succ .zero]
+    let trans (a b c h₁ h₂ : Expr) : Lean.Meta.Grind.GrindM Expr :=
+      mkAppNS eqTrans #[mprop, a, b, c, h₁, h₂]
+    let fp ← instantiateMVarsS fp
+    let fpR ← mkAppNS sep #[w64, fp, R]
+    let fp'R ← mkAppNS sep #[w64, fp', R]
+    let mut hc := hc''
+    let mut preL := pre''
+    if let some hs := hslice then
+      hc ← trans pre' pre'' fp'R hs hc; preL := pre'
+    if let some hp := hpre then
+      hc ← trans i.pre pre' fp'R hp hc; preL := i.pre
+    if let some hf := hfp then
+      -- `fp' ∗ R = fp ∗ R` from `fp = fp'`
+      let hfR ← mkAppNS (← mkConstS ``congrArg [.succ .zero, .succ .zero])
+        #[mprop, mprop, fp', fp, Expr.lam `x mprop (← mkAppNS sep #[w64, .bvar 0, R]) .default,
+          ← mkAppNS (← mkConstS ``Eq.symm [.succ .zero]) #[mprop, fp, fp', hf]]
+      hc ← trans preL fp'R fpR hc hfR
     goal.frame.assign R
+    trace[Elab.Tactic.Do.vcgen] "sep frameproc: equations chained"
     let specPre ← shareCommon (← instantiateMVarsS specPre)
     let fp ← shareCommon (← instantiateMVarsS fp)
     goal.footprint.assign specPre
@@ -154,11 +245,11 @@ def sepFrameSplit (i : FrameInferenceInfo) (goal : FrameGoal) :
           pure (hφ, hφ.mvarId!)
       let prf ← mkAppNS (← mkConstS ``SepWP.split_of_eq_ofProp)
         #[i.pre, fp, R, W, ss[0]!, ss[1]!, ss[2]!, φ, hc, hφ, goal.specProof]
-      return { splitVCProof := prf, subgoals := [sub] }
+      return { splitVCProof := prf, subgoals := sub :: sliceGoals }
     | none =>
       let prf ← mkAppNS (← mkConstS ``SepWP.split_of_eq)
         #[i.pre, fp, R, W, ss[0]!, ss[1]!, ss[2]!, hc, goal.specProof]
-      return { splitVCProof := prf, subgoals := [] }
+      return { splitVCProof := prf, subgoals := sliceGoals }
   | none =>
     goal.frame.assign (← mkAppNS (← mkConstS ``MProp.emp) #[w64])
     goal.footprint.assign i.pre

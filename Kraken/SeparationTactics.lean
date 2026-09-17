@@ -8,7 +8,7 @@ namespace Kraken.Tactic
 
 private partial def denoteClauses (predType : Expr) : List Expr → MetaM Expr
   | [] => do
-    let predType ← whnf predType
+    let predType ← withTransparency .default (whnf predType)
     withLocalDeclD `m predType.bindingDomain! fun m => do
       let body ← mkAppM ``Std.ExtHashMap.emp #[m]
       mkLambdaFVars #[m] body (etaReduce := true)
@@ -71,21 +71,25 @@ private def isNakedMVar : Expr → Bool
 
 -- Closed clauses can be cancelled greedily: unlike clauses containing
 -- metavariables, matching them cannot constrain a later cancellation choice.
-private partial def cancelClosedClauses : List Expr → List Expr → MetaM (List Expr × List Expr)
+-- `matchFn` decides a pair; the syntactic pass runs before the unfolding one,
+-- so a pair that agrees on the nose never pays for unfolding a mismatch.
+private partial def cancelClosedClauses (matchFn : Expr → Expr → MetaM Bool) :
+    List Expr → List Expr → MetaM (List Expr × List Expr)
   | [], rhs => return ([], rhs)
   | l :: ls, rhs => do
     if l.hasExprMVar then
-      let (ls, rhs) ← cancelClosedClauses ls rhs
+      let (ls, rhs) ← cancelClosedClauses matchFn ls rhs
       return (l :: ls, rhs)
     let some j ← rhs.toArray.findIdxM? (fun r => do
         if r.hasExprMVar then return false
-        matchClosed l r) | do
-      let (ls, rhs) ← cancelClosedClauses ls rhs
+        matchFn l r) | do
+      let (ls, rhs) ← cancelClosedClauses matchFn ls rhs
       return (l :: ls, rhs)
-    cancelClosedClauses ls (rhs.eraseIdx j)
+    cancelClosedClauses matchFn ls (rhs.eraseIdx j)
 
 private partial def cancelClauses (predType : Expr) (lhs rhs : List Expr) : MetaM Bool := do
-  let (lhs, rhs) ← cancelClosedClauses lhs rhs
+  let (lhs, rhs) ← cancelClosedClauses (fun l r => pure (l == r)) lhs rhs
+  let (lhs, rhs) ← cancelClosedClauses (fun l r => matchClosed l r) lhs rhs
   if lhs.isEmpty && rhs.isEmpty then return true
   for i in List.range lhs.length do
     for j in List.range rhs.length do
@@ -110,7 +114,10 @@ private partial def alignClauses : List Expr → List Expr → MetaM (Option (Li
     -- Alignment tolerates spelling differences the cancellation phase resolved
     -- by unification: fall back to reducible defeq, and only when no atom
     -- matches syntactically, so the common case pays nothing.
-    let i? ← lhs.toArray.findIdxM? (fun l => matchAtom l r)
+    let i? := lhs.toArray.findIdx? (· == r)
+    let i? ← match i? with
+      | some i => pure (some i)
+      | none => lhs.toArray.findIdxM? (fun l => matchAtom l r)
     let some i ← (match i? with
       | some i => pure (some i)
       | none => lhs.toArray.findIdxM? (fun l => withDefault (isDefEq l r)))
@@ -193,6 +200,13 @@ def evalEcancel : Tactic :=
       let args := target.getAppArgs
       if let some proof ← solveSepEq args[1]! args[2]! then
         goal.assign proof
+        return true
+    -- An entailment between two clause lists that are equal up to AC.
+    if target.isAppOfArity ``Lean.Order.PartialOrder.rel 4 then
+      let args := target.getAppArgs
+      if let some proof ← solveSepEq args[2]! args[3]! then
+        goal.assign (← mkAppOptM ``Lean.Order.PartialOrder.rel_of_eq
+          #[args[0]!, args[1]!, args[2]!, args[3]!, proof])
         return true
     for localDecl? in (← getLCtx).decls.toArray.reverse do
       if let some localDecl := localDecl? then
