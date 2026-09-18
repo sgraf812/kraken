@@ -12,10 +12,10 @@ open Std.WP
 open Lean.Order
 open scoped SepWP
 
-set_option mvcgen.warning false
+set_option experimental.vcgen true
 
 attribute [local grind ←] Lean.Order.le_ofProp
-attribute [local grind =] Int.toBytes_length UInt64.toBytes_length ofBytes_toBytes
+attribute [local grind =] Int.toBytes_length UInt64.toBytes_length BitVec.ofInt_ofBytes_toBytes
 
 def alu_mem : Program := parse("
   movq $42, %rax

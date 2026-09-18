@@ -14,7 +14,7 @@ open Std.WP
 open Lean.Order
 open scoped SepWP
 
-set_option mvcgen.warning false
+set_option experimental.vcgen true
 
 
 def dynamic_stack : Program := parse("
@@ -30,7 +30,7 @@ def dynamic_stack : Program := parse("
 ")
 
 attribute [local grind ←] Lean.Order.le_ofProp MProp.SliceBound.intro
-attribute [local grind =] Int.toBytes_length ofBytes_toBytes List.length_take List.length_drop
+attribute [local grind =] Int.toBytes_length BitVec.ofInt_ofBytes_toBytes List.length_take List.length_drop
 
 theorem dynamic_stack_correct [CodeEnv] (stack : List UInt8) (lstack : stack.length = 1024)
     (r₀ : Reg64s) (h : (r₀.get64 .r9).toNat + (r₀.get64 .r15).toNat < 125) :
