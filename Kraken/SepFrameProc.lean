@@ -68,12 +68,17 @@ theorem split_emp {pre : MProp 64}
   rw [frameOp_apply, MProp.emp_sep]
   exact h
 
-/-- Normalize the register reads of an address: `(r.set64 x v).get64 y` reads
-through the write. The atoms of a precondition were stated at an earlier
-register file than the address the current instruction computes. -/
+/-- Normalize the register reads of an address to `get64` reads through the
+writes: `(r.set64 x v).get64 y` reads through the write, and a field
+`r.rax.toBitVec` is the read `r.get64 rax`. The atoms of a precondition may
+be stated on the fields, at an earlier register file than the address the
+current instruction computes. -/
 def normalizeRegs (e : Expr) : MetaM (Expr × Option Expr) := do
-  let thms ← ({} : SimpTheorems).addConst ``Reg64s.get64_set64
-  let thms ← thms.addConst ``eq_self_iff_true
+  let mut thms ← ({} : SimpTheorems).addConst ``Reg64s.get64_set64
+  thms ← thms.addConst ``eq_self_iff_true
+  -- a field spelling of a register read is its `get64` read
+  for n in [``Reg64s.get64_r10, ``Reg64s.get64_r11, ``Reg64s.get64_r12, ``Reg64s.get64_r13, ``Reg64s.get64_r14, ``Reg64s.get64_r15, ``Reg64s.get64_r8, ``Reg64s.get64_r9, ``Reg64s.get64_rax, ``Reg64s.get64_rbp, ``Reg64s.get64_rbx, ``Reg64s.get64_rcx, ``Reg64s.get64_rdi, ``Reg64s.get64_rdx, ``Reg64s.get64_rsi, ``Reg64s.get64_rsp] do
+    thms ← thms.addConst n (inv := true)
   let ctx ← Simp.mkContext {} (simpTheorems := #[thms])
   let (r, _) ← Meta.simp e ctx (simprocs := #[← Simp.getSimprocs])
   return (r.expr, r.proof?)

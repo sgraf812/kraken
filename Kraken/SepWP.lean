@@ -274,42 +274,58 @@ end SepWP
 
 /-! ## Reading a triple back as the baseline judgment
 
-A separation triple with no exits, under a memory frame `R`, is a run of the
-laid-out program from any state whose memory splits into `R` and the
-precondition, ending in a state whose memory splits into `R` and the
-postcondition. -/
+A separation triple whose precondition and postcondition are a pure fact
+about the registers next to a memory assertion, with no exits, is a run of
+the laid-out program: from any state whose registers satisfy the fact and
+whose memory splits into the assertion and a frame `R`, the run ends in a
+state whose registers satisfy the post's fact. The memory post is dropped;
+`run_of_sep_triple_mem` keeps it. -/
 open MachineWP in
-theorem run_of_sep_triple [CodeEnv] [layout : _root_.Layout] {p : Program}
+theorem run_of_sep_triple_mem [CodeEnv] [layout : _root_.Layout] {p : Program}
     [Kraken.Executable.ValidLayout (layout p)]
-    {P : Reg64s → RegZmms → StatusFlags → MProp 64}
-    {Q : Unit → Reg64s → RegZmms → StatusFlags → MProp 64}
-    (ht : P ⊑ WP.wp (self := SepWP.instWP) p Q ⊥) (R : MProp 64) {s : MachineData}
-    (hs : (R ∗ P s.regs s.zmms s.status) s.dmem) {dlast : Directive}
+    {φ ψ : Reg64s → Prop} {P Q : Reg64s → MProp 64}
+    (ht : (fun r _ _ => ⌜φ r⌝ ⊓ P r) ⊑ WP.wp (self := SepWP.instWP) p (fun _ r _ _ => ⌜ψ r⌝ ⊓ Q r) ⊥)
+    {R : MProp 64} {s : MachineData} (hφ : φ s.regs) (hmem : s.dmem =⋆ P s.regs ⋆ R)
+    {dlast : Directive}
     (henv : cenv = layout p := by rfl)
     (hlast : p[p.length - 1]? = some dlast := by rfl)
     (hd : dlast.isLabel = false := by rfl) :
     Eventually (straightlineStep (layout p))
-      (fun st => (R ∗ Q () st.1.regs st.1.zmms st.1.status) st.1.dmem)
+      (fun st => ψ st.1.regs ∧ st.1.dmem =⋆ Q st.1.regs ⋆ R)
       (s, Kraken.Layout.start Directive) := by
-  refine Program.run_of_triple (P := fun s => (R ∗ P s.regs s.zmms s.status) s.dmem)
-    (Q := fun _ s' => (R ∗ Q () s'.regs s'.zmms s'.status) s'.dmem) ⟨fun s hs => ?_⟩ hs henv hlast hd
+  have hpre : (R ∗ (⌜φ s.regs⌝ ⊓ P s.regs)) s.dmem := by
+    obtain ⟨m₁, m₂, hu, hd, hP, hR⟩ := hmem
+    refine ⟨m₂, m₁, ?_, Std.ExtHashMap.disjoint_symm hd, hR,
+      (MProp.meet_apply _ _ m₁).mpr ⟨(MProp.ofProp_apply_iff _ m₁).mpr hφ, hP⟩⟩
+    rw [← hu]; exact (Std.ExtHashMap.union_comm_of_disjoint m₁ m₂ hd).symm
+  refine Program.run_of_triple (P := fun s => (R ∗ (⌜φ s.regs⌝ ⊓ P s.regs)) s.dmem)
+    (Q := fun _ s' => ψ s'.regs ∧ s'.dmem =⋆ Q s'.regs ⋆ R) ⟨fun s hs => ?_⟩ hpre henv hlast hd
   rw [MachineWP.wp_eq]
-  have h := SepWP.sep_elim (q := p) (F := R) (Q := Q) (E := ⊥)
+  have h := SepWP.sep_elim (q := p) (F := R) (Q := fun _ r _ _ => ⌜ψ r⌝ ⊓ Q r) (E := ⊥)
     (MProp.sep_mono_right R (ht s.regs s.zmms s.status) s.dmem hs)
-  refine Kraken.Executable.wp_mono (fun _ h => h) (fun a s' hE => ?_) h
-  obtain ⟨_, m₂, _, _, _, hb⟩ := hE
-  exact False.elim (bot_le (fun _ _ _ _ _ => False : Int64 → Reg64s → RegZmms → StatusFlags → MProp 64)
-    a s'.regs s'.zmms s'.status m₂ hb)
+  refine Kraken.Executable.wp_mono (fun s' hq => ?_) (fun a s' hE => ?_) h
+  · obtain ⟨m₁, m₂, hu, hd, hR, hq⟩ := hq
+    obtain ⟨hψ, hQ⟩ := (MProp.meet_apply _ _ m₂).mp hq
+    refine ⟨(MProp.ofProp_apply_iff _ m₂).mp hψ, m₂, m₁, ?_, Std.ExtHashMap.disjoint_symm hd, hQ, hR⟩
+    rw [← hu]; exact (Std.ExtHashMap.union_comm_of_disjoint m₁ m₂ hd).symm
+  · obtain ⟨_, m₂, _, _, _, hb⟩ := hE
+    exact False.elim (bot_le (fun _ _ _ _ _ => False : Int64 → Reg64s → RegZmms → StatusFlags → MProp 64)
+      a s'.regs s'.zmms s'.status m₂ hb)
 
-
-
-
-/-! ## Smoke tests
-
-The instance carries real content: the frame survives a register write, and a
-jump carries it into the exit channel. The machine-side obligations are
-discharged at `Executable.wp` directly; the dictionary lifting has its own
-sections. -/
+open MachineWP in
+theorem run_of_sep_triple [CodeEnv] [layout : _root_.Layout] {p : Program}
+    [Kraken.Executable.ValidLayout (layout p)]
+    {φ ψ : Reg64s → Prop} {P Q : Reg64s → MProp 64}
+    (ht : (fun r _ _ => ⌜φ r⌝ ⊓ P r) ⊑ WP.wp (self := SepWP.instWP) p (fun _ r _ _ => ⌜ψ r⌝ ⊓ Q r) ⊥)
+    {R : MProp 64} {s : MachineData} (hφ : φ s.regs) (hmem : s.dmem =⋆ P s.regs ⋆ R)
+    {dlast : Directive}
+    (henv : cenv = layout p := by rfl)
+    (hlast : p[p.length - 1]? = some dlast := by rfl)
+    (hd : dlast.isLabel = false := by rfl) :
+    Eventually (straightlineStep (layout p)) (fun st => ψ st.1.regs)
+      (s, Kraken.Layout.start Directive) :=
+  eventually_weaken _ _ _ _ (fun _ h => h.1)
+    (run_of_sep_triple_mem ht hφ hmem henv hlast hd)
 
 section Smoke
 
