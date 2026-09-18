@@ -36,6 +36,10 @@ eight bytes, and the region fits the address space. -/
 def MProp.SliceBound (L : List UInt8) (a₀ addr : BitVec 64) : Prop :=
   (addr - a₀).toNat + 8 ≤ L.length ∧ L.length ≤ 2 ^ 64
 
+theorem MProp.SliceBound.intro {L : List UInt8} {a₀ addr : BitVec 64}
+    (h8 : (addr - a₀).toNat + 8 ≤ L.length) (hL : L.length ≤ 2 ^ 64) :
+    MProp.SliceBound L a₀ addr := ⟨h8, hL⟩
+
 /-- A region holds a slot: the bytes at `a₀` split at the offset of `addr`
 into the bytes before, the eight bytes at `addr`, and the bytes after. -/
 theorem MProp.bytesAt_slice (L : List UInt8) (a₀ addr : BitVec 64)
