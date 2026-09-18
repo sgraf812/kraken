@@ -27,45 +27,6 @@ theorem MProp.sep_left_comm {w : Nat} (P Q R : MProp w) :
     P ∗ (Q ∗ R) = Q ∗ (P ∗ R) :=
   Std.ExtHashMap.sep_comm_l P Q R
 
-/-- The offset of `addr` in the region of `L` bytes at `a₀` leaves room for
-eight bytes, and the region fits the address space. -/
-def MProp.SliceBound (L : List UInt8) (a₀ addr : BitVec 64) : Prop :=
-  (addr - a₀).toNat + 8 ≤ L.length ∧ L.length ≤ 2 ^ 64
-
-theorem MProp.SliceBound.intro {L : List UInt8} {a₀ addr : BitVec 64}
-    (h8 : (addr - a₀).toNat + 8 ≤ L.length) (hL : L.length ≤ 2 ^ 64) :
-    MProp.SliceBound L a₀ addr := ⟨h8, hL⟩
-
-/-- A region holds a slot: the bytes at `a₀` split at the offset of `addr`
-into the bytes before, the eight bytes at `addr`, and the bytes after. -/
-theorem List.AtM_slice (L : List UInt8) (a₀ addr : BitVec 64)
-    (hb : MProp.SliceBound L a₀ addr) :
-    L.AtM a₀
-      = (L.take (addr - a₀).toNat).AtM a₀
-        ∗ (((L.drop (addr - a₀).toNat).take 8).AtM addr
-          ∗ (L.drop ((addr - a₀).toNat + 8)).AtM (addr + 8#64)) := by
-  obtain ⟨hk, hL⟩ := hb
-  have h1 : L = L.take (addr - a₀).toNat ++ L.drop (addr - a₀).toNat :=
-    (List.take_append_drop _ L).symm
-  have h2 : L.drop (addr - a₀).toNat
-      = (L.drop (addr - a₀).toNat).take 8 ++ L.drop ((addr - a₀).toNat + 8) := by
-    rw [← List.drop_drop, List.take_append_drop]
-  have hlen1 : (L.take (addr - a₀).toNat).length = (addr - a₀).toNat := by
-    rw [List.length_take]; omega
-  have hlen2 : ((L.drop (addr - a₀).toNat).take 8).length = 8 := by
-    rw [List.length_take, List.length_drop]; omega
-  have e1 := Mem.At_append_sep (L.take (addr - a₀).toNat) (L.drop (addr - a₀).toNat) a₀
-    (by rw [← List.length_append, ← h1]; exact hL)
-  have e2 := Mem.At_append_sep ((L.drop (addr - a₀).toNat).take 8)
-    (L.drop ((addr - a₀).toNat + 8)) addr
-    (by rw [← List.length_append, ← h2, List.length_drop]; omega)
-  rw [hlen1, BitVec.ofNat_toNat, BitVec.setWidth_eq, BitVec.add_comm, BitVec.sub_add_cancel] at e1
-  rw [hlen2] at e2
-  show Eq (L.At a₀) = Eq ((L.take (addr - a₀).toNat).At a₀)
-    ⋆ (Eq (((L.drop (addr - a₀).toNat).take 8).At addr)
-      ⋆ Eq ((L.drop ((addr - a₀).toNat + 8)).At (addr + 8#64)))
-  rw [← e2, ← h2, ← e1, ← h1]
-
 /-- The address a `disp(base)` expression computes, at 64-bit address size:
 the base register plus the displacement. The form every spec's `ha`
 instantiates at. -/

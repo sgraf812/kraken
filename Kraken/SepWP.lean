@@ -14,6 +14,7 @@ fall-through and across every exit. `SepWP.sep_intro` is the one door in, and
 what the frame inference of `vcgen` consumes.
 -/
 import Kraken.MachineWP
+import Kraken.SeparationMem
 import Kraken.SeparationTactics
 
 open Std.WP
@@ -148,6 +149,98 @@ abbrev UInt16.AtM {w : Nat} (v : UInt16) (a : BitVec w) : MProp w := v.toBytes.A
 
 /-- The byte `v` sits at `a`. -/
 abbrev UInt8.AtM {w : Nat} (v : UInt8) (a : BitVec w) : MProp w := v.toBytes.AtM a
+
+/-- The offset of `addr` in the region of `L` bytes at `a₀` leaves room for
+eight bytes, and the region fits the address space. -/
+def MProp.SliceBound (L : List UInt8) (a₀ addr : BitVec 64) : Prop :=
+  (addr - a₀).toNat + 8 ≤ L.length ∧ L.length ≤ 2 ^ 64
+
+theorem MProp.SliceBound.intro {L : List UInt8} {a₀ addr : BitVec 64}
+    (h8 : (addr - a₀).toNat + 8 ≤ L.length) (hL : L.length ≤ 2 ^ 64) :
+    MProp.SliceBound L a₀ addr := ⟨h8, hL⟩
+
+/-- A region holds a slot: the bytes at `a₀` split at the offset of `addr`
+into the bytes before, the eight bytes at `addr`, and the bytes after. -/
+theorem List.AtM_slice (L : List UInt8) (a₀ addr : BitVec 64)
+    (hb : MProp.SliceBound L a₀ addr) :
+    L.AtM a₀
+      = (L.take (addr - a₀).toNat).AtM a₀
+        ∗ (((L.drop (addr - a₀).toNat).take 8).AtM addr
+          ∗ (L.drop ((addr - a₀).toNat + 8)).AtM (addr + 8#64)) := by
+  obtain ⟨hk, hL⟩ := hb
+  have h1 : L = L.take (addr - a₀).toNat ++ L.drop (addr - a₀).toNat :=
+    (List.take_append_drop _ L).symm
+  have h2 : L.drop (addr - a₀).toNat
+      = (L.drop (addr - a₀).toNat).take 8 ++ L.drop ((addr - a₀).toNat + 8) := by
+    rw [← List.drop_drop, List.take_append_drop]
+  have hlen1 : (L.take (addr - a₀).toNat).length = (addr - a₀).toNat := by
+    rw [List.length_take]; omega
+  have hlen2 : ((L.drop (addr - a₀).toNat).take 8).length = 8 := by
+    rw [List.length_take, List.length_drop]; omega
+  have e1 := Mem.At_append_sep (L.take (addr - a₀).toNat) (L.drop (addr - a₀).toNat) a₀
+    (by rw [← List.length_append, ← h1]; exact hL)
+  have e2 := Mem.At_append_sep ((L.drop (addr - a₀).toNat).take 8)
+    (L.drop ((addr - a₀).toNat + 8)) addr
+    (by rw [← List.length_append, ← h2, List.length_drop]; omega)
+  rw [hlen1, BitVec.ofNat_toNat, BitVec.setWidth_eq, BitVec.add_comm, BitVec.sub_add_cancel] at e1
+  rw [hlen2] at e2
+  show Eq (L.At a₀) = Eq ((L.take (addr - a₀).toNat).At a₀)
+    ⋆ (Eq (((L.drop (addr - a₀).toNat).take 8).At addr)
+      ⋆ Eq ((L.drop ((addr - a₀).toNat + 8)).At (addr + 8#64)))
+  rw [← e2, ← h2, ← e1, ← h1]
+
+/-! ## The algebra for `ecancel`
+
+`MProp.sepOps` registers the separation algebra of `MProp` with the
+cancellation engine. Its normalizer brings register reads to `get64` reads
+through the writes and word atoms to byte atoms, so the addresses of a
+spec's footprint and of a precondition's atoms agree syntactically; its split
+hook pays a footprint at an address inside a region by `List.AtM_slice`. -/
+
+namespace MProp
+
+open Lean Meta in
+/-- Normalize the register reads of an address to `get64` reads through the
+writes, and word atoms to byte atoms. -/
+def normalizeAtoms (e : Expr) : MetaM (Expr × Option Expr) := do
+  let mut thms ← ({} : SimpTheorems).addConst ``Reg64s.get64_set64
+  thms ← thms.addConst ``eq_self_iff_true
+  for n in [``UInt64.AtM, ``UInt32.AtM, ``UInt16.AtM, ``UInt8.AtM] do
+    thms ← thms.addDeclToUnfold n
+  for n in [``Reg64s.get64_r10, ``Reg64s.get64_r11, ``Reg64s.get64_r12, ``Reg64s.get64_r13, ``Reg64s.get64_r14, ``Reg64s.get64_r15, ``Reg64s.get64_r8, ``Reg64s.get64_r9, ``Reg64s.get64_rax, ``Reg64s.get64_rbp, ``Reg64s.get64_rbx, ``Reg64s.get64_rcx, ``Reg64s.get64_rdi, ``Reg64s.get64_rdx, ``Reg64s.get64_rsi, ``Reg64s.get64_rsp] do
+    thms ← thms.addConst n (inv := true)
+  let ctx ← Simp.mkContext {} (simpTheorems := #[thms])
+  let (r, _) ← Meta.simp e ctx (simprocs := #[← Simp.getSimprocs])
+  return (r.expr, r.proof?)
+
+open Lean Meta in
+/-- Pay an address inside a region: split the region atom at the address by
+`List.AtM_slice`, with the bound as the side goal. Stored values
+(`Int.toBytes …`) are never split. -/
+def splitAtom (atom addr : Expr) : MetaM (Option (Expr × Expr × MVarId)) := do
+  unless atom.isAppOfArity ``List.AtM 3 do return none
+  let L := atom.appFn!.appArg!
+  if L.isAppOf ``Int.toBytes then return none
+  let a₀ := atom.appArg!
+  let hb ← mkFreshExprSyntheticOpaqueMVar (← mkAppM ``MProp.SliceBound #[L, a₀, addr])
+  let heq ← mkAppM ``List.AtM_slice #[L, a₀, addr, hb]
+  let some (_, _, sliced) := (← instantiateMVars (← inferType heq)).eq? | return none
+  return some (sliced, heq, hb.mvarId!)
+
+open Lean Meta in
+def sepOps : Kraken.Tactic.SepOps where
+  sep := ``MProp.sep
+  emp := ``MProp.emp
+  isCarrier := fun ty => pure (ty.isAppOfArity ``MProp 1)
+  mkSep := fun predType p q => mkAppOptM ``MProp.sep #[predType.appArg!, p, q]
+  mkEmp := fun predType => mkAppOptM ``MProp.emp #[predType.appArg!]
+  normalize := normalizeAtoms
+  split? := splitAtom
+  addr? := fun e => if e.isAppOfArity ``List.AtM 3 then some e.appArg! else none
+
+initialize Kraken.Tactic.sepOpsRef.modify (sepOps :: ·)
+
+end MProp
 
 /-! ## The frame operators
 
