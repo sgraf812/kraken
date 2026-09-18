@@ -88,6 +88,15 @@ theorem ofProp_apply_iff (p : Prop) (m : Mem w) : (⌜p⌝ : MProp w) m ↔ p :=
   · exact fun h => ofProp_le p (fun _ => p : MProp w) (fun hp _ _ => hp) m h
   · exact fun hp => le_ofProp (fun m' => m' = m : MProp w) p hp m rfl
 
+/-- The bottom assertion holds of no memory; from the lattice axioms alone. -/
+theorem bot_apply_iff (m : Mem w) : (⊥ : MProp w) m ↔ False :=
+  ⟨fun h => bot_le (fun _ => False : MProp w) m h, False.elim⟩
+
+/-- A frame next to a pure assertion yields the proposition. -/
+theorem sep_ofProp_elim {F : MProp w} {p : Prop} {m : Mem w} (h : (F ∗ ⌜p⌝) m) : p := by
+  obtain ⟨_, m₂, _, _, _, hp⟩ := h
+  exact (ofProp_apply_iff p m₂).mp hp
+
 /-- `(F ∗ ·)` preserves suprema: the split existential commutes with the
 join. Its upper adjoint is the magic wand, which the frame closure takes. -/
 instance (F : MProp w) : PreservesSup (MProp.sep F) where
@@ -104,6 +113,9 @@ instance (F : MProp w) : PreservesSup (MProp.sep F) where
       exact ⟨F ∗ P, ⟨P, hP, rfl⟩, m₁, m₂, hu, hd, hF, hPm⟩
     · rintro ⟨g, ⟨P, hP, rfl⟩, m₁, m₂, hu, hd, hF, hPm⟩
       exact ⟨m₁, m₂, hu, hd, hF, (sup_apply s m₂).mpr ⟨P, hP, hPm⟩⟩
+
+theorem sep_mono_right (P : MProp w) {Q Q' : MProp w} (h : Q ⊑ Q') : P ∗ Q ⊑ P ∗ Q' :=
+  PreservesSup.map_mono (MProp.sep P) h
 
 /-- The magic wand: the upper adjoint of `(P ∗ ·)`. `P -∗ Q` owns what,
 joined with a disjoint `P`, yields `Q`. -/
@@ -259,6 +271,36 @@ where `vcgen` sequences them. -/
   frames [d] F
 
 end SepWP
+
+/-! ## Reading a triple back as the baseline judgment
+
+A separation triple with no exits, under a memory frame `R`, is a run of the
+laid-out program from any state whose memory splits into `R` and the
+precondition, ending in a state whose memory splits into `R` and the
+postcondition. -/
+open MachineWP in
+theorem run_of_sep_triple [CodeEnv] [layout : _root_.Layout] {p : Program}
+    [Kraken.Executable.ValidLayout (layout p)]
+    {P : Reg64s → RegZmms → StatusFlags → MProp 64}
+    {Q : Unit → Reg64s → RegZmms → StatusFlags → MProp 64}
+    (ht : P ⊑ WP.wp (self := SepWP.instWP) p Q ⊥) (R : MProp 64) {s : MachineData}
+    (hs : (R ∗ P s.regs s.zmms s.status) s.dmem) {dlast : Directive}
+    (henv : cenv = layout p := by rfl)
+    (hlast : p[p.length - 1]? = some dlast := by rfl)
+    (hd : dlast.isLabel = false := by rfl) :
+    Eventually (straightlineStep (layout p))
+      (fun st => (R ∗ Q () st.1.regs st.1.zmms st.1.status) st.1.dmem)
+      (s, Kraken.Layout.start Directive) := by
+  refine Program.run_of_triple (P := fun s => (R ∗ P s.regs s.zmms s.status) s.dmem)
+    (Q := fun _ s' => (R ∗ Q () s'.regs s'.zmms s'.status) s'.dmem) ⟨fun s hs => ?_⟩ hs henv hlast hd
+  rw [MachineWP.wp_eq]
+  have h := SepWP.sep_elim (q := p) (F := R) (Q := Q) (E := ⊥)
+    (MProp.sep_mono_right R (ht s.regs s.zmms s.status) s.dmem hs)
+  refine Kraken.Executable.wp_mono (fun _ h => h) (fun a s' hE => ?_) h
+  obtain ⟨_, m₂, _, _, _, hb⟩ := hE
+  exact False.elim (bot_le (fun _ _ _ _ _ => False : Int64 → Reg64s → RegZmms → StatusFlags → MProp 64)
+    a s'.regs s'.zmms s'.status m₂ hb)
+
 
 
 

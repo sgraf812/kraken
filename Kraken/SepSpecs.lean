@@ -22,10 +22,6 @@ open scoped SepWP
 
 /-! ## Assertion-level plumbing -/
 
-theorem MProp.sep_mono_right {w : Nat} (P : MProp w) {Q Q' : MProp w} (h : Q ⊑ Q') :
-    P ∗ Q ⊑ P ∗ Q' :=
-  PreservesSup.map_mono (MProp.sep P) h
-
 /-- Rotate the middle assertion out: `P ∗ (Q ∗ R) = Q ∗ (P ∗ R)`. -/
 theorem MProp.sep_left_comm {w : Nat} (P Q R : MProp w) :
     P ∗ (Q ∗ R) = Q ∗ (P ∗ R) :=
