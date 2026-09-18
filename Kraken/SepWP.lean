@@ -43,9 +43,6 @@ def sep (P Q : MProp w) : MProp w := Std.ExtHashMap.sep P Q
 /-- The empty assertion: no memory is owned. -/
 def emp : MProp w := Std.ExtHashMap.emp
 
-/-- The bytes `bs` sit at `a`, and nothing else is owned. -/
-def bytesAt (bs : List UInt8) (a : BitVec w) : MProp w := Eq (bs.At a)
-
 theorem sep_assoc (P Q R : MProp w) : (P ∗ Q) ∗ R = P ∗ (Q ∗ R) :=
   Std.ExtHashMap.sep_assoc P Q R
 
@@ -131,6 +128,26 @@ theorem sep_wand_elim (P Q : MProp w) : P ∗ (P -∗ Q) ⊑ Q :=
   Lean.Order.PreservesSup.upperAdjoint_le (MProp.sep P) Q
 
 end MProp
+
+/-! ## The atoms
+
+`bs.AtM a` owns exactly the bytes `bs` at `a`, the assertion counterpart of
+the memory `bs.At a`; `v.AtM a` owns a word, in the width of `v`. -/
+
+/-- The bytes `bs` sit at `a`, and nothing else is owned. -/
+def List.AtM {w : Nat} (bs : List UInt8) (a : BitVec w) : MProp w := Eq (bs.At a)
+
+/-- The eight bytes of `v` sit at `a`. -/
+abbrev UInt64.AtM {w : Nat} (v : UInt64) (a : BitVec w) : MProp w := v.toBytes.AtM a
+
+/-- The four bytes of `v` sit at `a`. -/
+abbrev UInt32.AtM {w : Nat} (v : UInt32) (a : BitVec w) : MProp w := v.toBytes.AtM a
+
+/-- The two bytes of `v` sit at `a`. -/
+abbrev UInt16.AtM {w : Nat} (v : UInt16) (a : BitVec w) : MProp w := v.toBytes.AtM a
+
+/-- The byte `v` sits at `a`. -/
+abbrev UInt8.AtM {w : Nat} (v : UInt8) (a : BitVec w) : MProp w := v.toBytes.AtM a
 
 /-! ## The frame operators
 

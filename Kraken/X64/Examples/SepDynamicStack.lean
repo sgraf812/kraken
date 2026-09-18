@@ -35,7 +35,7 @@ attribute [local grind =] Int.toBytes_length BitVec.ofInt_ofBytes_toBytes List.l
 theorem dynamic_stack_correct [CodeEnv] (stack : List UInt8) (lstack : stack.length = 1024)
     (rsp₀ : UInt64) :
     ⦃ fun r z f => ⌜r.rsp = rsp₀ ∧ r.r9.toNat + r.r15.toNat < 125⌝
-        ⊓ MProp.bytesAt stack (r.rsp.toBitVec - 1024#64) ⦄
+        ⊓ stack.AtM (r.rsp.toBitVec - 1024#64) ⦄
       dynamic_stack
     ⦃ fun _ r z f => ⌜r.rax = 42 ∧ r.rbx = 99 ∧ r.rsp = rsp₀⌝ ⦄ := by
   vcgen [dynamic_stack] with finish

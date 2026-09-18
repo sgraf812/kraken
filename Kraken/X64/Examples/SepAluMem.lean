@@ -25,9 +25,9 @@ def alu_mem : Program := parse("
 ")
 
 theorem alu_mem_correct [CodeEnv] (v : UInt64) :
-    ⦃ fun r z f => MProp.bytesAt v.toBytes (r.rdx.toBitVec + 136#64) ⦄
+    ⦃ fun r z f => v.AtM (r.rdx.toBitVec + 136#64) ⦄
       alu_mem
-    ⦃ fun _ r z f => ⌜r.rcx = 142⌝ ⊓ MProp.bytesAt (Int.toBytes 8 42) (r.rdx.toBitVec + 136#64) ⦄ := by
+    ⦃ fun _ r z f => ⌜r.rcx = 142⌝ ⊓ (Int.toBytes 8 42).AtM (r.rdx.toBitVec + 136#64) ⦄ := by
   vcgen [alu_mem] with finish
 
 /-! ## The baseline statement

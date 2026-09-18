@@ -38,12 +38,12 @@ theorem MProp.SliceBound.intro {L : List UInt8} {a₀ addr : BitVec 64}
 
 /-- A region holds a slot: the bytes at `a₀` split at the offset of `addr`
 into the bytes before, the eight bytes at `addr`, and the bytes after. -/
-theorem MProp.bytesAt_slice (L : List UInt8) (a₀ addr : BitVec 64)
+theorem List.AtM_slice (L : List UInt8) (a₀ addr : BitVec 64)
     (hb : MProp.SliceBound L a₀ addr) :
-    MProp.bytesAt L a₀
-      = MProp.bytesAt (L.take (addr - a₀).toNat) a₀
-        ∗ (MProp.bytesAt ((L.drop (addr - a₀).toNat).take 8) addr
-          ∗ MProp.bytesAt (L.drop ((addr - a₀).toNat + 8)) (addr + 8#64)) := by
+    L.AtM a₀
+      = (L.take (addr - a₀).toNat).AtM a₀
+        ∗ (((L.drop (addr - a₀).toNat).take 8).AtM addr
+          ∗ (L.drop ((addr - a₀).toNat + 8)).AtM (addr + 8#64)) := by
   obtain ⟨hk, hL⟩ := hb
   have h1 : L = L.take (addr - a₀).toNat ++ L.drop (addr - a₀).toNat :=
     (List.take_append_drop _ L).symm
@@ -117,9 +117,9 @@ the slot with the register's bytes, at the unchanged registers and flags. -/
 @[spec] theorem mov_store_reg_spec (b : Reg64) (d : Int64) (rs : Reg64)
     (bs : List UInt8) (hlen : bs.length = 8) :
     ⦃ fun r z f =>
-        ⌜MProp.bytesAt (Int.toBytes 8 (r.get64 rs).toInt) (r.get64 b + BitVec.ofInt 64 d.toInt)
+        ⌜(Int.toBytes 8 (r.get64 rs).toInt).AtM (r.get64 b + BitVec.ofInt 64 d.toInt)
             ⊑ Q () r z f⌝
-          ⊓ MProp.bytesAt bs (r.get64 b + BitVec.ofInt 64 d.toInt) ⦄
+          ⊓ bs.AtM (r.get64 b + BitVec.ofInt 64 d.toInt) ⦄
       Directive.instr (.regular .W64 .W64
           (.mov (.mem ⟨some (.reg b), none, .int64 d⟩)
             (.regOrMem (.reg (.low rs .W64)))))
@@ -128,7 +128,7 @@ the slot with the register's bytes, at the unchanged registers and flags. -/
   obtain ⟨mf, mm, hunion, hinter, hF, hM⟩ := hpre
   obtain ⟨hpost, hbs⟩ := (MProp.meet_apply _ _ mm).mp hM
   have hpost := (MProp.ofProp_apply_iff _ mm).mp hpost
-  have hown : (MProp.bytesAt bs (s.regs.get64 b + BitVec.ofInt 64 d.toInt) ∗ F) s.dmem :=
+  have hown : (bs.AtM (s.regs.get64 b + BitVec.ofInt 64 d.toInt) ∗ F) s.dmem :=
     ⟨mm, mf, by rw [← hunion]; exact (Std.ExtHashMap.union_comm_of_disjoint mf mm hinter).symm,
       Std.ExtHashMap.disjoint_symm hinter, hbs, hF⟩
   have hload : Mem.loadInt s.dmem (s.regs.get64 b + BitVec.ofInt 64 d.toInt) 8
@@ -144,7 +144,7 @@ the slot with the register's bytes, at the unchanged registers and flags. -/
     RegOrMem.interp, MachineData.set, MachineData.store, Reg64s.get_low64,
     AddrExpr.zeroExtend_interp_base_disp, hload, Effects.All, Kraken.Executable.after]
   refine Eventually.done _ (Or.inl ⟨rfl, ?_⟩)
-  have hnew : (MProp.bytesAt (Int.toBytes 8 (s.regs.get64 rs).toInt)
+  have hnew : ((Int.toBytes 8 (s.regs.get64 rs).toInt).AtM
       (s.regs.get64 b + BitVec.ofInt 64 d.toInt) ∗ F)
       (Mem.storeInt s.dmem (s.regs.get64 b + BitVec.ofInt 64 d.toInt) 8 (s.regs.get64 rs).toInt) :=
     hstore
@@ -155,9 +155,9 @@ the slot with the register's bytes, at the unchanged registers and flags. -/
 @[spec] theorem mov_store_imm_spec (b : Reg64) (d : Int64) (i : Int64)
     (bs : List UInt8) (hlen : bs.length = 8) :
     ⦃ fun r z f =>
-        ⌜MProp.bytesAt (Int.toBytes 8 (BitVec.setWidth 64 i.toBitVec).toInt)
+        ⌜(Int.toBytes 8 (BitVec.setWidth 64 i.toBitVec).toInt).AtM
             (r.get64 b + BitVec.ofInt 64 d.toInt) ⊑ Q () r z f⌝
-          ⊓ MProp.bytesAt bs (r.get64 b + BitVec.ofInt 64 d.toInt) ⦄
+          ⊓ bs.AtM (r.get64 b + BitVec.ofInt 64 d.toInt) ⦄
       Directive.instr (.regular .W64 .W64
           (.mov (.mem ⟨some (.reg b), none, .int64 d⟩) (.imm (.int64 i))))
     ⦃ Q ⦄ := by
@@ -165,7 +165,7 @@ the slot with the register's bytes, at the unchanged registers and flags. -/
   obtain ⟨mf, mm, hunion, hinter, hF, hM⟩ := hpre
   obtain ⟨hpost, hbs⟩ := (MProp.meet_apply _ _ mm).mp hM
   have hpost := (MProp.ofProp_apply_iff _ mm).mp hpost
-  have hown : (MProp.bytesAt bs (s.regs.get64 b + BitVec.ofInt 64 d.toInt) ∗ F) s.dmem :=
+  have hown : (bs.AtM (s.regs.get64 b + BitVec.ofInt 64 d.toInt) ∗ F) s.dmem :=
     ⟨mm, mf, by rw [← hunion]; exact (Std.ExtHashMap.union_comm_of_disjoint mf mm hinter).symm,
       Std.ExtHashMap.disjoint_symm hinter, hbs, hF⟩
   have hload : Mem.loadInt s.dmem (s.regs.get64 b + BitVec.ofInt 64 d.toInt) 8
@@ -181,7 +181,7 @@ the slot with the register's bytes, at the unchanged registers and flags. -/
     RegOrMem.interp, MachineData.set, MachineData.store,
     AddrExpr.zeroExtend_interp_base_disp, hload, Effects.All, Kraken.Executable.after]
   refine Eventually.done _ (Or.inl ⟨rfl, ?_⟩)
-  have hnew : (MProp.bytesAt (Int.toBytes 8 (BitVec.setWidth 64 i.toBitVec).toInt)
+  have hnew : ((Int.toBytes 8 (BitVec.setWidth 64 i.toBitVec).toInt).AtM
       (s.regs.get64 b + BitVec.ofInt 64 d.toInt) ∗ F)
       (Mem.storeInt s.dmem (s.regs.get64 b + BitVec.ofInt 64 d.toInt) 8
         (BitVec.setWidth 64 i.toBitVec).toInt) := hstore
@@ -192,9 +192,9 @@ the slot with the register's bytes, at the unchanged registers and flags. -/
 @[spec] theorem mov_store_reg_sib_spec (b i : Reg64) (d : Int64) (rs : Reg64)
     (bs : List UInt8) (hlen : bs.length = 8) :
     ⦃ fun r z f =>
-        ⌜MProp.bytesAt (Int.toBytes 8 (r.get64 rs).toInt)
+        ⌜(Int.toBytes 8 (r.get64 rs).toInt).AtM
             (r.get64 b + r.get64 i * 8 + BitVec.ofInt 64 d.toInt) ⊑ Q () r z f⌝
-          ⊓ MProp.bytesAt bs (r.get64 b + r.get64 i * 8 + BitVec.ofInt 64 d.toInt) ⦄
+          ⊓ bs.AtM (r.get64 b + r.get64 i * 8 + BitVec.ofInt 64 d.toInt) ⦄
       Directive.instr (.regular .W64 .W64
           (.mov (.mem ⟨some (.reg b), some ⟨i, .W64⟩, .int64 d⟩)
             (.regOrMem (.reg (.low rs .W64)))))
@@ -203,7 +203,7 @@ the slot with the register's bytes, at the unchanged registers and flags. -/
   obtain ⟨mf, mm, hunion, hinter, hF, hM⟩ := hpre
   obtain ⟨hpost, hbs⟩ := (MProp.meet_apply _ _ mm).mp hM
   have hpost := (MProp.ofProp_apply_iff _ mm).mp hpost
-  have hown : (MProp.bytesAt bs (s.regs.get64 b + s.regs.get64 i * 8 + BitVec.ofInt 64 d.toInt)
+  have hown : (bs.AtM (s.regs.get64 b + s.regs.get64 i * 8 + BitVec.ofInt 64 d.toInt)
       ∗ F) s.dmem :=
     ⟨mm, mf, by rw [← hunion]; exact (Std.ExtHashMap.union_comm_of_disjoint mf mm hinter).symm,
       Std.ExtHashMap.disjoint_symm hinter, hbs, hF⟩
@@ -220,7 +220,7 @@ the slot with the register's bytes, at the unchanged registers and flags. -/
     RegOrMem.interp, MachineData.set, MachineData.store, Reg64s.get_low64,
     AddrExpr.zeroExtend_interp_sib, hload, Effects.All, Kraken.Executable.after]
   refine Eventually.done _ (Or.inl ⟨rfl, ?_⟩)
-  have hnew : (MProp.bytesAt (Int.toBytes 8 (s.regs.get64 rs).toInt)
+  have hnew : ((Int.toBytes 8 (s.regs.get64 rs).toInt).AtM
       (s.regs.get64 b + s.regs.get64 i * 8 + BitVec.ofInt 64 d.toInt) ∗ F)
       (Mem.storeInt s.dmem (s.regs.get64 b + s.regs.get64 i * 8 + BitVec.ofInt 64 d.toInt) 8
         (s.regs.get64 rs).toInt) := hstore
@@ -304,9 +304,9 @@ registers and flags after the addition of the loaded value `Int.ofBytes bs`. -/
 @[spec] theorem mov_reg_mem_spec (rd b : Reg64) (d : Int64)
     (bs : List UInt8) (hlen : bs.length = 8) :
     ⦃ fun rg z f =>
-        ⌜MProp.bytesAt bs (rg.get64 b + BitVec.ofInt 64 d.toInt)
+        ⌜bs.AtM (rg.get64 b + BitVec.ofInt 64 d.toInt)
             ⊑ Q () (rg.set64 rd (BitVec.ofInt 64 (Int.ofBytes bs))) z f⌝
-          ⊓ MProp.bytesAt bs (rg.get64 b + BitVec.ofInt 64 d.toInt) ⦄
+          ⊓ bs.AtM (rg.get64 b + BitVec.ofInt 64 d.toInt) ⦄
       Directive.instr (.regular .W64 .W64
           (.mov (.reg (.low rd .W64)) (.regOrMem (.mem ⟨some (.reg b), none, .int64 d⟩))))
     ⦃ Q ⦄ := by
@@ -314,7 +314,7 @@ registers and flags after the addition of the loaded value `Int.ofBytes bs`. -/
   obtain ⟨mf, mm, hunion, hinter, hF, hM⟩ := hpre
   obtain ⟨hpost, hbs⟩ := (MProp.meet_apply _ _ mm).mp hM
   have hpost := (MProp.ofProp_apply_iff _ mm).mp hpost
-  have hown : (MProp.bytesAt bs (s.regs.get64 b + BitVec.ofInt 64 d.toInt) ∗ F) s.dmem :=
+  have hown : (bs.AtM (s.regs.get64 b + BitVec.ofInt 64 d.toInt) ∗ F) s.dmem :=
     ⟨mm, mf, by rw [← hunion]; exact (Std.ExtHashMap.union_comm_of_disjoint mf mm hinter).symm,
       Std.ExtHashMap.disjoint_symm hinter, hbs, hF⟩
   have hload : Mem.loadInt s.dmem (s.regs.get64 b + BitVec.ofInt 64 d.toInt) 8
@@ -336,9 +336,9 @@ registers and flags after the addition of the loaded value `Int.ofBytes bs`. -/
 @[spec] theorem mov_reg_mem_sib_spec (rd b i : Reg64) (d : Int64)
     (bs : List UInt8) (hlen : bs.length = 8) :
     ⦃ fun rg z f =>
-        ⌜MProp.bytesAt bs (rg.get64 b + rg.get64 i * 8 + BitVec.ofInt 64 d.toInt)
+        ⌜bs.AtM (rg.get64 b + rg.get64 i * 8 + BitVec.ofInt 64 d.toInt)
             ⊑ Q () (rg.set64 rd (BitVec.ofInt 64 (Int.ofBytes bs))) z f⌝
-          ⊓ MProp.bytesAt bs (rg.get64 b + rg.get64 i * 8 + BitVec.ofInt 64 d.toInt) ⦄
+          ⊓ bs.AtM (rg.get64 b + rg.get64 i * 8 + BitVec.ofInt 64 d.toInt) ⦄
       Directive.instr (.regular .W64 .W64
           (.mov (.reg (.low rd .W64))
             (.regOrMem (.mem ⟨some (.reg b), some ⟨i, .W64⟩, .int64 d⟩))))
@@ -347,7 +347,7 @@ registers and flags after the addition of the loaded value `Int.ofBytes bs`. -/
   obtain ⟨mf, mm, hunion, hinter, hF, hM⟩ := hpre
   obtain ⟨hpost, hbs⟩ := (MProp.meet_apply _ _ mm).mp hM
   have hpost := (MProp.ofProp_apply_iff _ mm).mp hpost
-  have hown : (MProp.bytesAt bs (s.regs.get64 b + s.regs.get64 i * 8 + BitVec.ofInt 64 d.toInt)
+  have hown : (bs.AtM (s.regs.get64 b + s.regs.get64 i * 8 + BitVec.ofInt 64 d.toInt)
       ∗ F) s.dmem :=
     ⟨mm, mf, by rw [← hunion]; exact (Std.ExtHashMap.union_comm_of_disjoint mf mm hinter).symm,
       Std.ExtHashMap.disjoint_symm hinter, hbs, hF⟩
@@ -373,13 +373,13 @@ registers and flags after the addition of the loaded value `Int.ofBytes bs`. -/
         let a := BitVec.ofInt 64 (Int.ofBytes bs)
         let bv := rg.get64 rd
         let v := a + bv
-        ⌜MProp.bytesAt bs (rg.get64 b + BitVec.ofInt 64 d.toInt)
+        ⌜bs.AtM (rg.get64 b + BitVec.ofInt 64 d.toInt)
             ⊑ Q () (rg.set64 rd v) z
                 (StatusFlags.from_result v
                   { cf := v.unsigned != a.unsigned + bv.unsigned,
                     af := (v.take 4).unsigned != (a.take 4).unsigned + (bv.take 4).unsigned,
                     of := v.signed != a.signed + bv.signed })⌝
-          ⊓ MProp.bytesAt bs (rg.get64 b + BitVec.ofInt 64 d.toInt) ⦄
+          ⊓ bs.AtM (rg.get64 b + BitVec.ofInt 64 d.toInt) ⦄
       Directive.instr (.regular .W64 .W64
           (.add (.reg (.low rd .W64))
             (.regOrMem (.mem ⟨some (.reg b), none, .int64 d⟩))))
@@ -388,7 +388,7 @@ registers and flags after the addition of the loaded value `Int.ofBytes bs`. -/
   obtain ⟨mf, mm, hunion, hinter, hF, hM⟩ := hpre
   obtain ⟨hpost, hbs⟩ := (MProp.meet_apply _ _ mm).mp hM
   have hpost := (MProp.ofProp_apply_iff _ mm).mp hpost
-  have hown : (MProp.bytesAt bs (s.regs.get64 b + BitVec.ofInt 64 d.toInt) ∗ F) s.dmem :=
+  have hown : (bs.AtM (s.regs.get64 b + BitVec.ofInt 64 d.toInt) ∗ F) s.dmem :=
     ⟨mm, mf, by rw [← hunion]; exact (Std.ExtHashMap.union_comm_of_disjoint mf mm hinter).symm,
       Std.ExtHashMap.disjoint_symm hinter, hbs, hF⟩
   have hload : Mem.loadInt s.dmem (s.regs.get64 b + BitVec.ofInt 64 d.toInt) 8

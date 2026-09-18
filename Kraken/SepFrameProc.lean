@@ -76,6 +76,9 @@ current instruction computes. -/
 def normalizeRegs (e : Expr) : MetaM (Expr × Option Expr) := do
   let mut thms ← ({} : SimpTheorems).addConst ``Reg64s.get64_set64
   thms ← thms.addConst ``eq_self_iff_true
+  -- a word atom is its byte atom
+  for n in [``UInt64.AtM, ``UInt32.AtM, ``UInt16.AtM, ``UInt8.AtM] do
+    thms ← thms.addDeclToUnfold n
   -- a field spelling of a register read is its `get64` read
   for n in [``Reg64s.get64_r10, ``Reg64s.get64_r11, ``Reg64s.get64_r12, ``Reg64s.get64_r13, ``Reg64s.get64_r14, ``Reg64s.get64_r15, ``Reg64s.get64_r8, ``Reg64s.get64_r9, ``Reg64s.get64_rax, ``Reg64s.get64_rbp, ``Reg64s.get64_rbx, ``Reg64s.get64_rcx, ``Reg64s.get64_rdi, ``Reg64s.get64_rdx, ``Reg64s.get64_rsi, ``Reg64s.get64_rsp] do
     thms ← thms.addConst n (inv := true)
@@ -83,12 +86,12 @@ def normalizeRegs (e : Expr) : MetaM (Expr × Option Expr) := do
   let (r, _) ← Meta.simp e ctx (simprocs := #[← Simp.getSimprocs])
   return (r.expr, r.proof?)
 
-/-- The region atoms of a precondition: `bytesAt L a₀` whose bytes are not a
+/-- The region atoms of a precondition: `AtM L a₀` whose bytes are not a
 stored value `Int.toBytes …`. -/
 def regionAtoms (pre : Expr) : MetaM (List Expr) := do
   let clauses ← Kraken.Tactic.reifyClauses pre
   return clauses.filter fun c =>
-    c.isAppOfArity ``MProp.bytesAt 3 && !(c.appFn!.appArg!.isAppOf ``Int.toBytes)
+    c.isAppOfArity ``List.AtM 3 && !(c.appFn!.appArg!.isAppOf ``Int.toBytes)
 
 /-- Phase two. The spec's precondition is `⌜φ⌝ ⊓ fp` or a bare `fp`. `fp` is
 the footprint: `solveSepEq` proves `pre = fp ∗ ?R` with `?R` a fresh clause
@@ -118,7 +121,7 @@ def sepFrameSplit (i : FrameInferenceInfo) (goal : FrameGoal) :
   -- `hfp : fp = fp'` are the normalization equations, or `none` when unchanged.
   let (pre', hpre) ← normalizeRegs i.pre
   let (fp', hfp) ← normalizeRegs fp
-  -- The footprint `bytesAt ?bs addr` pays with the atom at `addr`: the address
+  -- The footprint `AtM ?bs addr` pays with the atom at `addr`: the address
   -- is compared syntactically, never unified, and `?bs` takes that atom's
   -- bytes. When no atom sits at `addr`, a region is sliced at `addr`, and
   -- its slot atom pays; the bound is a subgoal.
@@ -126,10 +129,10 @@ def sepFrameSplit (i : FrameInferenceInfo) (goal : FrameGoal) :
   let mut hslice : Option Expr := none
   let mut sliceGoals : List MVarId := []
   let mut paid := false
-  if fp'.isAppOfArity ``MProp.bytesAt 3 then
+  if fp'.isAppOfArity ``List.AtM 3 then
     let addr := fp'.appArg!
     let payer? := (← Kraken.Tactic.reifyClauses pre').find? fun c =>
-      c.isAppOfArity ``MProp.bytesAt 3 && c.appArg! == addr
+      c.isAppOfArity ``List.AtM 3 && c.appArg! == addr
     match payer? with
     | some c =>
       paid ← withConfig (fun c => { c with assignSyntheticOpaque := true }) <|
@@ -141,11 +144,11 @@ def sepFrameSplit (i : FrameInferenceInfo) (goal : FrameGoal) :
         let a₀ := atom.appArg!
         let hb ← mkFreshExprSyntheticOpaqueMVar
           (← mkAppNS (← mkConstS ``MProp.SliceBound) #[L, a₀, addr])
-        let heq ← mkAppNS (← mkConstS ``MProp.bytesAt_slice) #[L, a₀, addr, hb]
+        let heq ← mkAppNS (← mkConstS ``List.AtM_slice) #[L, a₀, addr, hb]
         let some (_, _, sliced) := (← instantiateMVarsS (← Sym.inferType heq)).eq? | continue
         -- the slot atom of the slice sits at `addr`
         let some slot := (← Kraken.Tactic.reifyClauses sliced).find? fun c =>
-            c.isAppOfArity ``MProp.bytesAt 3 && c.appArg! == addr | continue
+            c.isAppOfArity ``List.AtM 3 && c.appArg! == addr | continue
         unless ← withConfig (fun c => { c with assignSyntheticOpaque := true }) <|
             isDefEqS fp' slot do continue
         let mprop ← mkAppNS (← mkConstS ``MProp) #[w64]
@@ -289,29 +292,29 @@ open Kraken.X64.Parser
 attribute [local grind .] Lean.Order.PartialOrder.rel_refl
 
 example [CodeEnv] (bs : List UInt8) (hlen : bs.length = 8) :
-    ⦃ fun r z f => MProp.bytesAt bs (r.get64 .rdx + BitVec.ofInt 64 (136 : Int64).toInt) ⦄
+    ⦃ fun r z f => bs.AtM (r.get64 .rdx + BitVec.ofInt 64 (136 : Int64).toInt) ⦄
       (parse("movq %rax, 136(%rdx)\nmovq $1, %rbx"))
-    ⦃ fun _ r z f => MProp.bytesAt (Int.toBytes 8 (r.get64 .rax).toInt)
+    ⦃ fun _ r z f => (Int.toBytes 8 (r.get64 .rax).toInt).AtM
         (r.get64 .rdx + BitVec.ofInt 64 (136 : Int64).toInt) ⦄ := by
   vcgen with finish
 
 example [CodeEnv] (bs cs : List UInt8) (hb : bs.length = 8) (hc : cs.length = 8) :
-    ⦃ fun r z f => MProp.bytesAt bs (r.get64 .rdx + BitVec.ofInt 64 (136 : Int64).toInt)
-        ∗ MProp.bytesAt cs (r.get64 .rdx + BitVec.ofInt 64 (144 : Int64).toInt) ⦄
+    ⦃ fun r z f => bs.AtM (r.get64 .rdx + BitVec.ofInt 64 (136 : Int64).toInt)
+        ∗ cs.AtM (r.get64 .rdx + BitVec.ofInt 64 (144 : Int64).toInt) ⦄
       (parse("movq %rax, 136(%rdx)\nmovq %rbx, 144(%rdx)"))
-    ⦃ fun _ r z f => MProp.bytesAt (Int.toBytes 8 (r.get64 .rax).toInt)
+    ⦃ fun _ r z f => (Int.toBytes 8 (r.get64 .rax).toInt).AtM
           (r.get64 .rdx + BitVec.ofInt 64 (136 : Int64).toInt)
-        ∗ MProp.bytesAt (Int.toBytes 8 (r.get64 .rbx).toInt)
+        ∗ (Int.toBytes 8 (r.get64 .rbx).toInt).AtM
           (r.get64 .rdx + BitVec.ofInt 64 (144 : Int64).toInt) ⦄ := by
   vcgen with finish
 
 example [CodeEnv] (bs cs : List UInt8) (hb : bs.length = 8) (hc : cs.length = 8) :
-    ⦃ fun r z f => MProp.bytesAt bs (r.get64 .rdx + BitVec.ofInt 64 (136 : Int64).toInt)
-        ∗ MProp.bytesAt cs (r.get64 .rdx + BitVec.ofInt 64 (144 : Int64).toInt) ⦄
+    ⦃ fun r z f => bs.AtM (r.get64 .rdx + BitVec.ofInt 64 (136 : Int64).toInt)
+        ∗ cs.AtM (r.get64 .rdx + BitVec.ofInt 64 (144 : Int64).toInt) ⦄
       (parse("movq %rax, 136(%rdx)\naddq 144(%rdx), %rbx"))
-    ⦃ fun _ r z f => MProp.bytesAt (Int.toBytes 8 (r.get64 .rax).toInt)
+    ⦃ fun _ r z f => (Int.toBytes 8 (r.get64 .rax).toInt).AtM
           (r.get64 .rdx + BitVec.ofInt 64 (136 : Int64).toInt)
-        ∗ MProp.bytesAt cs (r.get64 .rdx + BitVec.ofInt 64 (144 : Int64).toInt) ⦄ := by
+        ∗ cs.AtM (r.get64 .rdx + BitVec.ofInt 64 (144 : Int64).toInt) ⦄ := by
   vcgen with finish
 
 end Smoke
