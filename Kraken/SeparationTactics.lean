@@ -8,13 +8,18 @@ namespace Kraken.Tactic
 
 private partial def denoteClauses (predType : Expr) : List Expr → MetaM Expr
   | [] => do
-    let predType ← withTransparency .default (whnf predType)
+    if predType.isAppOfArity `MProp 1 then
+      return ← mkAppOptM `MProp.emp #[predType.appArg!]
+    let predType ← whnf predType
     withLocalDeclD `m predType.bindingDomain! fun m => do
       let body ← mkAppM ``Std.ExtHashMap.emp #[m]
       mkLambdaFVars #[m] body (etaReduce := true)
   | p :: ps => do
     let rest ← denoteClauses predType ps
-    mkAppM ``Std.ExtHashMap.sep #[p, rest]
+    if predType.isAppOfArity `MProp 1 then
+      mkAppOptM `MProp.sep #[predType.appArg!, p, rest]
+    else
+      mkAppM ``Std.ExtHashMap.sep #[p, rest]
 
 partial def reifyClauses (e : Expr) : MetaM (List Expr) := do
   let e ← instantiateMVars e
@@ -120,7 +125,7 @@ private partial def alignClauses : List Expr → List Expr → MetaM (Option (Li
       | none => lhs.toArray.findIdxM? (fun l => matchAtom l r)
     let some i ← (match i? with
       | some i => pure (some i)
-      | none => lhs.toArray.findIdxM? (fun l => withDefault (isDefEq l r)))
+      | none => lhs.toArray.findIdxM? (fun l => isDefEq l r))
       | return none
     let some rest ← alignClauses (lhs.eraseIdx i) rs | return none
     return some (lhs[i]! :: rest)
@@ -143,7 +148,9 @@ private partial def canonicalize (e : Expr) (clauses : List Expr) :
     let args := e.getAppArgs
     let some (p, clauses) ← canonicalize args[args.size - 2]! clauses | return none
     let some (q, clauses) ← canonicalize args[args.size - 1]! clauses | return none
-    return some (← mkAppM ``Std.ExtHashMap.sep #[p, q], clauses)
+    -- Rebuild with the operator as spelled, so the AC proof is stated at the
+    -- goal's own type and instances.
+    return some (mkAppN e.getAppFn (args.extract 0 (args.size - 2) ++ #[p, q]), clauses)
   return match clauses with
   | c :: clauses => some (c, clauses)
   | [] => none

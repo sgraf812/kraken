@@ -56,6 +56,12 @@ theorem emp_sep (P : MProp w) : emp ∗ P = P := Std.ExtHashMap.emp_sep P
 
 theorem sep_emp (P : MProp w) : P ∗ emp = P := Std.ExtHashMap.sep_emp P
 
+instance : Std.Associative (MProp.sep (w := w)) := ⟨sep_assoc⟩
+instance : Std.Commutative (MProp.sep (w := w)) := ⟨sep_comm⟩
+instance : Std.LawfulIdentity (MProp.sep (w := w)) emp where
+  left_id := emp_sep
+  right_id := sep_emp
+
 /-- The generic sup on `MProp`, pointwise; from the lattice axioms alone. -/
 theorem sup_apply (s : MProp w → Prop) (m : Mem w) :
     (CompleteLattice.sup s : MProp w) m ↔ ∃ P, s P ∧ P m := by

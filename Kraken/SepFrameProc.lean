@@ -128,7 +128,7 @@ def sepFrameSplit (i : FrameInferenceInfo) (goal : FrameGoal) :
     match payer? with
     | some c =>
       paid ← withConfig (fun c => { c with assignSyntheticOpaque := true }) <|
-        withTransparency .instances (isDefEq fp' c)
+        isDefEqS fp' c
       trace[Elab.Tactic.Do.vcgen] "sep frameproc: footprint paid by{indentExpr c}"
     | none =>
       for atom in ← regionAtoms pre' do
@@ -142,7 +142,7 @@ def sepFrameSplit (i : FrameInferenceInfo) (goal : FrameGoal) :
         let some slot := (← Kraken.Tactic.reifyClauses sliced).find? fun c =>
             c.isAppOfArity ``MProp.bytesAt 3 && c.appArg! == addr | continue
         unless ← withConfig (fun c => { c with assignSyntheticOpaque := true }) <|
-            withTransparency .instances (isDefEq fp' slot) do continue
+            isDefEqS fp' slot do continue
         let mprop ← mkAppNS (← mkConstS ``MProp) #[w64]
         let ctx := Expr.lam `x mprop (pre'.replace fun e => if e == atom then some (.bvar 0) else none) .default
         hslice := some (← mkAppNS (← mkConstS ``congrArg [.succ .zero, .succ .zero])
@@ -157,7 +157,7 @@ def sepFrameSplit (i : FrameInferenceInfo) (goal : FrameGoal) :
   let target ← mkAppNS sep #[w64, fp', R]
   let hc? ← if paid then
       withConfig (fun c => { c with assignSyntheticOpaque := true }) <|
-        withTransparency .default <| Kraken.Tactic.solveSepEq pre'' target
+        withTransparency .reducible <| Kraken.Tactic.solveSepEq pre'' target
     else pure none
   if hc?.isNone then
     trace[Elab.Tactic.Do.vcgen] "sep frameproc: no split of{indentExpr pre'}\nfor{indentExpr fp'}"
@@ -175,7 +175,7 @@ def sepFrameSplit (i : FrameInferenceInfo) (goal : FrameGoal) :
     trace[Elab.Tactic.Do.vcgen] "sep frameproc: frame{indentExpr R}"
     let fp' ← instantiateMVarsS fp'
     let target ← mkAppNS sep #[w64, fp', R]
-    let some hc'' ← withTransparency .default (Kraken.Tactic.solveSepEq pre'' target)
+    let some hc'' ← withTransparency .reducible (Kraken.Tactic.solveSepEq pre'' target)
       | throwError "sep frameproc: the remainder{indentExpr R}\ndoes not recombine with the footprint"
     trace[Elab.Tactic.Do.vcgen] "sep frameproc: recombined"
     -- `hc : i.pre = fp ∗ R` from `i.pre = pre' = pre'' = fp' ∗ R = fp ∗ R`

@@ -1,8 +1,7 @@
 /-
-`alu_mem` in the separation wp: a store of an immediate into a slot, then an
-`add` from that slot into a register. The precondition owns the slot with any
-contents and fixes the register; the post owns the slot with the immediate and
-fixes the register's new value.
+`alu_mem` in the separation wp: the four-instruction program of the baseline
+example, with the slot at `136(%rdx)` owned as a `UInt64`. The post is the
+register's value; the slot and its frame are carried by the frame rule.
 -/
 import Kraken.SepFrameProc
 import Kraken.X64.Parser
@@ -15,20 +14,22 @@ open scoped SepWP
 
 set_option mvcgen.warning false
 
-attribute [local grind ←] Lean.Order.le_ofProp
-attribute [local grind =] Int.toBytes_length
-
 def alu_mem : Program := parse("
-  movq $42, 136(%rdx)
+  movq $42, %rax
+  movq %rax, 136(%rdx)
+  movq $100, %rcx
   addq 136(%rdx), %rcx
 ")
 
-theorem alu_mem_correct [CodeEnv] (bs : List UInt8) (hlen : bs.length = 8) :
-    ⦃ fun r z f => ⌜r.get64 .rcx = 100#64⌝
-        ⊓ MProp.bytesAt bs (r.get64 .rdx + BitVec.ofInt 64 (136 : Int64).toInt) ⦄
+theorem alu_mem_correct [CodeEnv] (v : UInt64) :
+    ⦃ fun r z f => MProp.bytesAt v.toBytes (r.get64 .rdx + 136#64) ⦄
       alu_mem
-    ⦃ fun _ r z f => ⌜r.get64 .rcx = 142#64⌝
-        ⊓ MProp.bytesAt (Int.toBytes 8 42) (r.get64 .rdx + BitVec.ofInt 64 (136 : Int64).toInt) ⦄ := by
-  have h42 : (BitVec.setWidth 64 (42 : Int64).toBitVec).toInt = 42 := by decide
-  have hback := BitVec.ofInt_ofBytes_toBytes 64 8 rfl (BitVec.setWidth 64 (42 : Int64).toBitVec)
-  vcgen [alu_mem] with finish
+    ⦃ fun _ r z f => ⌜r.get64 .rcx = 142#64⌝ ⦄ := by
+  have hv := UInt64.toBytes_length v
+  have h42 : BitVec.ofInt 64 (Int.ofBytes (Int.toBytes 8 42)) = 42#64 := by decide
+  vcgen [alu_mem]
+  all_goals first
+    | exact SepWP.frames_directive _ _
+    | exact hv
+    | (simp only [Int.toBytes_length]; done)
+    | (refine Lean.Order.le_ofProp _ _ ?_; simp [h42])
