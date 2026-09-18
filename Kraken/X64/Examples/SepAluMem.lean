@@ -25,7 +25,7 @@ def alu_mem : Program := parse("
 ")
 
 theorem alu_mem_correct [CodeEnv] (v : UInt64) :
-    ⦃ fun r z f => ⌜True⌝ ⊓ MProp.bytesAt v.toBytes (r.rdx.toBitVec + 136#64) ⦄
+    ⦃ fun r z f => MProp.bytesAt v.toBytes (r.rdx.toBitVec + 136#64) ⦄
       alu_mem
     ⦃ fun _ r z f => ⌜r.rcx = 142⌝ ⊓ MProp.bytesAt (Int.toBytes 8 42) (r.rdx.toBitVec + 136#64) ⦄ := by
   vcgen [alu_mem] with finish
@@ -46,6 +46,6 @@ theorem alu_mem_example_correct (s₀ : MachineData) (v : UInt64) (R : Mem 64 �
     Eventually (straightlineStep (layout alu_mem))
       (fun s' => s'.1.regs.rcx = 142)
       (s₀, Kraken.Layout.start Directive) :=
-  run_of_sep_triple (alu_mem_correct v).le_wp trivial h_mem
+  run_of_sep_triple' (alu_mem_correct v).le_wp (fun _ _ _ => meet_le_left _ _) h_mem
 
 end Baseline

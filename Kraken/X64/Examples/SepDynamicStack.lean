@@ -37,7 +37,7 @@ theorem dynamic_stack_correct [CodeEnv] (stack : List UInt8) (lstack : stack.len
     ⦃ fun r z f => ⌜r.rsp = rsp₀ ∧ r.r9.toNat + r.r15.toNat < 125⌝
         ⊓ MProp.bytesAt stack (r.rsp.toBitVec - 1024#64) ⦄
       dynamic_stack
-    ⦃ fun _ r z f => ⌜r.rax = 42 ∧ r.rbx = 99 ∧ r.rsp = rsp₀⌝ ⊓ ⊤ ⦄ := by
+    ⦃ fun _ r z f => ⌜r.rax = 42 ∧ r.rbx = 99 ∧ r.rsp = rsp₀⌝ ⦄ := by
   vcgen [dynamic_stack] with finish
 
 /-! ## The baseline statement
@@ -58,6 +58,7 @@ theorem dynamic_stack_example_correct (s₀ : MachineData)
     Eventually (straightlineStep (layout dynamic_stack))
       (fun s' => s'.1.regs.rax = 42 ∧ s'.1.regs.rbx = 99 ∧ s'.1.regs.rsp = s₀.regs.rsp)
       (s₀, Kraken.Layout.start Directive) :=
-  run_of_sep_triple (dynamic_stack_correct stack lstack s₀.regs.rsp).le_wp ⟨rfl, h⟩ h_mem
+  run_of_sep_triple (dynamic_stack_correct stack lstack s₀.regs.rsp).le_wp
+    (fun _ _ _ => PartialOrder.rel_refl) ⟨rfl, h⟩ h_mem
 
 end Baseline
