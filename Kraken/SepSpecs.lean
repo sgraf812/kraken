@@ -240,6 +240,24 @@ registers and flags. -/
     Kraken.Executable.after]
   exact Eventually.done _ (Or.inl ⟨rfl, hpre⟩)
 
+/-- Exclusive-or of two 64-bit registers; the adjust flag is unspecified. -/
+@[spec] theorem xor_reg_reg_spec (asz : Width) (rd rs : Reg64) :
+    ⦃ fun rg z _ => ⨅ af : Bool, Q () (rg.set64 rd (rg.get64 rd ^^^ rg.get64 rs)) z
+        (StatusFlags.from_result (rg.get64 rd ^^^ rg.get64 rs) { cf := false, of := false, af }) ⦄
+      Directive.instr (.regular asz .W64
+          (.xor (.reg (.low rd .W64)) (.regOrMem (.reg (.low rs .W64)))))
+    ⦃ Q ⦄ := by
+  refine SepWP.triple_directive.mpr (SepWP.sep_intro fun F s hpre => ?_)
+  intro pc hpl
+  obtain ⟨zz, rest, hseg, -⟩ := hpl
+  rw [Kraken.Executable.after_cons_of_not_label rfl hseg]
+  refine step_cps _ _ _ ⟨_, _, _, hseg, Or.inl ?_⟩
+  simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp, RegOrMem.interp,
+    MachineData.set, MachineData.setReg, Reg64s.get_low64, Reg64s.set_low64, Effects.All,
+    Kraken.Executable.after]
+  intro af
+  exact Eventually.done _ (Or.inl ⟨rfl, MProp.sep_mono_right F (iInf_le _ af) _ hpre⟩)
+
 /-- Load the address `disp(base, index, 8)` into a register. -/
 @[spec] theorem lea_sib_spec (rd b i : Reg64) (d : Int64) :
     ⦃ fun rg z f => Q () (rg.set64 rd (rg.get64 b + rg.get64 i * 8 + BitVec.ofInt 64 d.toInt)) z f ⦄
@@ -363,6 +381,73 @@ registers and flags after the addition of the loaded value `Int.ofBytes bs`. -/
     RegOrMem.interp, MachineData.load, MachineData.set, MachineData.setReg,
     Reg64s.get_low64, Reg64s.set_low64, AddrExpr.zeroExtend_interp_base_disp,
     hload, Effects.All, Kraken.Executable.after]
+  refine Eventually.done _ (Or.inl ⟨rfl, ?_⟩)
+  rw [MProp.sep_comm] at hown
+  exact MProp.sep_mono_right F hpost _ hown
+
+/-! ## The stack
+
+`push` owns the slot below the stack pointer and fills it; `pop` owns the
+slot at the stack pointer and reads it. Both move the stack pointer by eight. -/
+
+/-- Push a 64-bit register. -/
+@[spec] theorem push_reg_spec (rs : Reg64) (bs : List UInt8) (hlen : bs.length = 8) :
+    ⦃ fun r z f =>
+        ⌜(Int.toBytes 8 (r.get64 rs).toInt).AtM (r.get64 .rsp - 8#64)
+            ⊑ Q () (r.set64 .rsp (r.get64 .rsp - 8#64)) z f⌝
+          ⊓ bs.AtM (r.get64 .rsp - 8#64) ⦄
+      Directive.instr (.regular .W64 .W64 (.push (.regOrMem (.reg (.low rs .W64)))))
+    ⦃ Q ⦄ := by
+  refine SepWP.triple_directive.mpr (SepWP.sep_intro fun F s hpre => ?_)
+  obtain ⟨mf, mm, hunion, hinter, hF, hM⟩ := hpre
+  obtain ⟨hpost, hbs⟩ := (MProp.meet_apply _ _ mm).mp hM
+  have hpost := (MProp.ofProp_apply_iff _ mm).mp hpost
+  have hown : (bs.AtM (s.regs.get64 .rsp - 8#64) ∗ F) s.dmem :=
+    ⟨mm, mf, by rw [← hunion]; exact (Std.ExtHashMap.union_comm_of_disjoint mf mm hinter).symm,
+      Std.ExtHashMap.disjoint_symm hinter, hbs, hF⟩
+  have hload : Mem.loadInt s.dmem (s.regs.get64 .rsp - 8#64) 8 = some (Int.ofBytes bs) :=
+    Mem.loadInt_sep bs _ 8 F s.dmem hown hlen (by decide)
+  have hstore := Mem.storeInt_sep (s.regs.get64 .rsp - 8#64) 8 bs F s.dmem
+    ⟨hown, hlen⟩ (s.regs.get64 rs).toInt
+  intro pc hpl
+  obtain ⟨zz, rest, hseg, -⟩ := hpl
+  rw [Kraken.Executable.after_cons_of_not_label rfl hseg]
+  refine step_cps _ _ _ ⟨_, _, _, hseg, Or.inl ?_⟩
+  simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp, RegOrMem.interp,
+    MachineData.store, Reg64s.get_low64, Width.bytesv_W64, hload, Effects.All,
+    Kraken.Executable.after]
+  refine Eventually.done _ (Or.inl ⟨rfl, ?_⟩)
+  have hnew : ((Int.toBytes 8 (s.regs.get64 rs).toInt).AtM (s.regs.get64 .rsp - 8#64) ∗ F)
+      (Mem.storeInt s.dmem (s.regs.get64 .rsp - 8#64) 8 (s.regs.get64 rs).toInt) :=
+    hstore
+  rw [MProp.sep_comm] at hnew
+  exact MProp.sep_mono_right F hpost _ hnew
+
+/-- Pop into a 64-bit register. -/
+@[spec] theorem pop_reg_spec (rd : Reg64) (bs : List UInt8) (hlen : bs.length = 8) :
+    ⦃ fun r z f =>
+        ⌜bs.AtM (r.get64 .rsp)
+            ⊑ Q () ((r.set64 .rsp (r.get64 .rsp + 8#64)).set64 rd
+                (BitVec.ofInt 64 (Int.ofBytes bs))) z f⌝
+          ⊓ bs.AtM (r.get64 .rsp) ⦄
+      Directive.instr (.regular .W64 .W64 (.pop (.reg (.low rd .W64))))
+    ⦃ Q ⦄ := by
+  refine SepWP.triple_directive.mpr (SepWP.sep_intro fun F s hpre => ?_)
+  obtain ⟨mf, mm, hunion, hinter, hF, hM⟩ := hpre
+  obtain ⟨hpost, hbs⟩ := (MProp.meet_apply _ _ mm).mp hM
+  have hpost := (MProp.ofProp_apply_iff _ mm).mp hpost
+  have hown : (bs.AtM (s.regs.get64 .rsp) ∗ F) s.dmem :=
+    ⟨mm, mf, by rw [← hunion]; exact (Std.ExtHashMap.union_comm_of_disjoint mf mm hinter).symm,
+      Std.ExtHashMap.disjoint_symm hinter, hbs, hF⟩
+  have hload : Mem.loadInt s.dmem (s.regs.get64 .rsp) 8 = some (Int.ofBytes bs) :=
+    Mem.loadInt_sep bs _ 8 F s.dmem hown hlen (by decide)
+  intro pc hpl
+  obtain ⟨zz, rest, hseg, -⟩ := hpl
+  rw [Kraken.Executable.after_cons_of_not_label rfl hseg]
+  refine step_cps _ _ _ ⟨_, _, _, hseg, Or.inl ?_⟩
+  simp only [Directive.interp, Instr.interp, Operation.interp, MachineData.load, MachineData.set,
+    MachineData.setReg, Reg64s.set_low64, Width.bytesv_W64, hload, Effects.All,
+    Kraken.Executable.after]
   refine Eventually.done _ (Or.inl ⟨rfl, ?_⟩)
   rw [MProp.sep_comm] at hown
   exact MProp.sep_mono_right F hpost _ hown

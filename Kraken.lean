@@ -29,3 +29,7 @@ import Kraken.SepSpecs
 import Kraken.SepFrameProc
 import Kraken.X64.Examples.SepAluMem
 import Kraken.X64.Examples.SepDynamicStack
+import Kraken.X64.Examples.SepMove2RegsToHeap
+import Kraken.X64.Examples.SepPushPop
+import Kraken.X64.Examples.SepSib
+import Kraken.X64.Examples.SepSwap

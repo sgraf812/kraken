@@ -1,0 +1,50 @@
+/-
+`p6` in the separation wp: `rax` is pushed, overwritten and popped back. The
+precondition owns the stack slot below the stack pointer.
+-/
+import Kraken.SepFrameProc
+import Kraken.X64.Parser
+
+open Kraken.X64.Parser
+open Kraken
+open Std.WP
+open Lean.Order
+open scoped SepWP
+
+set_option experimental.vcgen true
+
+attribute [local grind ←] Lean.Order.le_ofProp MProp.SliceBound.intro
+attribute [local grind =] Int.toBytes_length UInt64.toBytes_length BitVec.ofInt_ofBytes_toBytes
+  List.length_take List.length_drop BitVec.add_zero
+
+def p6 := parse("push %rax
+mov $0, %rax
+pop %rax")
+
+theorem p6_spec [CodeEnv] (stack : List UInt8) (h_len : stack.length = 8) (a sp : UInt64) :
+    ⦃ fun r _ _ => ⌜r.rax = a ∧ r.rsp = sp⌝ ⊓ stack.AtM (r.rsp.toBitVec - 8#64) ⦄
+      p6
+    ⦃ fun _ r _ _ => ⌜r.rax = a ∧ r.rsp = sp⌝ ⦄ := by
+  vcgen [p6] with finish
+
+/-! ## The baseline statement
+
+`p6_spec` read back as the judgment of the baseline example `p6_correct`,
+over the same program text. -/
+
+section Baseline
+
+variable [layout : _root_.Layout] [Executable.ValidLayout (layout p6)]
+
+local instance p6.env : CodeEnv := ⟨layout p6⟩
+
+theorem p6_correct (s₀ : MachineData)
+    (stack : List UInt8) (h_len : stack.length = 8) (R : DataMem → Prop)
+    (h_mem : s₀.dmem =⋆ Eq (stack.At (s₀.regs.rsp.toBitVec - 8#64)) ⋆ R) :
+    Eventually (straightlineStep (layout p6))
+      (fun s' => s'.1.regs.rax = s₀.regs.rax ∧ s'.1.regs.rsp = s₀.regs.rsp)
+      (s₀, Kraken.Layout.start Directive) :=
+  run_of_sep_triple (p6_spec stack h_len s₀.regs.rax s₀.regs.rsp).le_wp
+    (fun _ _ _ => PartialOrder.rel_refl) ⟨rfl, rfl⟩ h_mem
+
+end Baseline

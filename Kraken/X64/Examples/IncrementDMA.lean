@@ -1,65 +1,68 @@
+import Kraken.X64.Semantics
+
 /-
-DMA incrementer over the `Sys`-based denotational monad. A control store transitions
-device state and DMA-writes into a RAM buffer the store never named (device state
-and data memory both change); a control load returns a status word and DMA-writes a
-completion marker. All four transfers of the MMIO/DMA matrix, with device state in
-`σ` so it survives control transfer.
+A dummy device that can be controlled via MMIO and can only
+perform the veeery complicated operation of incrementing an
+array of numbers by one.
+Illustrates that in the 2x2 matrix of what effect can modify what state
+(effect ∈ { nonmem_store, nonmem_load }) x (state ∈ { DeviceState, MachineState })
+all the four combinations can happen:
+
+                DeviceState     MachineState
+nonmem_store         1)              2)
+nonmem_load          3)              4)
+
+1) An MMIO store sets the BUF_ADDR and BUF_SIZE registers of the Incrementer device
+   and then sets the STATUS register of the Incrementer device to STATUS_BUSY.
+2) This results in a change of logical ownership of the memory from BUF_ADDR to
+   BUF_ADDR+BUF_SIZE: It is now owned by the Incrementer device, and we model this
+   ownership change by removing it from the dmem in MachineState, and adding it
+   to the state-machine state in the DeviceState.
+3) The CPU then polls the STATUS register of the Incrementer device, until it
+   reads STATUS_DONE. Once that's the case, it gets back the ownership of the memory
+   from BUF_ADDR to BUF_ADDR+BUF_SIZE.
+4) The fact that the CPU read STATUS_DONE causes the Incrementer device to go
+   back into STATUS_IDLE.
 -/
-import Kraken.Device
 
-open Std.WP
-open Kraken
+-- state as seen by software, not necessarily implemented like this in hardware
+inductive IncrementerState
+  | idle (buf_addr : Option UInt64) (buf_size : Option UInt64)
+  | busy (buf_addr : UInt64) (input : List UInt8) (max_steps_until_done : Nat)
+  | done (result : List UInt8)
+  deriving Hashable
 
-set_option mvcgen.warning false
-set_option grind.warning false
-set_option maxHeartbeats 1000000
+inductive Incrementer.Register | BUF_ADDR | BUF_SIZE | STATUS
 
-inductive Dma
-  | idle
-  | busy
-  deriving DecidableEq, Repr
+def STATUS_REG_ADDR : UInt64 := 4096
+def BUF_ADDR_REG_ADDR : UInt64 := 4104
+def BUF_SIZE_REG_ADDR : UInt64 := 4112
 
-abbrev CTRL_ADDR : BitVec 64 := 8192
-abbrev IN_ADDR : BitVec 64 := 16384
-abbrev OUT_ADDR : BitVec 64 := 16392
+def STATUS_IDLE : UInt64 := 0
+def STATUS_BUSY : UInt64 := 1
+def STATUS_DONE : UInt64 := 2
 
-abbrev dmaDev : Device Dma where
-  readStep addr dmem d :=
-    if addr = CTRL_ADDR then
-      match d with
-      | .busy => some (1, Mem.storeInt dmem OUT_ADDR 8 99, .idle)
-      | .idle => none
-    else none
-  writeStep addr v dmem d :=
-    if addr = CTRL_ADDR then
-      match d with
-      | .idle => some (Mem.storeInt dmem IN_ADDR 8 (v + 1), .busy)
-      | .busy => none
-    else none
+inductive IncrementerState.read_step
+  (s : IncrementerState) (r : Incrementer.Register)
+  (v : UInt64) (s' : IncrementerState) : Prop where -- TODO
 
-def dmaStartProg : X64M Dma Unit :=
-  Op.devStore dmaDev CTRL_ADDR 42
+inductive IncrementerState.write_step
+  (s : IncrementerState) (r : Incrementer.Register) (v : UInt64)
+  (s' : IncrementerState) : Prop where -- TODO
 
-theorem dma_start_correct (m0 : DataMem) :
-    ⦃fun _ _ s => s.device = Dma.idle ∧ s.machine.dmem = m0 ∧
-        Mem.loadInt s.machine.dmem CTRL_ADDR 8 = none⦄
-      dmaStartProg
-      ⦃fun _ _ _ s => s.device = Dma.busy ∧ s.machine.dmem = Mem.storeInt m0 IN_ADDR 8 43;
-        fun _ _ => True⦄ := by
-  sym =>
-    vcgen [dmaStartProg]
-    all_goals finish
+inductive IncrementerState.internal_step
+  (s : IncrementerState)
+  (s': IncrementerState) : Prop where -- TODO
 
-def dmaFinishProg : X64M Dma Unit := do
-  let _ ← Op.devLoad dmaDev CTRL_ADDR
-  pure ()
+def Incrementer.Register.of_addr (addr : UInt64) : Option Incrementer.Register :=
+  if addr == STATUS_REG_ADDR then some .STATUS
+  else if addr == BUF_ADDR_REG_ADDR then some .BUF_ADDR
+  else if addr == BUF_SIZE_REG_ADDR then some .BUF_SIZE
+  else none
 
-theorem dma_finish_correct (m0 : DataMem) :
-    ⦃fun _ _ s => s.device = Dma.busy ∧ s.machine.dmem = m0 ∧
-        Mem.loadInt s.machine.dmem CTRL_ADDR 8 = none⦄
-      dmaFinishProg
-      ⦃fun _ _ _ s => s.device = Dma.idle ∧ s.machine.dmem = Mem.storeInt m0 OUT_ADDR 8 99;
-        fun _ _ => True⦄ := by
-  sym =>
-    vcgen [dmaFinishProg]
-    all_goals finish
+structure SystemState where
+  machineState : MachineState
+  deviceState : IncrementerState
+
+def Effects.All (s : Effects) (ds : IncrementerState) (post : SystemState → Prop) : Prop
+  := by sorry
