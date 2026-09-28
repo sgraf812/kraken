@@ -1,36 +1,18 @@
 /-
-The register and system-state read-over-write API the spec framework discharges
-against: `Sys D` and its projections, register reads over `set64` (both the
-indexed `get64` and the per-field accessors), the `MachineData` record
-projections, and the `StatusFlags`/`BitVec` reductions the flag and address
-arithmetic normalize with.
+The register read-over-write API the spec framework discharges against:
+register reads over `set64` (both the indexed `get64` and the per-field
+accessors), the `MachineData` record projections, and the
+`StatusFlags`/`BitVec` reductions the flag and address arithmetic normalize
+with.
 -/
 import Kraken.X64.OmniSemantics
 import Kraken.GrindFold
 import Std.Tactic.Do
 
 open Std.WP
-open Std.WP.WPMonad
 
 set_option mvcgen.warning false
 set_option grind.warning false
-
-/-! ## System state
-
-The denotational monad runs over `Sys D`: the CPU `MachineData` plus a device
-state `D`. Instruction primitives update `machine` and thread `device`; a `jump`
-carries the whole `Sys D` in the exception, so `device` survives control transfer.
-The projection-over-`mk` lemmas let the state-simplification and `easm` fold a
-`Sys` update the way they already fold a `MachineData` update. -/
-
-structure Sys (D : Type) where
-  machine : MachineData
-  device : D
-
-@[simp] theorem Sys.machine_mk {D : Type} (m : MachineData) (d : D) :
-    (Sys.mk m d).machine = m := rfl
-@[simp] theorem Sys.device_mk {D : Type} (m : MachineData) (d : D) :
-    (Sys.mk m d).device = d := rfl
 
 /-! ## Address spelling -/
 
