@@ -125,7 +125,7 @@
   type size, not the shared term size. Isolated in
   kernel-congr-quadratic-mwe.lean, where holding node count fixed and shrinking
   only the node types takes n=1600 from 3593ms to 4ms. A spine of non-adjacent
-  binders is quadratic for the same reason: kernel-letchain-superlinear-mwe.lean.
+  binders is quadratic for the same reason.
   Kernel checking is the largest single item at n=640 in bench/README.md.
 
 - `clear_dead` (KrakenTactics/ClearDead.lean) prunes the equation hypotheses
