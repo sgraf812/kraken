@@ -104,7 +104,7 @@
   sometimes pointer-identical to session nodes). Fix: `internalize` runs
   `preprocessLight`-class sharing itself;
   defense in depth: `mkCongrDefaultProof` treats the all-`isSameExpr` case as
-  `rfl`. Reproducer: mkEqProof-panic-mwe.lean.
+  `rfl`.
 - Engine (vcgen): normalize `And` at Prop-valued preconditions to the lattice
   meet so the spec-authoring trap (raw `∧` stops the driver) disappears.
 - Engine (vcgen): `simplifying_assumptions` accepts rewrite theorems only. Its
@@ -122,8 +122,7 @@
 
 - Kernel checking is super-linear in these proofs because each congruence node
   carries a type that deepens with the chain: cost is the sum over nodes of the
-  type size, not the shared term size. Isolated in
-  kernel-congr-quadratic-mwe.lean, where holding node count fixed and shrinking
+  type size, not the shared term size. Holding node count fixed and shrinking
   only the node types takes n=1600 from 3593ms to 4ms. A spine of non-adjacent
   binders is quadratic for the same reason.
   Kernel checking is the largest single item at n=640 in bench/README.md.
