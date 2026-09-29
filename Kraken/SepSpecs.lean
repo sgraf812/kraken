@@ -26,42 +26,6 @@ open Lean.Order
 open Kraken.X64.Parser
 open scoped SepWP
 
-/-- The address a `disp(base)` expression computes, at 64-bit address size:
-the base register plus the displacement. -/
-theorem AddrExpr.zeroExtend_interp_base_disp [L : Labels] (b : Reg64) (d : Int64)
-    (regs : Reg64s) (rng : Std.Rco Int64) :
-    ((AddrExpr.interp (address_size := .mk .W64)
-        (a := ⟨some (.reg b), none, .int64 d⟩) regs rng).zeroExtend 64)
-      = regs.get64 b + BitVec.ofInt 64 d.toInt := by
-  simp only [AddrExpr.interp, ConstExpr.interp, BitVec.toAddressSize, Reg64s.get64]
-  have htake : ∀ x : BitVec 64, x.take Width.W64.bits = x := by
-    intro x
-    simp [BitVec.take, BitVec.extractLsb']
-  rw [htake]
-  have hsigned : ∀ x : BitVec 64, x.signed = x.toInt := fun _ => rfl
-  rw [hsigned, Int.add_zero,
-    show ∀ y : BitVec Width.W64.bits, BitVec.zeroExtend 64 y = y from fun _ => rfl,
-    BitVec.ofInt_add, BitVec.ofInt_toInt]
-
-
-/-- The address a `disp(base, index, 8)` expression computes, at 64-bit
-address size: the base plus eight times the index plus the displacement. -/
-theorem AddrExpr.zeroExtend_interp_sib [L : Labels] (b i : Reg64) (d : Int64)
-    (regs : Reg64s) (rng : Std.Rco Int64) :
-    ((AddrExpr.interp (address_size := .mk .W64)
-        (a := ⟨some (.reg b), some ⟨i, .W64⟩, .int64 d⟩) regs rng).zeroExtend 64)
-      = regs.get64 b + regs.get64 i * 8 + BitVec.ofInt 64 d.toInt := by
-  simp only [AddrExpr.interp, ConstExpr.interp, BitVec.toAddressSize, Reg64s.get64]
-  have htake : ∀ x : BitVec 64, x.take Width.W64.bits = x := by
-    intro x
-    simp [BitVec.take, BitVec.extractLsb']
-  rw [htake, htake]
-  have hsigned : ∀ x : BitVec 64, x.signed = x.toInt := fun _ => rfl
-  rw [hsigned, hsigned,
-    show ∀ y : BitVec Width.W64.bits, BitVec.zeroExtend 64 y = y from fun _ => rfl,
-    BitVec.ofInt_add, BitVec.ofInt_add, BitVec.ofInt_mul, BitVec.ofInt_toInt, BitVec.ofInt_toInt]
-  rfl
-
 /-- Rotate the middle assertion out: `P ∗ (Q ∗ R) = Q ∗ (P ∗ R)`. -/
 theorem MProp.sep_left_comm {w : Nat} (P Q R : MProp w) :
     P ∗ (Q ∗ R) = Q ∗ (P ∗ R) := by

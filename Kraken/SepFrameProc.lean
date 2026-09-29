@@ -15,6 +15,7 @@ keyed on `Directive`: that is where `vcgen` applies a spec with a footprint.
 -/
 public import Kraken.SepSpecs
 public import Kraken.SepCancel
+public import Kraken.KVCGen
 public import Lean.Elab.Tactic.VCGen.FrameProc
 
 public section
@@ -147,8 +148,10 @@ where
     let hφ ← mkAppNS (← mkConstS ``Eq.mpr [.zero]) #[φ, φ', hcongr, hsub]
     return (hφ, hsub.mvarId!)
 
-/-- Phase one: always frame, at the goal's own state. -/
-meta def sepFrameProc : FrameInferenceProc := fun i =>
+/-- Phase one: frame a goal of the separation wp at the goal's own state, and
+decline a goal of any other wp over `Directive`. -/
+meta def sepFrameProc : FrameInferenceProc := fun i => do
+  unless (← Sym.inferType i.pre).isAppOf ``MProp do return .decline
   return .commit i.unframedApp.excessArgs (sepFrameSplit i)
 
 @[frameproc] meta def sepFP : FrameProc where
@@ -159,37 +162,6 @@ meta def sepFrameProc : FrameInferenceProc := fun i =>
   proc := sepFrameProc
 
 end SepWP
-
-/-! ## The entry point
-
-`kvcgen64 [defs] with step` is `vcgen` with the register state folded as it
-goes: every write to a named register becomes a structure update, so the
-state `vcgen` threads through a block stays one register literal. -/
-
-/-- `vcgen` on the separation wp with the register state folded. -/
-syntax (name := kvcgen64) "kvcgen64" (" [" ident,* "]")? (" with " vcgenDischarge)? : tactic
-
-macro_rules
-  | `(tactic| kvcgen64 $[[$ids,*]]? $[with $d]?) => do
-    let lemmas ← (ids.map (·.getElems) |>.getD #[]).mapM fun i =>
-      `(Lean.Parser.Tactic.simpLemma| $i:ident)
-    `(tactic| vcgen [$lemmas,*] simplifying_assumptions [
-        Reg64s.set64_rax,
-        Reg64s.set64_rbx,
-        Reg64s.set64_rcx,
-        Reg64s.set64_rdx,
-        Reg64s.set64_rsi,
-        Reg64s.set64_rdi,
-        Reg64s.set64_rsp,
-        Reg64s.set64_rbp,
-        Reg64s.set64_r8,
-        Reg64s.set64_r9,
-        Reg64s.set64_r10,
-        Reg64s.set64_r11,
-        Reg64s.set64_r12,
-        Reg64s.set64_r13,
-        Reg64s.set64_r14,
-        Reg64s.set64_r15] $[with $d]?)
 
 /-! ## Smoke tests
 
