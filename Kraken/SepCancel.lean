@@ -69,16 +69,18 @@ namespace MProp
 
 open Lean Meta in
 /-- Normalize the address of an atom to `get64` reads of the initial registers.
-The first pass reads a register through writes, the second through a
-register literal down to the field of the initial registers, and the third
-spells the field read as `get64`. -/
+The first pass reads a register through writes and spells a scaled index as
+a product of words. The second pass reads a register through a register
+literal down to the field of the initial registers. The third pass spells
+the field read as `get64`. -/
 meta def normalizeAddr (a : Expr) : MetaM Simp.Result := do
   let regs := [``Reg64s.get64_r10, ``Reg64s.get64_r11, ``Reg64s.get64_r12, ``Reg64s.get64_r13,
     ``Reg64s.get64_r14, ``Reg64s.get64_r15, ``Reg64s.get64_r8, ``Reg64s.get64_r9,
     ``Reg64s.get64_rax, ``Reg64s.get64_rbp, ``Reg64s.get64_rbx, ``Reg64s.get64_rcx,
     ``Reg64s.get64_rdi, ``Reg64s.get64_rdx, ``Reg64s.get64_rsi, ``Reg64s.get64_rsp]
   let mut writes ← ({} : SimpTheorems).addConst ``Reg64s.get64_set64
-  writes ← writes.addConst ``eq_self_iff_true
+  for n in [``eq_self_iff_true, ``BitVec.ofInt_mul, ``BitVec.ofInt_toInt, ``BitVec.add_zero] do
+    writes ← writes.addConst n
   let mut fields : SimpTheorems := {}
   for n in regs do
     fields ← fields.addConst n

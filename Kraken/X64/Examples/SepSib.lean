@@ -15,7 +15,7 @@ open scoped SepWP
 
 set_option experimental.vcgen true
 
-attribute [local grind ←] Lean.Order.le_ofProp
+attribute [local grind ←] Lean.Order.le_ofProp MProp.SliceBound.intro MProp.le_mk_of
 attribute [local grind =] Int.toBytes_length UInt64.toBytes_length BitVec.ofInt_ofBytes_toBytes
 
 def sib_example : Program := parse("
@@ -29,9 +29,7 @@ theorem sib_correct (v : UInt64) :
     ⦃ fun r _ _ => v.AtM (r.rdi.toBitVec + BitVec.ofInt 64 (r.r15.toBitVec.toInt * 8)) ⦄
       sib_example
     ⦃ fun _ r _ _ => ⌜r.rax = 42⌝ ⦄ := by
-  -- TODO: `vcgen [sib_example] with finish` fails. The frame inference does not identify the
-  -- slot `rdi + ofInt (r15.toInt * 8)` with the SIB spec's `rdi + r15 * 8 + 0` and slices instead.
-  sorry
+  vcgen [sib_example] with finish
 
 /-! ## The baseline statement
 
@@ -44,6 +42,5 @@ theorem sib_example_correct [layout : _root_.Layout] (s₀ : MachineData)
     Eventually (straightlineStep (layout sib_example))
       (fun s' => s'.1.regs.rax = 42)
       (s₀, Kraken.Layout.start Directive) := by
-  apply eventually_straightlineStep_of_sep_triple (UInt64.get_AtM_sep h_mem)
-  -- TODO: `vcgen [sib_example] with finish` fails, for the reason given at `sib_correct`.
-  sorry
+  apply eventually_straightlineStep_of_sep_wp (UInt64.get_AtM_sep h_mem)
+  vcgen [sib_example] with finish

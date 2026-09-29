@@ -17,7 +17,7 @@ open scoped SepWP
 
 set_option experimental.vcgen true
 
-attribute [local grind ←] Lean.Order.le_ofProp MProp.SliceBound.intro
+attribute [local grind ←] Lean.Order.le_ofProp MProp.SliceBound.intro MProp.le_mk_of
 attribute [local grind =] Int.toBytes_length UInt64.toBytes_length BitVec.ofInt_ofBytes_toBytes
   List.length_take List.length_drop BitVec.add_zero
 
@@ -50,9 +50,5 @@ theorem move_2_regs_to_heap_correct [layout : _root_.Layout] (s₀ : MachineData
         s'.1.regs.r13 = s₀.regs.rcx ∧
         s'.1.regs.rdi = s₀.regs.rdi)
       (s₀, Kraken.Layout.start Directive) := by
-  apply eventually_straightlineStep_of_sep_triple (UInt64.get_AtM_sep_AtM_sep h_mem)
-  -- TODO: `vcgen [move_2_regs_to_heap] with finish` fails. The bridge introduces the registers as a
-  -- variable `r` with the hypothesis `r = s₀.regs`, and `ecancel` compares the footprint's
-  -- address in `s₀.regs` with the instruction's address in `r` syntactically, so it slices
-  -- the region instead of matching the slot.
-  sorry
+  apply eventually_straightlineStep_of_sep_wp (UInt64.get_AtM_sep_AtM_sep h_mem)
+  vcgen [move_2_regs_to_heap] with finish

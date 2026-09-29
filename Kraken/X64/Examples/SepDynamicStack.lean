@@ -31,7 +31,7 @@ def dynamic_stack : Program := parse("
   movq -8(%rsp), %rbx
 ")
 
-attribute [local grind ←] Lean.Order.le_ofProp MProp.SliceBound.intro
+attribute [local grind ←] Lean.Order.le_ofProp MProp.SliceBound.intro MProp.le_mk_of
 attribute [local grind =] Int.toBytes_length BitVec.ofInt_ofBytes_toBytes List.length_take List.length_drop
 
 theorem dynamic_stack_correct (stack : List UInt8) (lstack : stack.length = 1024)
@@ -54,8 +54,5 @@ theorem dynamic_stack_example_correct [layout : _root_.Layout] (s₀ : MachineDa
     Eventually (straightlineStep (layout dynamic_stack))
       (fun s' => s'.1.regs.rax = 42 ∧ s'.1.regs.rbx = 99 ∧ s'.1.regs.rsp = s₀.regs.rsp)
       (s₀, Kraken.Layout.start Directive) := by
-  apply eventually_straightlineStep_of_sep_triple (List.get_AtM_sep h_mem)
-  -- TODO: `vcgen [dynamic_stack] with finish` closes every goal, but the kernel rejects the
-  -- proof term with `unknown constant '_inhabitedExprDummy'`: a metaprogram of the frame
-  -- inference inserts a default `Expr`.
-  sorry
+  apply eventually_straightlineStep_of_sep_wp (List.get_AtM_sep h_mem)
+  vcgen [dynamic_stack] with finish
