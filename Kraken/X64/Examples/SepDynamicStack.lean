@@ -40,7 +40,7 @@ theorem dynamic_stack_correct (stack : List UInt8) (lstack : stack.length = 1024
         ⊓ stack.AtM (r.rsp.toBitVec - 1024#64) ⦄
       dynamic_stack
     ⦃ fun _ r z f => ⌜r.rax = 42 ∧ r.rbx = 99 ∧ r.rsp = rsp₀⌝ ⦄ := by
-  vcgen [dynamic_stack] with finish
+  kvcgen64 [dynamic_stack] with finish
 
 /-! ## The baseline statement
 
@@ -55,4 +55,4 @@ theorem dynamic_stack_example_correct [layout : _root_.Layout] (s₀ : MachineDa
       (fun s' => s'.1.regs.rax = 42 ∧ s'.1.regs.rbx = 99 ∧ s'.1.regs.rsp = s₀.regs.rsp)
       (s₀, Kraken.Layout.start Directive) := by
   apply eventually_straightlineStep_of_sep_wp (List.get_AtM_sep h_mem)
-  vcgen [dynamic_stack] with finish
+  kvcgen64 [dynamic_stack] with finish

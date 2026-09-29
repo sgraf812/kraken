@@ -27,7 +27,7 @@ theorem p6_spec (stack : List UInt8) (h_len : stack.length = 8) (a sp : UInt64) 
     ⦃ fun r _ _ => ⌜r.rax = a ∧ r.rsp = sp⌝ ⊓ stack.AtM (r.rsp.toBitVec - 8#64) ⦄
       p6
     ⦃ fun _ r _ _ => ⌜r.rax = a ∧ r.rsp = sp⌝ ⦄ := by
-  vcgen [p6] with finish
+  kvcgen64 [p6] with finish
 
 /-! ## The baseline statement
 
@@ -41,4 +41,4 @@ theorem p6_correct [layout : _root_.Layout] (s₀ : MachineData)
       (fun s' => s'.1.regs.rax = s₀.regs.rax ∧ s'.1.regs.rsp = s₀.regs.rsp)
       (s₀, Kraken.Layout.start Directive) := by
   apply eventually_straightlineStep_of_sep_wp (List.get_AtM_sep h_mem)
-  vcgen [p6] with finish
+  kvcgen64 [p6] with finish

@@ -33,7 +33,7 @@ theorem move_2_regs_to_heap_spec (v1 v2 : UInt64) (a c d : UInt64) :
         ⊓ (v1.AtM r.rdi.toBitVec ∗ v2.AtM (r.rdi.toBitVec + 8#64)) ⦄
       move_2_regs_to_heap
     ⦃ fun _ r _ _ => ⌜r.r12 = a ∧ r.r13 = c ∧ r.rdi = d⌝ ⦄ := by
-  vcgen [move_2_regs_to_heap] with finish
+  kvcgen64 [move_2_regs_to_heap] with finish
 
 /-! ## The baseline statement
 
@@ -51,4 +51,4 @@ theorem move_2_regs_to_heap_correct [layout : _root_.Layout] (s₀ : MachineData
         s'.1.regs.rdi = s₀.regs.rdi)
       (s₀, Kraken.Layout.start Directive) := by
   apply eventually_straightlineStep_of_sep_wp (UInt64.get_AtM_sep_AtM_sep h_mem)
-  vcgen [move_2_regs_to_heap] with finish
+  kvcgen64 [move_2_regs_to_heap] with finish

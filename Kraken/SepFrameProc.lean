@@ -180,7 +180,7 @@ example (bs : List UInt8) (hlen : bs.length = 8) :
       (parse("movq %rax, 136(%rdx)\nmovq $1, %rbx"))
     ⦃ fun _ r z f => (Int.toBytes 8 (r.get64 .rax).toInt).AtM
         (r.get64 .rdx + BitVec.ofInt 64 (136 : Int64).toInt) ⦄ := by
-  vcgen with finish
+  kvcgen64 with finish
 
 example (bs cs : List UInt8) (hb : bs.length = 8) (hc : cs.length = 8) :
     ⦃ fun r z f => bs.AtM (r.get64 .rdx + BitVec.ofInt 64 (136 : Int64).toInt)
@@ -190,7 +190,7 @@ example (bs cs : List UInt8) (hb : bs.length = 8) (hc : cs.length = 8) :
           (r.get64 .rdx + BitVec.ofInt 64 (136 : Int64).toInt)
         ∗ (Int.toBytes 8 (r.get64 .rbx).toInt).AtM
           (r.get64 .rdx + BitVec.ofInt 64 (144 : Int64).toInt) ⦄ := by
-  vcgen with finish
+  kvcgen64 with finish
 
 example (bs cs : List UInt8) (hb : bs.length = 8) (hc : cs.length = 8) :
     ⦃ fun r z f => bs.AtM (r.get64 .rdx + BitVec.ofInt 64 (136 : Int64).toInt)
@@ -199,6 +199,6 @@ example (bs cs : List UInt8) (hb : bs.length = 8) (hc : cs.length = 8) :
     ⦃ fun _ r z f => (Int.toBytes 8 (r.get64 .rax).toInt).AtM
           (r.get64 .rdx + BitVec.ofInt 64 (136 : Int64).toInt)
         ∗ cs.AtM (r.get64 .rdx + BitVec.ofInt 64 (144 : Int64).toInt) ⦄ := by
-  vcgen with finish
+  kvcgen64 with finish
 
 end Smoke

@@ -29,7 +29,7 @@ theorem sib_correct (v : UInt64) :
     ⦃ fun r _ _ => v.AtM (r.rdi.toBitVec + BitVec.ofInt 64 (r.r15.toBitVec.toInt * 8)) ⦄
       sib_example
     ⦃ fun _ r _ _ => ⌜r.rax = 42⌝ ⦄ := by
-  vcgen [sib_example] with finish
+  kvcgen64 [sib_example] with finish
 
 /-! ## The baseline statement
 
@@ -43,4 +43,4 @@ theorem sib_example_correct [layout : _root_.Layout] (s₀ : MachineData)
       (fun s' => s'.1.regs.rax = 42)
       (s₀, Kraken.Layout.start Directive) := by
   apply eventually_straightlineStep_of_sep_wp (UInt64.get_AtM_sep h_mem)
-  vcgen [sib_example] with finish
+  kvcgen64 [sib_example] with finish

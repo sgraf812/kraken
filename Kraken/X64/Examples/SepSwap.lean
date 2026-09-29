@@ -26,7 +26,7 @@ theorem swap_spec (a b : BitVec 64) :
     ⦃ fun r _ _ => ⌜r.get Reg.rax = a ∧ r.get Reg.rbx = b⌝ ⊓ MProp.emp ⦄
       swap
     ⦃ fun _ r _ _ => ⌜r.get Reg.rax = b ∧ r.get Reg.rbx = a⌝ ⦄ := by
-  vcgen [swap] with finish
+  kvcgen64 [swap] with finish
 
 /-! ## The baseline statement
 
@@ -41,4 +41,4 @@ theorem swap_correct [layout : _root_.Layout] (d : MachineData) :
       (d, Kraken.Layout.start Directive) := by
   apply eventually_straightlineStep_of_sep_wp (footprint := MProp.emp)
     (frame := MProp.mk fun _ => True) (by rw [MProp.emp_sep, MProp.get_mk]; trivial)
-  vcgen [swap] with finish
+  kvcgen64 [swap] with finish
