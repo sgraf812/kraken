@@ -1,3 +1,5 @@
+module
+
 /-
 `sib_example` in the separation wp: a value is stored into and loaded back
 from the slot at `(%rdi, %r15, 8)`, owned as a `UInt64`.

@@ -1,3 +1,5 @@
+module
+
 /-
 The register read-over-write API the spec framework discharges against:
 register reads over `set64` (both the indexed `get64` and the per-field
@@ -5,9 +7,12 @@ accessors), the `MachineData` record projections, and the
 `StatusFlags`/`BitVec` reductions the flag and address arithmetic normalize
 with.
 -/
-import Kraken.X64.OmniSemantics
-import Kraken.GrindFold
-import Std.Tactic.Do
+public import Kraken.X64.OmniSemantics
+public import Kraken.GrindFold
+public import Std.Tactic.Do
+public import Std.WP
+
+@[expose] public section
 
 open Std.WP
 

@@ -1,3 +1,5 @@
+module
+
 /-
 `swap` in the separation wp: three `xor`s exchange `rax` and `rbx`. The
 program owns no memory.

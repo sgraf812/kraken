@@ -1,3 +1,5 @@
+module
+
 /-
 Transport of a directive's transformer into the baseline interpreter.
 `Directive.interp_sound` turns each disjunct of a cell's step, the
@@ -7,8 +9,10 @@ instruction set. The machine-founded weakest precondition
 (Kraken/MachineWP.lean) consumes it at every step of its bridge to
 `straightlineStep`.
 -/
-import Kraken.Blocks
-import Kraken.SegmentExtract
+public import Kraken.Blocks
+public import Kraken.SegmentExtract
+
+@[expose] public section
 
 open Kraken
 open Std.WP

@@ -1,3 +1,5 @@
+module
+
 /-
 The frame inference procedure of the separation wp, with `ecancel` as its
 engine. At a spec application `vcgen` hands over the goal's precondition and
@@ -11,8 +13,10 @@ the remainder to the frame, and proves the split by one AC equation.
 Every instruction spec is a triple of one directive, so the procedure is
 keyed on `Directive`: that is where `vcgen` applies a spec with a footprint.
 -/
-import Kraken.SepSpecs
-import Lean.Elab.Tactic.VCGen.FrameProc
+public import Kraken.SepSpecs
+public import Lean.Elab.Tactic.VCGen.FrameProc
+
+public section
 
 open Lean Meta Sym Sym.Internal Elab Tactic VCGen
 open Std.WP
@@ -78,7 +82,7 @@ conjunct `φ` is the post entailment `new ⊑ Q () r z f`, where after the
 frame rule `Q () r z f` is the wand `upperAdjoint (frameOp R) X r z f`; it is
 pushed through the frame's layers by `upperAdjoint_frameOp_pointwise`, so the
 lattice split of `vcgen` continues at `R ∗ new ⊑ X r z f`. -/
-def sepFrameSplit (i : FrameInferenceInfo) (goal : FrameGoal) :
+meta def sepFrameSplit (i : FrameInferenceInfo) (goal : FrameGoal) :
     Lean.Meta.Grind.GrindM FrameSplit := do
   let ss := goal.framedApp.excessArgs
   let W := goal.framedApp.expr.stripArgsN ss.size
@@ -143,10 +147,10 @@ where
     return (hφ, hsub.mvarId!)
 
 /-- Phase one: always frame, at the goal's own state. -/
-def sepFrameProc : FrameInferenceProc := fun i =>
+meta def sepFrameProc : FrameInferenceProc := fun i =>
   return .commit i.unframedApp.excessArgs (sepFrameSplit i)
 
-@[frameproc] def sepFP : FrameProc where
+@[frameproc] meta def sepFP : FrameProc where
   prog := ``Directive
   opHead := ``SepWP.frameOp
   mkOpAppM := fun _ => pure (mkConst ``SepWP.frameOp)

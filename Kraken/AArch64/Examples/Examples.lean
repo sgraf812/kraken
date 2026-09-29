@@ -1,3 +1,5 @@
+module
+
 /-
 Kraken AArch64 - Example Programs
 
@@ -11,6 +13,8 @@ import Kraken.AArch64.Sep
 import Kraken.Eval
 import Kraken.SeparationTactics
 import Kraken.Tactics
+import Std.Tactic.BVDecide
+
 
 open Kraken.AArch64
 open Kraken.AArch64.Parser
@@ -21,14 +25,9 @@ attribute [ksimp]
   BitVec.ofInt_ofNat
   BitVec.ofInt_toInt
   BitVec.ofNat_uInt64ToNat
-  BitVec.reduceOfInt
   BitVec.setWidth_eq
   Int.add_zero
-  Int.reduceBmod
-  Int.reduceNeg
-  Int64.reduceToInt
   Int64.toInt_neg
-  Nat.reducePow
   Nat.shiftRight_zero
   Nat.sub_zero
   UInt64.ofBitVec_add
@@ -64,17 +63,12 @@ def arith_shift : Program := parseAArch64("
   sub x3, x2, x0
 ")
 
-/- Parked at the merge with the machine-founded wp branch: on the
-pr-release-15067 toolchain `bv_decide` abstracts `BitVec.ofInt 64
-(Int64.toInt c)` literals as opaque instead of folding them, and the goal no
-longer closes. Re-enable when the toolchain and the kstep pipeline agree on
-the literal normal form.
 theorem arith_shift_correct [layout : Layout] (d : MachineData) :
     straightlineStep (layout arith_shift) (d, layout.start) (fun s' =>
       s'.1.regs.getRegOrZr .X3 = 3 * (d.regs.getRegOrZr .X1 + 42)) := by
   kprologue arith_shift with d
   sym => kstep; tactic =>
-  simp only [show BitVec.ofInt 64 (Int64.toInt 42) = 42#64 from rfl,
+  simp (config := { zetaDelta := true }) only [show BitVec.ofInt 64 (Int64.toInt 42) = 42#64 from rfl,
     show (Int64.toInt 0).toNat = 0 from rfl]
   bv_decide
 
@@ -86,13 +80,7 @@ start:
   cbnz x0, start
   mov x1, #42
 ")
--/
 
-/- Parked at the merge with the machine-founded wp branch: on the
-pr-release-15067 toolchain `bv_decide` abstracts `BitVec.ofInt 64
-(Int64.toInt c)` literals as opaque instead of folding them, and the goal no
-longer closes. Re-enable when the toolchain and the kstep pipeline agree on
-the literal normal form.
 theorem p4_correct [layout : Layout] (d : MachineData) :
     Eventually (straightlineStep (layout controlflow))
       (fun s' => s'.1.regs.X1 = 42)
@@ -105,8 +93,8 @@ theorem p4_correct [layout : Layout] (d : MachineData) :
   simp [this]
   sym => kstep; tactic =>
   apply Eventually.done
+  simp (config := { zetaDelta := true }) only [show BitVec.ofInt 64 (Int64.toInt 42) = 42#64 from rfl]
   bv_decide
--/
 
 -- Example 5: Storing and loading registers to/from memory
 open Std

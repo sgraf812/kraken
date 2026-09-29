@@ -1,3 +1,5 @@
+module
+
 /-
 The machine-founded weakest precondition. `Executable.wp` is defined by the
 baseline interpreter: a fragment `q`, placed anywhere in the ambient code,
@@ -9,8 +11,10 @@ pc values: `E : Int64 → MachineData → Prop`. A label exit is
 `CodeEnv` binds the ambient code once, together with the one wellformedness
 fact the rules consume: the segment map advances cell by cell.
 -/
-import Kraken.SegmentExtract
-import Kraken.InterpSound
+public import Kraken.SegmentExtract
+public import Kraken.InterpSound
+
+@[expose] public section
 
 open Kraken
 open Std.WP

@@ -1,3 +1,5 @@
+module
+
 /-
 Kraken - Example Programs
 
@@ -13,8 +15,10 @@ For tactics, see Kraken/Tactics.lean.
 import Kraken.Eval
 import Kraken.SeparationTactics
 import Kraken.Tactics
+import Std.Tactic.BVDecide
 import Kraken.X64.OmniSemantics
 import Kraken.X64.Parser
+import Kraken.X64.PrettyPrint
 import Kraken.X64.Semantics
 import Kraken.X64.Sep
 
@@ -236,14 +240,9 @@ attribute [ksimp]
   BitVec.ofInt_ofNat
   BitVec.ofInt_toInt
   BitVec.ofNat_uInt64ToNat
-  BitVec.reduceOfInt
   BitVec.setWidth_eq
   Int.add_zero
-  Int.reduceBmod
-  Int.reduceNeg
-  Int64.reduceToInt
   Int64.toInt_neg
-  Nat.reducePow
   Nat.shiftRight_zero
   Nat.sub_zero
   UInt64.ofBitVec_add
@@ -255,11 +254,6 @@ attribute [ksimp]
   UInt64.toBitVec_sub
   UInt64.toNat_toBitVec
 
-/- Parked at the merge with the machine-founded wp branch: inside the `sym`
-session the `kstep` rewrite trips over a free variable that the surrounding
-`have`s introduced (`unknown free variable`), a kstep-internal drift on the
-pr-release-15067 toolchain. The push/pop story lives in
-Kraken/X64/Examples/PushPop.lean and CallSwap.lean on this branch.
 theorem p6_correct [layout : Layout] (s₀ : MachineData)
     (stack : List UInt8) (h_len : stack.length = 8) (R : DataMem → Prop)
     (h_mem : s₀.dmem =⋆ Eq (stack.At (s₀.regs.rsp.toBitVec - 8#64)) ⋆ R) :
@@ -275,8 +269,8 @@ theorem p6_correct [layout : Layout] (s₀ : MachineData)
   tactic =>
   apply Eventually.done
   rw [BitVec.ofInt_ofBytes_toBytes 64 8 rfl]
+  simp (config := { zetaDelta := true }) only [show (OfNat.ofNat 8 : UInt64) = 8 from rfl]
   bv_decide
--/
 
 -- def bigp := parseFile("./ecc-secp521r1-modp.S")
 

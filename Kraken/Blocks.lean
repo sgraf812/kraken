@@ -1,3 +1,5 @@
+module
+
 /-
 The text of a program, as the control-flow rule reads it. `Layout.frag` names
 a fragment as it is laid out at a position of its host program.
@@ -7,7 +9,9 @@ and one `(label, body)` pair per label cell; `Program.blockAt` reads a block
 off that decomposition, and `cfg_cases` splits a control-flow obligation into
 one goal per block.
 -/
-import Kraken.Specs
+public import Kraken.Specs
+
+@[expose] public section
 
 /-- A layout applied to a program, at the X64 `Executable` abbreviation: dot
 notation on the result resolves through the `Executable` namespace. -/

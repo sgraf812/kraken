@@ -1,3 +1,5 @@
+module
+
 /-
 `p6` in the separation wp: `rax` is pushed, overwritten and popped back. The
 precondition owns the stack slot below the stack pointer.

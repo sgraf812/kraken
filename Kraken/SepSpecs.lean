@@ -1,3 +1,5 @@
+module
+
 /-
 The instruction dictionary of the separation-logic wp. Each spec is a triple
 of one directive with a small footprint. A register write carries the
@@ -11,9 +13,12 @@ Every proof runs the same route: `SepWP.sep_intro` opens the triple under an
 ambient frame, the `Mem.*_sep` lemmas of Kraken/SeparationMem.lean step the
 machine memory under that frame, and the run ends at the directive's end.
 -/
-import Kraken.SepWP
-import Kraken.SeparationMem
-import Kraken.X64.Parser
+public import Kraken.SepWP
+public import Kraken.SeparationMem
+public import Kraken.X64.Parser
+import all Kraken.Separation
+
+@[expose] public section
 
 open Std.WP
 open Lean.Order

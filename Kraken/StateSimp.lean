@@ -1,3 +1,5 @@
+module
+
 /-
 The rewrite set `vcgen simplifying_assumptions` normalizes each state literal
 with as it is produced, registered as `Sym.simp` theorems.
@@ -7,8 +9,10 @@ literals. `Sym.Simp` expands each state exactly once as it traverses the goal
 bottom-up, caching by pointer, and collapses the value on the spot with these
 rules; `kfold` reuses the same set on the finished verification condition.
 -/
-import Lean
-import Kraken.Specs
+public import Lean
+public import Kraken.Specs
+
+public section
 
 open Lean Meta Sym Sym.Simp
 

@@ -1,3 +1,5 @@
+module
+
 /-
 `alu_mem` in the separation wp: the four-instruction program of the baseline
 example, with the slot at `136(%rdx)` owned as a `UInt64`. The post fixes the register

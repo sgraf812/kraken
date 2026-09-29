@@ -1,3 +1,5 @@
+module
+
 /-
 `move_2_regs_to_heap` in the separation wp: two registers are stored into two
 adjacent slots at `(%rdi)` and `8(%rdi)` and loaded back into two other

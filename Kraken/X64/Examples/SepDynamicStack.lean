@@ -1,3 +1,5 @@
+module
+
 /-
 `dynamic_stack` in the separation wp: a frame is carved out of a 1024-byte
 region below the stack pointer at an offset that depends on two registers, a

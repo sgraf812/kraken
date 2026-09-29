@@ -1,3 +1,5 @@
+module
+
 /-
 The separation-logic weakest precondition. `MProp w` is the assertion type of
 the separation algebra: predicates over a `w`-bit byte memory, with `∗` the
@@ -13,9 +15,12 @@ fall-through and across every exit. `SepWP.sep_intro` is the one door in, and
 `SepWP.frames` says every program frames every memory assertion, which is
 what the frame inference of `vcgen` consumes.
 -/
-import Kraken.MachineWP
-import Kraken.SeparationMem
-import Kraken.SeparationTactics
+public import Kraken.MachineWP
+public import Kraken.SeparationMem
+public import Kraken.SeparationTactics
+import all Kraken.Separation
+
+@[expose] public section
 
 open Std.WP
 open Lean.Order
@@ -202,7 +207,7 @@ namespace MProp
 open Lean Meta in
 /-- Normalize the register reads of an address to `get64` reads through the
 writes, and word atoms to byte atoms. -/
-def normalizeAtoms (e : Expr) : MetaM (Expr × Option Expr) := do
+meta def normalizeAtoms (e : Expr) : MetaM (Expr × Option Expr) := do
   let mut thms ← ({} : SimpTheorems).addConst ``Reg64s.get64_set64
   thms ← thms.addConst ``eq_self_iff_true
   for n in [``UInt64.AtM, ``UInt32.AtM, ``UInt16.AtM, ``UInt8.AtM] do
@@ -217,7 +222,7 @@ open Lean Meta in
 /-- Pay an address inside a region: split the region atom at the address by
 `List.AtM_slice`, with the bound as the side goal. Stored values
 (`Int.toBytes …`) are never split. -/
-def splitAtom (atom addr : Expr) : MetaM (Option (Expr × Expr × MVarId)) := do
+meta def splitAtom (atom addr : Expr) : MetaM (Option (Expr × Expr × MVarId)) := do
   unless atom.isAppOfArity ``List.AtM 3 do return none
   let L := atom.appFn!.appArg!
   if L.isAppOf ``Int.toBytes then return none
@@ -228,7 +233,7 @@ def splitAtom (atom addr : Expr) : MetaM (Option (Expr × Expr × MVarId)) := do
   return some (sliced, heq, hb.mvarId!)
 
 open Lean Meta in
-def sepOps : Kraken.Tactic.SepOps where
+meta def sepOps : Kraken.Tactic.SepOps where
   sep := ``MProp.sep
   emp := ``MProp.emp
   isCarrier := fun ty => pure (ty.isAppOfArity ``MProp 1)
@@ -238,7 +243,7 @@ def sepOps : Kraken.Tactic.SepOps where
   split? := splitAtom
   addr? := fun e => if e.isAppOfArity ``List.AtM 3 then some e.appArg! else none
 
-initialize Kraken.Tactic.sepOpsRef.modify (sepOps :: ·)
+meta initialize Kraken.Tactic.sepOpsRef.modify (sepOps :: ·)
 
 end MProp
 
@@ -267,7 +272,7 @@ instance (F : MProp 64) : PreservesSup (frameOp F) :=
 
 /-- The machine-founded wp, read at the separation assertion language: the
 memory is curried out of `MachineData`. -/
-@[instance_reducible] private def base [CodeEnv] :
+@[instance_reducible] def base [CodeEnv] :
     WP Program Unit (Reg64s → RegZmms → StatusFlags → MProp 64)
       (Int64 → Reg64s → RegZmms → StatusFlags → MProp 64) where
   trans q := ⟨fun Q E regs zmms flags mem =>

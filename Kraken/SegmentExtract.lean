@@ -1,3 +1,5 @@
+module
+
 /-
 Partial evaluation of the layout. `Executable.addrOf` names the address of
 the directive at an index; `Executable.label_addrOf` computes a label's
@@ -10,7 +12,9 @@ one, and the program fits in the address space; `addrOf_ne_of_valid`
 discharges the freshness hypothesis at any index that follows a non-label
 directive.
 -/
-import Kraken.Blocks
+public import Kraken.Blocks
+
+@[expose] public section
 
 namespace Kraken.Executable
 

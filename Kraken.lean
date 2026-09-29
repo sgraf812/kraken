@@ -1,3 +1,5 @@
+module
+
 /-
 Kraken - x86_64 Assembly Interpreter
 
@@ -10,16 +12,17 @@ and the frame inference of Kraken/SepFrameProc.lean. Both are discharged by the
 `Std.WP` `vcgen` pipeline.
 -/
 
-import Kraken.X64.Semantics
-import Kraken.X64.Parser
-import Kraken.X64.OmniSemantics
-import Kraken.X64.Sep
-import Kraken.Specs
-import Kraken.Tactics
-import Kraken.MachineWP
-import Kraken.SepWP
-import Kraken.SepSpecs
-import Kraken.SepFrameProc
+public import Kraken.X64.Semantics
+public import Kraken.X64.Parser
+public import Kraken.X64.OmniSemantics
+public import Kraken.X64.Sep
+public import Kraken.Specs
+public import Kraken.Tactics
+public import Kraken.MachineWP
+public import Kraken.SepWP
+public import Kraken.SepSpecs
+public import Kraken.SepFrameProc
+import Kraken.X64.Examples.Examples
 import Kraken.X64.Examples.SepAluMem
 import Kraken.X64.Examples.SepDynamicStack
 import Kraken.X64.Examples.SepMove2RegsToHeap

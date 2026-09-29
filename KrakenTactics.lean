@@ -1,2 +1,6 @@
-import KrakenTactics.ClearDead
-import KrakenTactics.Fold
+module
+
+public import KrakenTactics.ClearDead
+public import KrakenTactics.Fold
+
+@[expose] public section
