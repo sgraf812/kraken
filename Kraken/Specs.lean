@@ -279,9 +279,11 @@ theorem Int64.toBitVec_neg_ofNat_norm (n : Nat) :
 /-! ## Masks
 
 Code rounds down to a multiple of a power of two with `and $-2^k, %r`, and takes
-the remainder with `and $2^k-1, %r`. The two rules below read such an `and` as
-arithmetic. Each fires only on a literal mask of its shape, which its guards
-decide by evaluation. -/
+the remainder with `and $2^k-1, %r`. The rules below read such an `and` as
+arithmetic, both on the register value and on its `toNat`, the form `grind`
+reaches through `BitVec.toNat_and`. Each fires only on a literal mask of its
+shape. A number `n ≤ 2 ^ w` is a power of two exactly when `2 ^ w % n = 0`, so
+the guards are literal arithmetic, which `grind` decides by evaluation. -/
 
 theorem Nat.and_two_pow_sub_two_pow {x w k : Nat} (hk : k ≤ w) (hx : x < 2 ^ w) :
     x &&& (2 ^ w - 2 ^ k) = x / 2 ^ k * 2 ^ k := by
@@ -300,35 +302,72 @@ theorem Nat.and_two_pow_sub_two_pow {x w k : Nat} (hk : k ≤ w) (hx : x < 2 ^ w
       simp [this]
   · simp [hik]
 
+theorem Nat.exists_eq_two_pow_of_dvd : ∀ {w n : Nat}, n ∣ 2 ^ w → ∃ k, n = 2 ^ k
+  | 0, _, h => ⟨0, Nat.dvd_one.mp h⟩
+  | w + 1, n, h => by
+    rcases Nat.mod_two_eq_zero_or_one n with h2 | h2
+    · obtain ⟨m, rfl⟩ := Nat.dvd_of_mod_eq_zero h2
+      rw [Nat.pow_succ, Nat.mul_comm (2 ^ w)] at h
+      obtain ⟨k, hk⟩ := Nat.exists_eq_two_pow_of_dvd
+        (Nat.dvd_of_mul_dvd_mul_left (show 0 < 2 by decide) h)
+      exact ⟨k + 1, by rw [hk, Nat.pow_succ, Nat.mul_comm]⟩
+    · have hc : Nat.Coprime n 2 := by
+        show Nat.gcd n 2 = 1
+        rw [Nat.gcd_comm, Nat.gcd_rec, h2]
+        rfl
+      rw [Nat.pow_succ] at h
+      exact Nat.exists_eq_two_pow_of_dvd (hc.dvd_of_dvd_mul_right h)
+
 theorem BitVec.toNat_ofNat_lit_of_lt {w m : Nat} (hm : m < 2 ^ w) :
     (OfNat.ofNat m : BitVec w).toNat = m := by
   show (BitVec.ofNat w m).toNat = m
   rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hm]
 
+/-- An `and` of a register value with a mask of low bits is a remainder. -/
+theorem BitVec.toNat_and_lowMask_toNat {w : Nat} (x : BitVec w) (m : Nat)
+    (h : 2 ^ w % (m + 1) = 0) :
+    x.toNat &&& m = x.toNat % (m + 1) := by
+  obtain ⟨k, hk⟩ := Nat.exists_eq_two_pow_of_dvd (Nat.dvd_of_mod_eq_zero h)
+  rw [hk, show m = 2 ^ k - 1 by omega, Nat.and_two_pow_sub_one_eq_mod]
+
+/-- An `and` of a register value with a mask of high bits rounds down to a
+multiple of `2 ^ w - m`. -/
+theorem BitVec.toNat_and_highMask_toNat {w : Nat} (x : BitVec w) (m : Nat) (hm : m < 2 ^ w)
+    (h : 2 ^ w % (2 ^ w - m) = 0) :
+    x.toNat &&& m = x.toNat / (2 ^ w - m) * (2 ^ w - m) := by
+  obtain ⟨k, hk⟩ := Nat.exists_eq_two_pow_of_dvd (Nat.dvd_of_mod_eq_zero h)
+  have hkw : k ≤ w := (Nat.pow_le_pow_iff_right Nat.one_lt_two).mp (by omega)
+  rw [hk, show m = 2 ^ w - 2 ^ k by omega]
+  exact Nat.and_two_pow_sub_two_pow hkw x.isLt
+
 /-- An `and` with a mask of low bits is a remainder. -/
 theorem BitVec.toNat_and_lowMask {w : Nat} (x : BitVec w) (m : Nat) (hm : m < 2 ^ w)
-    (h : m + 1 = 2 ^ Nat.log2 (m + 1)) :
+    (h : 2 ^ w % (m + 1) = 0) :
     (x &&& (OfNat.ofNat m : BitVec w)).toNat = x.toNat % (m + 1) := by
-  obtain ⟨k, hk⟩ : ∃ k, m + 1 = 2 ^ k := ⟨_, h⟩
-  rw [BitVec.toNat_and, BitVec.toNat_ofNat_lit_of_lt hm, hk, show m = 2 ^ k - 1 by omega,
-    Nat.and_two_pow_sub_one_eq_mod]
+  rw [BitVec.toNat_and, BitVec.toNat_ofNat_lit_of_lt hm]
+  exact BitVec.toNat_and_lowMask_toNat x m h
 
 /-- An `and` with a mask of high bits rounds down to a multiple of `2 ^ w - m`. -/
 theorem BitVec.toNat_and_highMask {w : Nat} (x : BitVec w) (m : Nat) (hm : m < 2 ^ w)
-    (h : 2 ^ w - m = 2 ^ Nat.log2 (2 ^ w - m)) :
+    (h : 2 ^ w % (2 ^ w - m) = 0) :
     (x &&& (OfNat.ofNat m : BitVec w)).toNat = x.toNat / (2 ^ w - m) * (2 ^ w - m) := by
-  obtain ⟨k, hk⟩ : ∃ k, 2 ^ w - m = 2 ^ k := ⟨_, h⟩
-  have hkw : k ≤ w := (Nat.pow_le_pow_iff_right Nat.one_lt_two).mp (by omega)
-  rw [BitVec.toNat_and, BitVec.toNat_ofNat_lit_of_lt hm, hk, show m = 2 ^ w - 2 ^ k by omega]
-  exact Nat.and_two_pow_sub_two_pow hkw x.isLt
+  rw [BitVec.toNat_and, BitVec.toNat_ofNat_lit_of_lt hm]
+  exact BitVec.toNat_and_highMask_toNat x m hm h
 
 grind_pattern BitVec.toNat_and_lowMask => x &&& (OfNat.ofNat m : BitVec w) where
   guard m < 2 ^ w
-  guard m + 1 = 2 ^ Nat.log2 (m + 1)
+  guard 2 ^ w % (m + 1) = 0
 
 grind_pattern BitVec.toNat_and_highMask => x &&& (OfNat.ofNat m : BitVec w) where
   guard m < 2 ^ w
-  guard 2 ^ w - m = 2 ^ Nat.log2 (2 ^ w - m)
+  guard 2 ^ w % (2 ^ w - m) = 0
+
+grind_pattern BitVec.toNat_and_lowMask_toNat => x.toNat &&& (OfNat.ofNat m : Nat) where
+  guard 2 ^ w % (m + 1) = 0
+
+grind_pattern BitVec.toNat_and_highMask_toNat => x.toNat &&& (OfNat.ofNat m : Nat) where
+  guard m < 2 ^ w
+  guard 2 ^ w % (2 ^ w - m) = 0
 
 /-! ## Alignment
 

@@ -1,6 +1,7 @@
 import Kraken.X64.Parser
 import Kraken.MachineWP
 import Kraken.SeparationMem
+import Kraken.StateSimp
 
 /-!
 # `ff_scalarproduct_float_fma3`: an AVX/FMA3 loop over two arrays that may alias
@@ -234,11 +235,6 @@ variable [layout : _root_.Layout] [Executable.ValidLayout (layout scalarproduct_
 /-- The ambient code of the example: `scalarproduct_fma3_prog`, laid out. -/
 local instance scalarproduct.env : CodeEnv := ⟨layout scalarproduct_fma3_prog⟩
 
-/- The program is long: deciding the side conditions of `MachineWP.cfg` and
-splitting the program with `cfg_cases` recurse deeper than the default
-`maxRecDepth`, and the nine obligations take more than the default heartbeats. -/
-set_option maxRecDepth 16384 in
-set_option maxHeartbeats 400000 in
 theorem scalarproduct_fma3_correct (d : MachineData) (len : Nat)
     (h_len_reg : d.regs.get (Reg.low .rdx .W32) = BitVec.ofNat 32 len)
     (h_len_mod : len % 4 = 0) (h_len_pos : 0 < len) (h_len_bound : len * 4 < 2 ^ 32)
@@ -249,15 +245,16 @@ theorem scalarproduct_fma3_correct (d : MachineData) (len : Nat)
     ⦃ fun s => s = d ⦄ scalarproduct_fma3_prog ⦃ fun _ s => s.dmem = d.dmem ⦄ := by
   apply MachineWP.cfg (sp_table d (len * 4)) sp_var
   cfg_cases [scalarproduct_fma3_prog]
-  · vcgen with finish
-  · vcgen with finish
-  · vcgen with finish
-  · vcgen with finish
-  · vcgen with finish
-  · vcgen with finish
-  · vcgen with finish
-  · vcgen with finish
-  · vcgen with finish
+  all_goals simp only [sp_table, sp_var]
+  · vcgen simplifying_assumptions with finish
+  · vcgen simplifying_assumptions with finish
+  · vcgen simplifying_assumptions with finish
+  · vcgen simplifying_assumptions with finish
+  · vcgen simplifying_assumptions with finish
+  · vcgen simplifying_assumptions with finish
+  · vcgen simplifying_assumptions with finish
+  · vcgen simplifying_assumptions with finish
+  · vcgen simplifying_assumptions with finish
 
 /-- `scalarproduct_fma3_correct`, read at the machine as the baseline judgment. -/
 theorem scalarproduct_fma3_terminates_and_safe

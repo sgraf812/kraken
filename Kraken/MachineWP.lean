@@ -1804,7 +1804,7 @@ address, and falls through to the address of the label behind it. -/
 theorem Program.placed_of_layout [layout : _root_.Layout] {p p' : Program}
     [Executable.ValidLayout (layout p)] {l₀ : Label} (hwf : Program.WF p)
     (hp : p = Directive.label l₀ :: p')
-    (hne : 0 < p.countP (fun d => !d.isLabel)) :
+    (hne : p.any (fun d => !d.isLabel) = true) :
     @Program.Placed ⟨layout p⟩ p l₀ := by
   have hnd := hwf.nodup
   -- the entry label names the start of the text
@@ -1870,7 +1870,8 @@ theorem Program.placed_of_layout [layout : _root_.Layout] {p p' : Program}
   refine @Program.Placed.mk ⟨layout p⟩ p l₀ ?_ ?_ ?_ ?_
   · intro pc hplace
     rw [hentry]
-    exact (Executable.entry_of_sits hne hplace).symm
+    exact (Executable.entry_of_sits (List.countP_pos_iff.mpr (List.any_eq_true.mp hne))
+      hplace).symm
   · intro l blk hb
     obtain ⟨pos, i, -, -, -, hlabel, hsits, -⟩ := hpos l blk hb
     rw [hlabel]

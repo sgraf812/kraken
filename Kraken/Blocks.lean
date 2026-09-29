@@ -529,6 +529,47 @@ elab "cfg_label_facts" h:term : tactic => withMainContext do
       goal := g
   replaceMainGoal [goal]
 
+open Lean Meta Elab Tactic in
+/-- The directives of a closed text, in order, read off by reduction. -/
+private partial def cfgDirectives (e : Expr) (acc : Array Expr := #[]) :
+    MetaM (Array Expr) := do
+  let e ← whnfD e
+  match_expr e with
+  | List.nil _ => return acc
+  | List.cons _ hd tl => cfgDirectives tl (acc.push hd)
+  | _ => throwError "cfg_view: cannot compute the directives of the text"
+
+open Lean Meta Elab Tactic in
+/-- For the block-map equation `h : Program.blockAt p l = _` of a closed text
+`p`, add `n : (Program.view p).2 = bs`, where `bs` lists the labeled blocks of
+`p` with their directives. For the text `[.label "a", i₁, .label "b", i₂]`,
+`bs` is `[("a", [i₁]), ("b", [i₂])]`. The kernel checks the equation. -/
+elab "cfg_view " h:term " as " n:ident : tactic => withMainContext do
+  let ty ← instantiateMVars (← inferType (← elabTerm h none))
+  let_expr Eq _ lhs _ := ty
+    | throwError "cfg_view: expected `Program.blockAt p l = _`"
+  let_expr Program.blockAt p _ := lhs
+    | throwError "cfg_view: expected `Program.blockAt p l = _`"
+  let dirTy := mkConst ``Directive
+  let mut blocks : Array (Expr × Array Expr) := #[]
+  for d in ← cfgDirectives p do
+    match_expr ← whnfD d with
+    | Directive.label l =>
+      let .lit (.strVal s) ← whnfD l
+        | throwError "cfg_view: the label {l} is not a string literal"
+      blocks := blocks.push (mkStrLit s, #[])
+    | _ =>
+      let some (l, body) := blocks.back?
+        | throwError "cfg_view: the text does not start with a label"
+      blocks := blocks.pop.push (l, body.push d)
+  let pairs ← blocks.mapM fun (l, body) => do
+    mkAppM ``Prod.mk #[l, ← mkListLit dirTy body.toList]
+  let bs ← mkListLit (← mkAppM ``Prod #[mkConst ``Label, mkConst ``Program]) pairs.toList
+  let stmt ← mkEq (← mkAppM ``Prod.snd #[mkApp (mkConst ``Program.view) p]) bs
+  let pf ← mkAuxTheorem stmt (← mkEqRefl bs)
+  let (_, g) ← (← getMainGoal).note n.getId pf stmt
+  replaceMainGoal [g]
+
 /-- Split the control-flow obligations into one goal per block: compute the
 block map on the program's text, case on the label it matches, and substitute
 the block it names. The bracket lists the program's definitional unfoldings.
@@ -539,8 +580,11 @@ macro "cfg_cases" "[" ids:Lean.Parser.Tactic.simpLemma,* "]" : tactic =>
   `(tactic|
     (intro l blk hblk n
      try cfg_label_facts hblk
-     simp only [$ids,*, Program.blockAt, Program.blockAtAux, Program.view,
-       List.cons_append, List.nil_append, List.head?_cons, List.head?_nil] at hblk
+     cfg_view hblk as hview
+     rw [Program.blockAt, hview] at hblk
+     clear hview
+     simp only [$ids,*, Program.blockAtAux, List.head?_cons, List.head?_nil, Option.map_some,
+       Option.map_none] at hblk
      repeat' split at hblk
      all_goals subst_vars
      all_goals simp only [Option.some.injEq, reduceCtorEq] at hblk
