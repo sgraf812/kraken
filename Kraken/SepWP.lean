@@ -164,23 +164,22 @@ end SepWP
 /-! ## Reading the wp back as the baseline judgment
 
 The wp of a program with no exits is a run of the laid-out program. Take a
-state `st` at the layout's start whose memory satisfies `footprint` next to
-`frame`. If `footprint` entails the wp of the program at `st`'s registers,
-vector registers and flags, for the postcondition that gives `frame` back
-and asks `post` of the whole final state at every pc, then the run ends in
+state `s` whose memory satisfies `footprint` next to `frame`. If `footprint`
+entails the wp of the program at `s`'s registers, vector registers and flags,
+for the postcondition that gives `frame` back and asks `post` of the whole
+final state at every pc, then the run from `s` at the layout's start ends in
 `post`. -/
 
 open SepWP in
-theorem straightlineStep_of_sep_wp [layout : Layout] {p : Program} {e : Executable}
-    {st : MachineState} {post : MachineState → Prop} {footprint frame : MProp 64}
-    (hmem : (footprint ∗ frame).get st.1.dmem)
-    (he : e = layout p := by rfl) (hpc : st.2 = layout.start := by rfl)
+theorem straightlineStep_of_sep_wp [layout : Layout] {p : Program} {s : MachineData}
+    {post : MachineState → Prop} {footprint frame : MProp 64}
+    (hmem : (footprint ∗ frame).get s.dmem)
     (ht : footprint ⊑ WP.wp p (fun _ r z f => frame -∗ MProp.mk fun m => ∀ pc, post (⟨r, z, f, m⟩, pc))
-      ⊥ st.1.regs st.1.zmms st.1.status) :
-    straightlineStep e st post := by
+      ⊥ s.regs s.zmms s.status) :
+    straightlineStep (layout p) (s, layout.start) post := by
   rw [MProp.sep_comm] at hmem
   refine Program.run_straightlineStep (sep_elim ((MProp.le_def _ _).mp
-    (MProp.sep_mono_right _ ht) _ hmem)) he hpc (fun st' hq => ?_) (fun a s' he => ?_)
+    (MProp.sep_mono_right _ ht) _ hmem)) rfl rfl (fun st' hq => ?_) (fun a s' he => ?_)
   · have h := (MProp.le_def _ _).mp (MProp.sep_wand_elim _ _) _ hq
     rw [MProp.get_mk] at h
     exact h st'.2
@@ -189,11 +188,10 @@ theorem straightlineStep_of_sep_wp [layout : Layout] {p : Program} {e : Executab
 
 open SepWP in
 /-- `straightlineStep_of_sep_wp` for a burst that ends the run. -/
-theorem eventually_straightlineStep_of_sep_wp [layout : Layout] {p : Program}
-    {e : Executable} {st : MachineState} {post : MachineState → Prop} {footprint frame : MProp 64}
-    (hmem : (footprint ∗ frame).get st.1.dmem)
-    (he : e = layout p := by rfl) (hpc : st.2 = layout.start := by rfl)
+theorem eventually_straightlineStep_of_sep_wp [layout : Layout] {p : Program} {s : MachineData}
+    {post : MachineState → Prop} {footprint frame : MProp 64}
+    (hmem : (footprint ∗ frame).get s.dmem)
     (ht : footprint ⊑ WP.wp p (fun _ r z f => frame -∗ MProp.mk fun m => ∀ pc, post (⟨r, z, f, m⟩, pc))
-      ⊥ st.1.regs st.1.zmms st.1.status) :
-    Eventually (straightlineStep e) post st :=
-  .step _ _ (straightlineStep_of_sep_wp hmem he hpc ht) fun _ h => .done _ h
+      ⊥ s.regs s.zmms s.status) :
+    Eventually (straightlineStep (layout p)) post (s, layout.start) :=
+  .step _ _ (straightlineStep_of_sep_wp hmem ht) fun _ h => .done _ h

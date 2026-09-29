@@ -126,25 +126,21 @@ end StateWP
 
 /-! ## Reading the wp back as the baseline judgment
 
-The wp of a program with no exits, at a state `st` at the layout's start, is
-a run of the laid-out program: if the wp holds of `st` for the postcondition
-that asks `post` of the final state at every pc, the run ends in `post`. The
-hypothesis is the entailment `⊤ ⊑ wp …` at `st`, the goal form of `vcgen`. -/
+The wp of a program with no exits is a run of the laid-out program: if the wp
+holds of `s` for the postcondition that asks `post` of the final state at
+every pc, the run from `s` at the layout's start ends in `post`. The
+hypothesis is the entailment `⊤ ⊑ wp …` at `s`, the goal form of `vcgen`. -/
 
 open StateWP in
-theorem straightlineStep_of_wp [layout : Layout] {p : Program} {e : Executable}
-    {st : MachineState} {post : MachineState → Prop}
-    (h : ⊤ ⊑ WP.wp p (fun _ s => ∀ pc, post (s, pc)) ⊥ st.1)
-    (he : e = layout p := by rfl) (hpc : st.2 = layout.start := by rfl) :
-    straightlineStep e st post :=
-  Program.run_straightlineStep (of_top_le_prop h) he hpc (fun st' hq => hq st'.2)
+theorem straightlineStep_of_wp [layout : Layout] {p : Program} {s : MachineData}
+    {post : MachineState → Prop} (h : ⊤ ⊑ WP.wp p (fun _ s' => ∀ pc, post (s', pc)) ⊥ s) :
+    straightlineStep (layout p) (s, layout.start) post :=
+  Program.run_straightlineStep (of_top_le_prop h) rfl rfl (fun st' hq => hq st'.2)
     (fun a s' hE => ((bot_le (α := Int64 → MachineData → Prop) fun _ _ => False) a s' hE).elim)
 
 open StateWP in
 /-- `straightlineStep_of_wp` for a burst that ends the run. -/
-theorem eventually_straightlineStep_of_wp [layout : Layout] {p : Program} {e : Executable}
-    {st : MachineState} {post : MachineState → Prop}
-    (h : ⊤ ⊑ WP.wp p (fun _ s => ∀ pc, post (s, pc)) ⊥ st.1)
-    (he : e = layout p := by rfl) (hpc : st.2 = layout.start := by rfl) :
-    Eventually (straightlineStep e) post st :=
-  .step _ _ (straightlineStep_of_wp h he hpc) fun _ h => .done _ h
+theorem eventually_straightlineStep_of_wp [layout : Layout] {p : Program} {s : MachineData}
+    {post : MachineState → Prop} (h : ⊤ ⊑ WP.wp p (fun _ s' => ∀ pc, post (s', pc)) ⊥ s) :
+    Eventually (straightlineStep (layout p)) post (s, layout.start) :=
+  .step _ _ (straightlineStep_of_wp h) fun _ h => .done _ h

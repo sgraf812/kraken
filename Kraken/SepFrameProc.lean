@@ -148,13 +148,12 @@ where
     let hφ ← mkAppNS (← mkConstS ``Eq.mpr [.zero]) #[φ, φ', hcongr, hsub]
     return (hφ, hsub.mvarId!)
 
-/-- Phase one: frame a goal of the separation wp at the goal's own state, and
-decline a goal of any other wp over `Directive`. -/
-meta def sepFrameProc : FrameInferenceProc := fun i => do
-  unless (← Sym.inferType i.pre).isAppOf ``MProp do return .decline
+/-- Phase one: always frame, at the goal's own state. -/
+meta def sepFrameProc : FrameInferenceProc := fun i =>
   return .commit i.unframedApp.excessArgs (sepFrameSplit i)
 
-@[frameproc] meta def sepFP : FrameProc where
+/-- Active under `open scoped SepWP`, together with the instance. -/
+@[scoped frameproc] meta def sepFP : FrameProc where
   prog := ``Directive
   opHead := ``SepWP.frameOp
   mkOpAppM := fun _ => pure (mkConst ``SepWP.frameOp)
