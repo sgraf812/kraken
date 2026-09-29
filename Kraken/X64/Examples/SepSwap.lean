@@ -22,7 +22,7 @@ def swap : Program := parse("
   xor %rax, %rbx
   xor %rbx, %rax")
 
-theorem swap_spec [CodeEnv] (a b : BitVec 64) :
+theorem swap_spec (a b : BitVec 64) :
     ⦃ fun r _ _ => ⌜r.get Reg.rax = a ∧ r.get Reg.rbx = b⌝ ⊓ MProp.emp ⦄
       swap
     ⦃ fun _ r _ _ => ⌜r.get Reg.rax = b ∧ r.get Reg.rbx = a⌝ ⦄ := by
@@ -33,21 +33,12 @@ theorem swap_spec [CodeEnv] (a b : BitVec 64) :
 `swap_spec` read back as the judgment of the baseline example `swap_correct`,
 over the same program text. -/
 
-section Baseline
-
-variable [layout : _root_.Layout] [Executable.ValidLayout (layout swap)]
-
-local instance swap.env : CodeEnv := ⟨layout swap⟩
-
-theorem swap_correct (d : MachineData) :
+theorem swap_correct [layout : _root_.Layout] (d : MachineData) :
       Eventually (straightlineStep (layout swap))
       (fun s' =>
           s'.1.regs.get Reg.rax = d.regs.get Reg.rbx ∧
           s'.1.regs.get Reg.rbx = d.regs.get Reg.rax)
-      (d, Kraken.Layout.start Directive) :=
-  run_of_sep_triple (swap_spec (d.regs.get Reg.rax) (d.regs.get Reg.rbx)).le_wp
-    (fun _ _ _ => PartialOrder.rel_refl) ⟨rfl, rfl⟩ (R := fun _ => True)
-    (by show Std.ExtHashMap.sep Std.ExtHashMap.emp (fun _ => True) d.dmem
-        rw [Std.ExtHashMap.emp_sep]; trivial)
-
-end Baseline
+      (d, Kraken.Layout.start Directive) := by
+  apply eventually_straightlineStep_of_sep_triple (footprint := MProp.emp)
+    (frame := MProp.mk fun _ => True) (by rw [MProp.emp_sep, MProp.get_mk]; trivial)
+  vcgen [swap] with finish

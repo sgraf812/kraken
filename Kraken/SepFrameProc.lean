@@ -14,6 +14,7 @@ Every instruction spec is a triple of one directive, so the procedure is
 keyed on `Directive`: that is where `vcgen` applies a spec with a footprint.
 -/
 public import Kraken.SepSpecs
+public import Kraken.SepCancel
 public import Lean.Elab.Tactic.VCGen.FrameProc
 
 public section
@@ -159,6 +160,37 @@ meta def sepFrameProc : FrameInferenceProc := fun i =>
 
 end SepWP
 
+/-! ## The entry point
+
+`kvcgen64 [defs] with step` is `vcgen` with the register state folded as it
+goes: every write to a named register becomes a structure update, so the
+state `vcgen` threads through a block stays one register literal. -/
+
+/-- `vcgen` on the separation wp with the register state folded. -/
+syntax (name := kvcgen64) "kvcgen64" (" [" ident,* "]")? (" with " vcgenDischarge)? : tactic
+
+macro_rules
+  | `(tactic| kvcgen64 $[[$ids,*]]? $[with $d]?) => do
+    let lemmas ← (ids.map (·.getElems) |>.getD #[]).mapM fun i =>
+      `(Lean.Parser.Tactic.simpLemma| $i:ident)
+    `(tactic| vcgen [$lemmas,*] simplifying_assumptions [
+        Reg64s.set64_rax,
+        Reg64s.set64_rbx,
+        Reg64s.set64_rcx,
+        Reg64s.set64_rdx,
+        Reg64s.set64_rsi,
+        Reg64s.set64_rdi,
+        Reg64s.set64_rsp,
+        Reg64s.set64_rbp,
+        Reg64s.set64_r8,
+        Reg64s.set64_r9,
+        Reg64s.set64_r10,
+        Reg64s.set64_r11,
+        Reg64s.set64_r12,
+        Reg64s.set64_r13,
+        Reg64s.set64_r14,
+        Reg64s.set64_r15] $[with $d]?)
+
 /-! ## Smoke tests
 
 A store and a register write with the goal owning exactly the slot; two
@@ -172,14 +204,14 @@ open Kraken.X64.Parser
 
 attribute [local grind .] Lean.Order.PartialOrder.rel_refl
 
-example [CodeEnv] (bs : List UInt8) (hlen : bs.length = 8) :
+example (bs : List UInt8) (hlen : bs.length = 8) :
     ⦃ fun r z f => bs.AtM (r.get64 .rdx + BitVec.ofInt 64 (136 : Int64).toInt) ⦄
       (parse("movq %rax, 136(%rdx)\nmovq $1, %rbx"))
     ⦃ fun _ r z f => (Int.toBytes 8 (r.get64 .rax).toInt).AtM
         (r.get64 .rdx + BitVec.ofInt 64 (136 : Int64).toInt) ⦄ := by
   vcgen with finish
 
-example [CodeEnv] (bs cs : List UInt8) (hb : bs.length = 8) (hc : cs.length = 8) :
+example (bs cs : List UInt8) (hb : bs.length = 8) (hc : cs.length = 8) :
     ⦃ fun r z f => bs.AtM (r.get64 .rdx + BitVec.ofInt 64 (136 : Int64).toInt)
         ∗ cs.AtM (r.get64 .rdx + BitVec.ofInt 64 (144 : Int64).toInt) ⦄
       (parse("movq %rax, 136(%rdx)\nmovq %rbx, 144(%rdx)"))
@@ -189,7 +221,7 @@ example [CodeEnv] (bs cs : List UInt8) (hb : bs.length = 8) (hc : cs.length = 8)
           (r.get64 .rdx + BitVec.ofInt 64 (144 : Int64).toInt) ⦄ := by
   vcgen with finish
 
-example [CodeEnv] (bs cs : List UInt8) (hb : bs.length = 8) (hc : cs.length = 8) :
+example (bs cs : List UInt8) (hb : bs.length = 8) (hc : cs.length = 8) :
     ⦃ fun r z f => bs.AtM (r.get64 .rdx + BitVec.ofInt 64 (136 : Int64).toInt)
         ∗ cs.AtM (r.get64 .rdx + BitVec.ofInt 64 (144 : Int64).toInt) ⦄
       (parse("movq %rax, 136(%rdx)\naddq 144(%rdx), %rbx"))

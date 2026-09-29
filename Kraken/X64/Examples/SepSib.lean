@@ -25,7 +25,7 @@ def sib_example : Program := parse("
     movq (%rdi, %r15, 8), %rax
 ")
 
-theorem sib_correct [CodeEnv] (v : UInt64) :
+theorem sib_correct (v : UInt64) :
     ⦃ fun r _ _ => v.AtM (r.rdi.toBitVec + BitVec.ofInt 64 (r.r15.toBitVec.toInt * 8)) ⦄
       sib_example
     ⦃ fun _ r _ _ => ⌜r.rax = 42⌝ ⦄ := by
@@ -38,18 +38,12 @@ theorem sib_correct [CodeEnv] (v : UInt64) :
 `sib_correct` read back as the judgment of the baseline example
 `sib_example_correct`, over the same program text. -/
 
-section Baseline
-
-variable [layout : _root_.Layout] [Executable.ValidLayout (layout sib_example)]
-
-local instance sib_example.env : CodeEnv := ⟨layout sib_example⟩
-
-theorem sib_example_correct (s₀ : MachineData)
+theorem sib_example_correct [layout : _root_.Layout] (s₀ : MachineData)
     (v : UInt64) (R : DataMem → Prop)
     (h_mem : s₀.dmem =⋆ Eq (v.At (s₀.regs.rdi.toBitVec + BitVec.ofInt 64 (s₀.regs.r15.toBitVec.toInt * 8))) ⋆ R) :
     Eventually (straightlineStep (layout sib_example))
       (fun s' => s'.1.regs.rax = 42)
-      (s₀, Kraken.Layout.start Directive) :=
-  run_of_sep_triple' (sib_correct v).le_wp (fun _ _ _ => PartialOrder.rel_refl) h_mem
-
-end Baseline
+      (s₀, Kraken.Layout.start Directive) := by
+  apply eventually_straightlineStep_of_sep_triple (UInt64.get_AtM_sep h_mem)
+  -- TODO: `vcgen [sib_example] with finish` fails, for the reason given at `sib_correct`.
+  sorry

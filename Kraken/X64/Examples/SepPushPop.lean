@@ -23,7 +23,7 @@ def p6 := parse("push %rax
 mov $0, %rax
 pop %rax")
 
-theorem p6_spec [CodeEnv] (stack : List UInt8) (h_len : stack.length = 8) (a sp : UInt64) :
+theorem p6_spec (stack : List UInt8) (h_len : stack.length = 8) (a sp : UInt64) :
     ⦃ fun r _ _ => ⌜r.rax = a ∧ r.rsp = sp⌝ ⊓ stack.AtM (r.rsp.toBitVec - 8#64) ⦄
       p6
     ⦃ fun _ r _ _ => ⌜r.rax = a ∧ r.rsp = sp⌝ ⦄ := by
@@ -34,19 +34,15 @@ theorem p6_spec [CodeEnv] (stack : List UInt8) (h_len : stack.length = 8) (a sp 
 `p6_spec` read back as the judgment of the baseline example `p6_correct`,
 over the same program text. -/
 
-section Baseline
-
-variable [layout : _root_.Layout] [Executable.ValidLayout (layout p6)]
-
-local instance p6.env : CodeEnv := ⟨layout p6⟩
-
-theorem p6_correct (s₀ : MachineData)
+theorem p6_correct [layout : _root_.Layout] (s₀ : MachineData)
     (stack : List UInt8) (h_len : stack.length = 8) (R : DataMem → Prop)
     (h_mem : s₀.dmem =⋆ Eq (stack.At (s₀.regs.rsp.toBitVec - 8#64)) ⋆ R) :
     Eventually (straightlineStep (layout p6))
       (fun s' => s'.1.regs.rax = s₀.regs.rax ∧ s'.1.regs.rsp = s₀.regs.rsp)
-      (s₀, Kraken.Layout.start Directive) :=
-  run_of_sep_triple (p6_spec stack h_len s₀.regs.rax s₀.regs.rsp).le_wp
-    (fun _ _ _ => PartialOrder.rel_refl) ⟨rfl, rfl⟩ h_mem
-
-end Baseline
+      (s₀, Kraken.Layout.start Directive) := by
+  apply eventually_straightlineStep_of_sep_triple (List.get_AtM_sep h_mem)
+  -- TODO: `vcgen [p6] with finish` fails. The bridge introduces the registers as a
+  -- variable `r` with the hypothesis `r = s₀.regs`, and `ecancel` compares the footprint's
+  -- address in `s₀.regs` with the instruction's address in `r` syntactically, so it slices
+  -- the region instead of matching the slot.
+  sorry

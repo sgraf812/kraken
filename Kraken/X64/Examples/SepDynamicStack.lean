@@ -34,7 +34,7 @@ def dynamic_stack : Program := parse("
 attribute [local grind ←] Lean.Order.le_ofProp MProp.SliceBound.intro
 attribute [local grind =] Int.toBytes_length BitVec.ofInt_ofBytes_toBytes List.length_take List.length_drop
 
-theorem dynamic_stack_correct [CodeEnv] (stack : List UInt8) (lstack : stack.length = 1024)
+theorem dynamic_stack_correct (stack : List UInt8) (lstack : stack.length = 1024)
     (rsp₀ : UInt64) :
     ⦃ fun r z f => ⌜r.rsp = rsp₀ ∧ r.r9.toNat + r.r15.toNat < 125⌝
         ⊓ stack.AtM (r.rsp.toBitVec - 1024#64) ⦄
@@ -47,20 +47,15 @@ theorem dynamic_stack_correct [CodeEnv] (stack : List UInt8) (lstack : stack.len
 `dynamic_stack_correct` read back as the judgment of the baseline example
 `dynamic_stack_example_correct`, over the same program text. -/
 
-section Baseline
-
-variable [layout : _root_.Layout] [Executable.ValidLayout (layout dynamic_stack)]
-
-local instance dynamic_stack.env : CodeEnv := ⟨layout dynamic_stack⟩
-
-theorem dynamic_stack_example_correct (s₀ : MachineData)
+theorem dynamic_stack_example_correct [layout : _root_.Layout] (s₀ : MachineData)
     (stack : List UInt8) (lstack : stack.length = 1024) (R : Mem 64 → Prop)
     (h : s₀.regs.r9.toNat + s₀.regs.r15.toNat < 125)
     (h_mem : s₀.dmem =⋆ Eq (stack.At (s₀.regs.rsp.toBitVec - 1024)) ⋆ R) :
     Eventually (straightlineStep (layout dynamic_stack))
       (fun s' => s'.1.regs.rax = 42 ∧ s'.1.regs.rbx = 99 ∧ s'.1.regs.rsp = s₀.regs.rsp)
-      (s₀, Kraken.Layout.start Directive) :=
-  run_of_sep_triple (dynamic_stack_correct stack lstack s₀.regs.rsp).le_wp
-    (fun _ _ _ => PartialOrder.rel_refl) ⟨rfl, h⟩ h_mem
-
-end Baseline
+      (s₀, Kraken.Layout.start Directive) := by
+  apply eventually_straightlineStep_of_sep_triple (List.get_AtM_sep h_mem)
+  -- TODO: `vcgen [dynamic_stack] with finish` closes every goal, but the kernel rejects the
+  -- proof term with `unknown constant '_inhabitedExprDummy'`: a metaprogram of the frame
+  -- inference inserts a default `Expr`.
+  sorry

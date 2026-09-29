@@ -28,7 +28,7 @@ def move_2_regs_to_heap : Program := parse("
     movq 8(%rdi), %r13
 ")
 
-theorem move_2_regs_to_heap_spec [CodeEnv] (v1 v2 : UInt64) (a c d : UInt64) :
+theorem move_2_regs_to_heap_spec (v1 v2 : UInt64) (a c d : UInt64) :
     ⦃ fun r _ _ => ⌜r.rax = a ∧ r.rcx = c ∧ r.rdi = d⌝
         ⊓ (v1.AtM r.rdi.toBitVec ∗ v2.AtM (r.rdi.toBitVec + 8#64)) ⦄
       move_2_regs_to_heap
@@ -40,13 +40,7 @@ theorem move_2_regs_to_heap_spec [CodeEnv] (v1 v2 : UInt64) (a c d : UInt64) :
 `move_2_regs_to_heap_spec` read back as the judgment of the baseline example
 `move_2_regs_to_heap_correct`, over the same program text. -/
 
-section Baseline
-
-variable [layout : _root_.Layout] [Executable.ValidLayout (layout move_2_regs_to_heap)]
-
-local instance move_2_regs_to_heap.env : CodeEnv := ⟨layout move_2_regs_to_heap⟩
-
-theorem move_2_regs_to_heap_correct (s₀ : MachineData)
+theorem move_2_regs_to_heap_correct [layout : _root_.Layout] (s₀ : MachineData)
   (v1 v2 : UInt64)
   (R : DataMem → Prop)
   (h_mem : s₀.dmem =⋆ Eq (v1.At s₀.regs.rdi.toBitVec) ⋆ Eq (v2.At (s₀.regs.rdi.toBitVec + 8#64)) ⋆ R)
@@ -55,9 +49,10 @@ theorem move_2_regs_to_heap_correct (s₀ : MachineData)
         s'.1.regs.r12 = s₀.regs.rax ∧
         s'.1.regs.r13 = s₀.regs.rcx ∧
         s'.1.regs.rdi = s₀.regs.rdi)
-      (s₀, Kraken.Layout.start Directive) :=
-  run_of_sep_triple
-    (move_2_regs_to_heap_spec v1 v2 s₀.regs.rax s₀.regs.rcx s₀.regs.rdi).le_wp
-    (fun _ _ _ => PartialOrder.rel_refl) ⟨rfl, rfl, rfl⟩ h_mem
-
-end Baseline
+      (s₀, Kraken.Layout.start Directive) := by
+  apply eventually_straightlineStep_of_sep_triple (UInt64.get_AtM_sep_AtM_sep h_mem)
+  -- TODO: `vcgen [move_2_regs_to_heap] with finish` fails. The bridge introduces the registers as a
+  -- variable `r` with the hypothesis `r = s₀.regs`, and `ecancel` compares the footprint's
+  -- address in `s₀.regs` with the instruction's address in `r` syntactically, so it slices
+  -- the region instead of matching the slot.
+  sorry

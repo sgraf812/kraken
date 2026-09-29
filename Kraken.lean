@@ -18,8 +18,11 @@ public import Kraken.X64.OmniSemantics
 public import Kraken.X64.Sep
 public import Kraken.Specs
 public import Kraken.Tactics
+public import Kraken.X64.Registers
 public import Kraken.MachineWP
+public import Kraken.MProp
 public import Kraken.SepWP
+public import Kraken.SepCancel
 public import Kraken.SepSpecs
 public import Kraken.SepFrameProc
 import Kraken.X64.Examples.Examples
