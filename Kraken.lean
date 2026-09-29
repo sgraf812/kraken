@@ -31,10 +31,10 @@ public import Kraken.SepCancel
 public import Kraken.SepSpecs
 public import Kraken.SepFrameProc
 import Kraken.X64.Examples.Examples
-import Kraken.X64.Examples.SepAluMem
-import Kraken.X64.Examples.SepDynamicStack
-import Kraken.X64.Examples.SepMove2RegsToHeap
-import Kraken.X64.Examples.SepPushPop
-import Kraken.X64.Examples.SepSib
-import Kraken.X64.Examples.SepSwap
-import Kraken.X64.Examples.StateAluMem
+import Kraken.X64.Examples.SepWP.AluMem
+import Kraken.X64.Examples.SepWP.DynamicStack
+import Kraken.X64.Examples.SepWP.Move2RegsToHeap
+import Kraken.X64.Examples.SepWP.PushPop
+import Kraken.X64.Examples.SepWP.Sib
+import Kraken.X64.Examples.SepWP.Swap
+import Kraken.X64.Examples.StateWP.AluMem
