@@ -41,14 +41,16 @@ theorem split_of_eq_ofProp {pre fp R : MProp 64}
   exact le_meet _ _ _ (le_ofProp _ _ hφ) PartialOrder.rel_refl
 
 /-- The wand of the frame operator at a state is the wand of `∗` at that
-state: `EFrame.upperAdjoint_pointwise` through the three layers. -/
+state: `PreservesSup.upperAdjoint_comp_apply` through the three layers. -/
 theorem upperAdjoint_frameOp_pointwise (R : MProp 64)
     (X : Reg64s → RegZmms → StatusFlags → MProp 64) (r : Reg64s) (z : RegZmms)
     (f : StatusFlags) :
     PreservesSup.upperAdjoint (frameOp R) X r z f
       = PreservesSup.upperAdjoint (MProp.sep R) (X r z f) := by
-  unfold SepWP.frameOp
-  rw [EFrame.upperAdjoint_pointwise, EFrame.upperAdjoint_pointwise, EFrame.upperAdjoint_pointwise]
+  show PreservesSup.upperAdjoint
+    (Function.comp (Function.comp (Function.comp (MProp.sep R)))) X r z f = _
+  rw [PreservesSup.upperAdjoint_comp_apply, PreservesSup.upperAdjoint_comp_apply,
+    PreservesSup.upperAdjoint_comp_apply]
 
 /-- The wand of the empty frame is the identity. -/
 theorem upperAdjoint_frameOp_emp

@@ -4,7 +4,6 @@ the `#eval` reports stepping and kernel time at each size.
 -/
 import Cases.SegAdcChain
 import Driver
-import KrakenTactics.Fold
 
 set_option mvcgen.warning false
 set_option grind.warning false

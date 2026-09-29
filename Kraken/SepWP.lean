@@ -242,53 +242,39 @@ initialize Kraken.Tactic.sepOpsRef.modify (sepOps :: ·)
 
 end MProp
 
-/-! ## The frame operators
+/-! ## The frame operator
 
 The frame is a pure memory assertion. It acts on an assertion of the program
-logic pointwise through the state-passing layers, and on the exit channel
-through one more layer; `EFrame.pointwise` composes the `PreservesSup`
-instances along the way. -/
+logic pointwise through the state-passing layers, and `FrameOp` derives its
+companion on the exit channel through one more layer. -/
 
 namespace SepWP
 
 /-- Frame a memory resource onto an assertion: `∗` under the register, vector
 and flag layers. -/
-def frameOp : MProp 64 → (Reg64s → RegZmms → StatusFlags → MProp 64)
-    → Reg64s → RegZmms → StatusFlags → MProp 64 :=
-  EFrame.pointwise (EFrame.pointwise (EFrame.pointwise MProp.sep))
+def frameOp (F : MProp 64) (P : Reg64s → RegZmms → StatusFlags → MProp 64) :
+    Reg64s → RegZmms → StatusFlags → MProp 64 :=
+  fun r z f => F ∗ P r z f
 
 instance (F : MProp 64) : PreservesSup (frameOp F) :=
-  inferInstanceAs (PreservesSup
-    (EFrame.pointwise (EFrame.pointwise (EFrame.pointwise MProp.sep)) F))
+  inferInstanceAs (PreservesSup (Function.comp (Function.comp (Function.comp (MProp.sep F)))))
 
 @[simp, grind =] theorem frameOp_apply (F : MProp 64)
     (P : Reg64s → RegZmms → StatusFlags → MProp 64) (r : Reg64s) (z : RegZmms)
     (f : StatusFlags) : frameOp F P r z f = F ∗ P r z f := rfl
 
-/-- The exit-channel companion: the same frame, at every exit address. -/
-def frameOpE : MProp 64 → (Int64 → Reg64s → RegZmms → StatusFlags → MProp 64)
-    → Int64 → Reg64s → RegZmms → StatusFlags → MProp 64 :=
-  EFrame.pointwise frameOp
-
-instance (F : MProp 64) : PreservesSup (frameOpE F) :=
-  inferInstanceAs (PreservesSup (EFrame.pointwise frameOp F))
-
-@[simp, grind =] theorem frameOpE_apply (F : MProp 64)
-    (E : Int64 → Reg64s → RegZmms → StatusFlags → MProp 64) (a : Int64) (r : Reg64s)
-    (z : RegZmms) (f : StatusFlags) : frameOpE F E a r z f = F ∗ E a r z f := rfl
-
 /-! ## The instance -/
 
 /-- The machine-founded wp, read at the separation assertion language: the
 memory is curried out of `MachineData`. -/
-private def base [CodeEnv] :
+@[instance_reducible] private def base [CodeEnv] :
     WP Program Unit (Reg64s → RegZmms → StatusFlags → MProp 64)
       (Int64 → Reg64s → RegZmms → StatusFlags → MProp 64) where
-  wpTrans q := ⟨fun Q E regs zmms flags mem =>
+  trans q := ⟨fun Q E regs zmms flags mem =>
     cenv.wp q (fun s' => Q () s'.regs s'.zmms s'.status s'.dmem)
       (fun a s' => E a s'.regs s'.zmms s'.status s'.dmem)
       ⟨regs, zmms, flags, mem⟩⟩
-  wp_trans_monotone q := by
+  trans_monotone q := by
     intro Q Q' E E' hE hQ regs zmms flags mem h
     exact Kraken.Executable.wp_mono (fun s' => hQ () s'.regs s'.zmms s'.status s'.dmem)
       (fun a s' => hE a s'.regs s'.zmms s'.status s'.dmem) h
@@ -298,7 +284,7 @@ channels over the machine-founded wp. -/
 noncomputable scoped instance instWP [CodeEnv] :
     WP Program Unit (Reg64s → RegZmms → StatusFlags → MProp 64)
       (Int64 → Reg64s → RegZmms → StatusFlags → MProp 64) :=
-  WP.of_frameClosure frameOp frameOpE base
+  WP.withFrameClosure frameOp base
 
 /-- Prove a separation triple: the machine-founded wp validates it under an
 arbitrary memory frame, held across the fall-through and across every exit. -/
@@ -311,7 +297,7 @@ theorem sep_intro [CodeEnv] {q : Program}
       cenv.wp q (fun s' => (F ∗ Q () s'.regs s'.zmms s'.status) s'.dmem)
         (fun a s' => (F ∗ E a s'.regs s'.zmms s'.status) s'.dmem) s) :
     ⦃ P ⦄ q ⦃ Q; E ⦄ := by
-  refine ⟨WP.le_wp_of_frameClosure_eq (base := base) rfl ?_⟩
+  refine ⟨WP.le_wp_of_withFrameClosure_eq (base := base) rfl ?_⟩
   intro F regs zmms flags mem hpre
   exact h F ⟨regs, zmms, flags, mem⟩ hpre
 
@@ -324,21 +310,16 @@ theorem sep_elim [CodeEnv] {q : Program} {F : MProp 64}
     (h : (F ∗ WP.wp (self := instWP) q Q E s.regs s.zmms s.status) s.dmem) :
     cenv.wp q (fun s' => (F ∗ Q () s'.regs s'.zmms s'.status) s'.dmem)
       (fun a s' => (F ∗ E a s'.regs s'.zmms s'.status) s'.dmem) s := by
-  have hle : frameOp F (WP.wp (self := instWP) q Q E)
-      ⊑ base.wp q (fun a => frameOp F (Q a)) (frameOpE F E) := by
-    refine PartialOrder.rel_trans
-      (Lean.Order.PreservesSup.map_mono (frameOp F) (iInf_le _ F)) ?_
-    exact Lean.Order.PreservesSup.upperAdjoint_le (frameOp F) _
-  have := hle s.regs s.zmms s.status s.dmem h
-  exact this
+  have hle := (PredTrans.le_frameClosure_iff frameOp (base.trans q) (Q := Q) (E := E)
+    (pre := WP.wp (self := instWP) q Q E)).mp PartialOrder.rel_refl F
+  exact hle s.regs s.zmms s.status s.dmem h
 
 /-- Every program frames every memory assertion, on both channels: the
 interpretation is a frame closure, and `∗` composes resources by `sep_assoc`.
 This is the fact the frame inference of `vcgen` discharges per spec
 application. -/
-theorem frames [CodeEnv] (q : Program) (F : MProp 64) :
-    (WP.wpTrans (self := instWP) q).Frames frameOp frameOpE F := by
-  refine WP.frames_of_frameClosure frameOp MProp.sep ?_ ?_ ⟨fun q => (base.wpTrans q), fun _ => rfl⟩
+theorem frames [CodeEnv] (q : Program) (F : MProp 64) : WP.Frames frameOp q F := by
+  refine WP.frames_of_frameClosure frameOp MProp.sep ?_ ?_ ⟨fun q => base.trans q, fun _ => rfl⟩
   · intro r r' a
     funext regs zmms flags
     show (r ∗ r') ∗ a regs zmms flags = r ∗ (r' ∗ a regs zmms flags)
@@ -352,8 +333,8 @@ theorem frames [CodeEnv] (q : Program) (F : MProp 64) :
 noncomputable scoped instance [CodeEnv] :
     WP Directive Unit (Reg64s → RegZmms → StatusFlags → MProp 64)
       (Int64 → Reg64s → RegZmms → StatusFlags → MProp 64) where
-  wpTrans d := WP.wpTrans (self := instWP) [d]
-  wp_trans_monotone d := WP.wp_trans_monotone (self := instWP) [d]
+  trans d := WP.trans (self := instWP) [d]
+  trans_monotone d := WP.trans_monotone (self := instWP) [d]
 
 theorem triple_directive [CodeEnv] {d : Directive}
     {P : Reg64s → RegZmms → StatusFlags → MProp 64}
@@ -374,11 +355,11 @@ where `vcgen` sequences them. -/
   exact Kraken.Executable.wp_cons
     (Kraken.Executable.wp_mono (fun s' hs' => sep_elim (q := p) hs') (fun _ _ h => h) h1)
 
-/-- The frame fact of one directive, spelled with the exception companion
-`vcgen` derives for the exit channel. -/
+/-- The frame fact of one directive: what the frame inference of `vcgen`
+discharges per spec application. -/
 @[grind .] theorem frames_directive [CodeEnv] (d : Directive) (F : MProp 64) :
-    (WP.wpTrans d).Frames frameOp (EFrame.pointwise frameOp) F :=
-  frames [d] F
+    WP.Frames frameOp d F :=
+  ⟨(frames [d] F).op_wp_le_wp_op⟩
 
 end SepWP
 
