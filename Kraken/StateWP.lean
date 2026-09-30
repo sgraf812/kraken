@@ -122,6 +122,99 @@ the post. -/
     hload, Effects.All, List.cons_append, List.nil_append, Directives.interp]
   exact hQ _ (hpre i hload)
 
+/-! ## Control flow and the instructions of the loop examples -/
+
+/-- The simp set that reduces one directive of a burst. -/
+local macro "run_step" : tactic =>
+  `(tactic| simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
+      RegOrMem.interp, RelRegOrMem.interp, ConstExpr.interp, MachineData.set, MachineData.setReg,
+      Reg64s.get_low_W64, Reg64s.set_low_W64, Effects.All, List.cons_append, List.nil_append,
+      Directives.interp])
+
+/-- A label occupies no step of the machine. -/
+@[spec] theorem label_spec (l : Label) : ⦃ fun s => Q () s ⦄ Directive.label l ⦃ Q ⦄ := by
+  refine triple_directive.mpr ⟨fun s hpre => ?_⟩
+  intro ds rest pc Φ hds hQ _
+  obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
+  run_step
+  exact hQ _ hpre
+
+/-- A no-op. -/
+@[spec] theorem nop_spec (asz osz : Width) (n : Nat) :
+    ⦃ fun s => Q () s ⦄ Directive.instr (.regular asz osz (.nop n)) ⦃ Q ⦄ := by
+  refine triple_directive.mpr ⟨fun s hpre => ?_⟩
+  intro ds rest pc Φ hds hQ _
+  obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
+  run_step
+  exact hQ _ hpre
+
+/-- Subtract an immediate from a 64-bit register. -/
+@[spec] theorem sub_reg_imm_spec (asz : Width) (r : Reg64) (i : Int64) :
+    ⦃ fun s =>
+        let b := s.regs.get64 r
+        let a := BitVec.setWidth 64 i.toBitVec
+        let v := b - a
+        Q () { s with
+          regs := s.regs.set64 r v
+          status := StatusFlags.from_result v
+            { cf := v.unsigned != b.unsigned - a.unsigned,
+              af := (v.take 4).unsigned != (b.take 4).unsigned - (a.take 4).unsigned,
+              of := v.signed != b.signed - a.signed } } ⦄
+      Directive.instr (.regular asz .W64 (.sub (.reg (.low r .W64)) (.imm (.int64 i))))
+    ⦃ Q ⦄ := by
+  refine triple_directive.mpr ⟨fun s hpre => ?_⟩
+  intro ds rest pc Φ hds hQ _
+  obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
+  run_step
+  exact hQ _ hpre
+
+/-- The unsigned product of a register and `rdx`, split into two registers. -/
+@[spec] theorem mulx_reg_spec (asz : Width) (hi lo rs : Reg64) :
+    ⦃ fun s =>
+        let v := (s.regs.get64 rs).unsigned * (s.regs.get64 .rdx).unsigned
+        Q () { s with regs :=
+          (s.regs.set64 lo (BitVec.ofInt 64 v)).set64 hi (BitVec.ofInt 64 (v >>> 64)) } ⦄
+      Directive.instr (.regular asz .W64
+          (.mulx (.low hi .W64) (.low lo .W64) (.reg (.low rs .W64))))
+    ⦃ Q ⦄ := by
+  refine triple_directive.mpr ⟨fun s hpre => ?_⟩
+  intro ds rest pc Φ hds hQ _
+  obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
+  run_step
+  exact hQ _ hpre
+
+/-- A jump to a label exits at the label's address. -/
+@[spec] theorem jmp_label_spec (asz osz : Width) (l : Label) :
+    ⦃ fun s => E (label l) s ⦄
+      Directive.instr (.regular asz osz (.jmp (.rel (.sub (.label l) .after_current_instruction))))
+    ⦃ Q; E ⦄ := by
+  refine triple_directive.mpr ⟨fun s hpre => ?_⟩
+  intro ds rest pc Φ hds _ hE
+  obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
+  run_step
+  have hcancel : pc + .ofNat z + (label l - (pc + .ofNat z)) = label l := by
+    apply Int64.toBitVec_inj.mp
+    simp only [Int64.toBitVec_add, Int64.toBitVec_sub]
+    rw [BitVec.add_comm, BitVec.sub_add_cancel]
+  simp only [Int64.ofBitVec_toBitVec, hcancel]
+  exact hE _ _ hpre
+
+/-- A conditional jump to a label: it exits at the label's address when the
+condition holds and falls through otherwise. -/
+@[spec] theorem jcc_spec (asz osz : Width) (cc : CondCode) (l : Label) :
+    ⦃ fun s => (cc.interp s.status = true → E (label l) s) ⊓ (cc.interp s.status = false → Q () s) ⦄
+      Directive.instr (.regular asz osz (.jcc cc l))
+    ⦃ Q; E ⦄ := by
+  refine triple_directive.mpr ⟨fun s hpre => ?_⟩
+  obtain ⟨hjmp, hfall⟩ := (meet_prop_eq_and _ _) ▸ hpre
+  intro ds rest pc Φ hds hQ hE
+  obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
+  run_step
+  cases hc : CondCode.interp cc s.status <;>
+    simp only [hc, Bool.false_eq_true, ite_true, ite_false]
+  · exact hQ _ (hfall hc)
+  · exact hE _ _ (hjmp hc)
+
 end StateWP
 
 /-! ## Reading the wp back as the baseline judgment

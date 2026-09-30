@@ -1278,55 +1278,6 @@ def Table.ofLabels [CodeEnv] (tl : Label → MachineData → Prop) :
     {l : Label} {s : MachineData} (h : tl l s) :
     Table.ofLabels tl ((_root_.Executable.labels cenv).label l) s := ⟨l, rfl, h⟩
 
-/-- The block a block falls into: it is mapped, and it sits one position
-later in the text. -/
-theorem Program.blockAt_next {p : Program} (hnd : (Program.labels p).Nodup)
-    {l : Label} {blk : Program.Block} (h : Program.blockAt p l = some blk)
-    {l' : Label} (hn : blk.next = some l') :
-    (Program.blockAt p l').isSome ∧ Program.blockIdx p l' = Program.blockIdx p l + 1 := by
-  obtain ⟨-, i, hi, hnext⟩ := Program.blockAtAux_spec h
-  rw [hn] at hnext
-  have hndv : ((Program.view p).2.map (·.1)).Nodup := by rwa [← Program.labels_view]
-  cases hj : (Program.view p).2[i + 1]? with
-  | none => rw [hj] at hnext; cases hnext
-  | some lb =>
-    obtain ⟨l₁, b₁⟩ := lb
-    rw [hj] at hnext
-    simp only [Option.map_some, Option.some.injEq] at hnext
-    subst hnext
-    refine ⟨?_, ?_⟩
-    · show (Program.blockAtAux (Program.view p).2 l').isSome = true
-      rw [Program.blockAtAux_of_getElem hndv hj]
-      rfl
-    · rw [Program.blockIdx_eq hnd hj, Program.blockIdx_eq hnd hi]
-
-/-- A mapped label sits inside the block list. -/
-theorem Program.blockIdx_lt {p : Program} (hnd : (Program.labels p).Nodup)
-    {l : Label} {blk : Program.Block} (h : Program.blockAt p l = some blk) :
-    Program.blockIdx p l < (Program.view p).2.length := by
-  obtain ⟨-, i, hi, -⟩ := Program.blockAtAux_spec h
-  rw [Program.blockIdx_eq hnd hi]
-  by_cases hlt : i < (Program.view p).2.length
-  · exact hlt
-  · rw [List.getElem?_eq_none (by omega)] at hi
-    cases hi
-
-/-- The block index never exceeds the number of blocks. -/
-theorem Program.blockIdx_le (p : Program) (l : Label) :
-    Program.blockIdx p l ≤ (Program.view p).2.length := by
-  have h := List.idxOf_le_length (a := l) (l := Program.labels p)
-  have hlen : (Program.labels p).length = (Program.view p).2.length := by
-    rw [Program.labels_view, List.length_map]
-  rw [hlen] at h
-  exact h
-
-/-- The lex order of the control-flow rule, encoded in one number: the
-variant dominates, and the block position breaks ties. -/
-private def Program.cfgMeasure (p : Program) (var : Label → MachineData → Nat)
-    (x : Label × MachineData) : Nat :=
-  var x.1 x.2 * ((Program.view p).2.length + 1)
-    + ((Program.view p).2.length - Program.blockIdx p x.1)
-
 /-- The control-flow rule: one spec table `T`, one variant `var`, one triple
 per block of the map `Program.blockAt`. Each block is entered with its table
 entry and the variant snapshotted; it falls into the next block with the
