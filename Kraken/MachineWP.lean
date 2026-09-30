@@ -146,6 +146,11 @@ the separation-logic proofs (`SepAluMem`, `SepDynamicStack`) need immediates
 in their `Int64` form. -/
 attribute [scoped grind norm] Int64.toBitVec_ofNat_norm Int64.toBitVec_neg_ofNat_norm
 
+/- A jump exit of `MachineWP.cfg` asks where its target sits in the list of
+labels of the program, `["start", ".loop", …]`. With `MachineWP` open,
+`grind`'s normalizer answers by evaluation. -/
+attribute [scoped grind norm] List.idxOf_cons List.contains_cons
+
 end MachineWP
 
 /-! ## The rule set
