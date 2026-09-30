@@ -16,16 +16,20 @@ stepping tactic and a discharge tactic.
 
 | file | family | stepping | discharge |
 | --- | --- | --- | --- |
-| `segadc.lean` | carry chain, ground, deep embedding | `vcgen -internalize simplifying_assumptions` | `grind` |
+| `segadc.lean` | carry chain, ground, deep embedding | `kvcgen64` | none left |
 
 ## Phase split (ms: stepping / discharge / kernel)
 
 | family | n=40 | n=160 | n=640 |
 | --- | --- | --- | --- |
-| segadc | 19 / 13 / 36 | 53 / 11 / 153 | 248 / 12 / 713 |
+| segadc | 30 / — / 40 | 81 / — / 231 | 346 / — / 1134 |
 
 `segadc` steps a carry chain through the state wp of `Kraken/StateWP.lean`:
 the program is the directive list, the specs are one triple per directive,
-and a run is the baseline interpreter's burst. Its goal quantifies over the
-label table, so `intro` precedes the stepping tactic. One verification condition survives stepping, the read of the
-register the postcondition names, and `grind` closes it.
+and a run is the baseline interpreter's burst. `kvcgen64` folds each register
+write into the register literal and each ground sum and carry into a literal,
+so no verification condition is left after stepping. The certificate grows
+by about 1000 nodes per instruction (637118 at n=640), and the kernel check
+is the largest cost.
+
+`—` marks a family with no verification condition to discharge.
