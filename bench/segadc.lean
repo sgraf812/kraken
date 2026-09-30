@@ -11,7 +11,7 @@ set_option maxRecDepth 1000000
 set_option maxHeartbeats 10000000
 
 open Lean Order Parser Meta Elab Tactic Sym Std Std.WP
-open MachineWP
+open scoped StateWP
 
 #eval runBenchUsingTactic ``SegAdcChain.Goal [``SegAdcChain.prog, ``SegAdcChain.chain]
   `(tactic| (intro _; vcgen -internalize simplifying_assumptions)) `(tactic| grind)

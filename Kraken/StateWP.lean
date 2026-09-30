@@ -183,6 +183,48 @@ local macro "run_step" : tactic =>
   run_step
   exact hQ _ hpre
 
+/-- Add an immediate to a 64-bit register. -/
+@[spec] theorem add_reg_imm_spec (asz : Width) (r : Reg64) (i : Int64) :
+    ⦃ fun s =>
+        let a := BitVec.setWidth 64 i.toBitVec
+        let b := s.regs.get64 r
+        let v := a + b
+        Q () { s with
+          regs := s.regs.set64 r v
+          status := StatusFlags.from_result v
+            { cf := v.unsigned != a.unsigned + b.unsigned,
+              af := (v.take 4).unsigned != (a.take 4).unsigned + (b.take 4).unsigned,
+              of := v.signed != a.signed + b.signed } } ⦄
+      Directive.instr (.regular asz .W64 (.add (.reg (.low r .W64)) (.imm (.int64 i))))
+    ⦃ Q ⦄ := by
+  refine triple_directive.mpr ⟨fun s hpre => ?_⟩
+  intro ds rest pc Φ hds hQ _
+  obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
+  run_step
+  exact hQ _ hpre
+
+/-- Add a 64-bit register and the carry flag to a register. -/
+@[spec] theorem adc_reg_reg_spec (asz : Width) (rd rs : Reg64) :
+    ⦃ fun s =>
+        let a := s.regs.get64 rs
+        let b := s.regs.get64 rd
+        let c := s.status.cf
+        let v := a + b + BitVec.ofNat 64 c.toNat
+        Q () { s with
+          regs := s.regs.set64 rd v
+          status := StatusFlags.from_result v
+            { cf := v.unsigned != a.unsigned + b.unsigned + c,
+              af := (v.take 4).unsigned != (a.take 4).unsigned + (b.take 4).unsigned + c,
+              of := v.signed != a.signed + b.signed + c } } ⦄
+      Directive.instr (.regular asz .W64
+          (.adc (.reg (.low rd .W64)) (.regOrMem (.reg (.low rs .W64)))))
+    ⦃ Q ⦄ := by
+  refine triple_directive.mpr ⟨fun s hpre => ?_⟩
+  intro ds rest pc Φ hds hQ _
+  obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
+  run_step
+  exact hQ _ hpre
+
 /-- A jump to a label exits at the label's address. -/
 @[spec] theorem jmp_label_spec (asz osz : Width) (l : Label) :
     ⦃ fun s => E (label l) s ⦄

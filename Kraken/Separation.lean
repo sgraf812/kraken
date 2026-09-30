@@ -17,6 +17,16 @@ notation:70 m " =⋆ " P => P m
 
 def emp : ExtHashMap key value → Prop := fun m => m = ∅
 
+/-- `p ⋆ q` holds at a map that splits into disjoint parts, one for `p` and one
+for `q`. -/
+theorem sep_def (p q : ExtHashMap key value → Prop) (m : ExtHashMap key value) :
+    (p ⋆ q) m ↔ ∃ a b, a.union b = m ∧ a.inter b = ∅ ∧ p a ∧ q b :=
+  Iff.rfl
+
+/-- `emp` holds at the empty map alone. -/
+theorem emp_def (m : ExtHashMap key value) : emp m ↔ m = ∅ :=
+  Iff.rfl
+
 omit [LawfulBEq key] in
 theorem disjoint_symm {m1 m2 : ExtHashMap key value} (h : m1.inter m2 = ∅) :
     m2.inter m1 = ∅ := by

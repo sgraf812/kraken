@@ -8,7 +8,7 @@ layout, proved by `kvcgen64` on the wp of the program at the start state.
 -/
 public import Kraken.StateWP
 import Kraken.SeparationMem
-import all Kraken.X64.Examples.Examples
+import Kraken.X64.Examples.Examples
 
 open Std.WP
 open Lean.Order

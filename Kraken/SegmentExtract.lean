@@ -408,3 +408,47 @@ theorem _root_.Layout.apply_fst [layout : Layout] (p : Program) :
 position zero. -/
 theorem _root_.Layout.apply_snd [layout : Layout] (p : Program) :
     (layout p).2 = Layout.frag 0 p := by simp [Layout.frag, Kraken.Layout.apply]
+
+/-- The cell of a laid-out program at a position. -/
+theorem Layout.apply_getElem? [layout : Layout] (p : Program) (i : Nat) :
+    (layout p).2[i]? = (p[i]?).map (fun d => (d, Kraken.Layout.size Directive i)) := by
+  rw [Layout.apply_snd, Layout.frag_getElem?, Nat.zero_add]
+
+/-- The address of a label, from the position its scope suffix starts at. -/
+theorem Program.label_addrOf_drop [layout : Layout] {p : Program}
+    [hv : Kraken.Executable.ValidLayout (layout p)] (hnd : (Program.labels p).Nodup)
+    {l : Label} {i : Nat} (hdrop : p.drop i = Program.fromLabel p l)
+    (hne : Program.fromLabel p l ≠ []) :
+    (Executable.labels (layout p)).label l = (layout p).addrOf i := by
+  obtain ⟨t, rest, hsplit, hfl, hfresh, hlen⟩ := Program.fromLabel_split hnd hne
+  have hplen : p.length = t.length + (Program.fromLabel p l).length := by
+    have h := congrArg List.length hsplit
+    rw [hfl]
+    simpa using h
+  have hdlen : p.length - i = (Program.fromLabel p l).length := by
+    have h := congrArg List.length hdrop
+    rwa [List.length_drop] at h
+  have hile : i ≤ p.length := by
+    by_cases h : i ≤ p.length
+    · exact h
+    · rw [List.drop_eq_nil_of_le (by omega)] at hdrop
+      exact absurd hdrop.symm hne
+  have hit : i = t.length := by omega
+  have hcell : p[i]? = some (Directive.label l) := by
+    have h0 : (p.drop i)[0]? = some (Directive.label l) := by rw [hdrop, hfl]; rfl
+    rw [List.getElem?_drop] at h0
+    simpa using h0
+  have hlay : (layout p).2[i]? = some (Directive.label l, Kraken.Layout.size Directive i) := by
+    rw [Layout.apply_getElem?, hcell]; rfl
+  refine Kraken.Executable.label_addrOf (layout p) l i ?_ ?_
+  · rw [hlay, hv.label_size i l _ hlay]
+  · have hpt : p.take i = t := by
+      rw [hit, hsplit]
+      exact List.take_left' rfl
+    have htake : ((layout p).2).take i = Layout.frag 0 (p.take i) := by
+      rw [Layout.apply_snd]
+      conv => lhs; rw [← List.take_append_drop i p, Layout.frag_append]
+      exact List.take_left' (by rw [Layout.frag_length, List.length_take]; omega)
+    intro dz hdz heq
+    rw [htake, hpt] at hdz
+    exact hfresh (Program.mem_labels_of_cell (heq ▸ Layout.frag_mem hdz))

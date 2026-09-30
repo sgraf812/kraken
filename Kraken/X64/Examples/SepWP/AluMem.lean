@@ -8,7 +8,7 @@ the register and owns the slot with the stored value. Read back through
 `alu_mem_example_correct`, over the same program and any layout.
 -/
 public import Kraken.SepFrameProc
-import all Kraken.X64.Examples.Examples
+import Kraken.X64.Examples.Examples
 
 
 open Std.WP

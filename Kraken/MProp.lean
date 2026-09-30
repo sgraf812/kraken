@@ -11,7 +11,6 @@ owns exactly the bytes `bs` at `a`, the assertion counterpart of the memory
 lemmas of this file are their whole interface.
 -/
 public import Kraken.SeparationMem
-import all Kraken.Separation
 public import Std.WP
 public import Std.Tactic.Do
 
@@ -66,10 +65,11 @@ def emp : MProp w := mk Std.ExtHashMap.emp
 and one for `Q`. -/
 theorem get_sep_apply_iff (P Q : MProp w) (m : Mem w) :
     (P ∗ Q).get m ↔ ∃ m₁ m₂, m₁.union m₂ = m ∧ m₁.inter m₂ = ∅ ∧ P.get m₁ ∧ Q.get m₂ :=
-  Iff.rfl
+  Std.ExtHashMap.sep_def P.get Q.get m
 
 /-- `emp` holds at the empty memory alone. -/
-theorem get_emp_apply_iff (m : Mem w) : (emp : MProp w).get m ↔ m = ∅ := Iff.rfl
+theorem get_emp_apply_iff (m : Mem w) : (emp : MProp w).get m ↔ m = ∅ :=
+  Std.ExtHashMap.emp_def m
 
 theorem sep_assoc (P Q R : MProp w) : (P ∗ Q) ∗ R = P ∗ (Q ∗ R) :=
   Std.ExtHashMap.sep_assoc P.get Q.get R.get
@@ -123,8 +123,9 @@ instance (F : MProp w) : PreservesSup (MProp.sep F) where
     constructor
     · rintro ⟨m₁, m₂, hu, hd, hF, hsup⟩
       obtain ⟨P, hP, hPm⟩ := (get_sup_apply_iff s m₂).mp hsup
-      exact ⟨F ∗ P, ⟨P, hP, rfl⟩, m₁, m₂, hu, hd, hF, hPm⟩
-    · rintro ⟨g, ⟨P, hP, rfl⟩, m₁, m₂, hu, hd, hF, hPm⟩
+      exact ⟨F ∗ P, ⟨P, hP, rfl⟩, (get_sep_apply_iff F P m).mpr ⟨m₁, m₂, hu, hd, hF, hPm⟩⟩
+    · rintro ⟨g, ⟨P, hP, rfl⟩, hg⟩
+      obtain ⟨m₁, m₂, hu, hd, hF, hPm⟩ := (get_sep_apply_iff F P m).mp hg
       exact ⟨m₁, m₂, hu, hd, hF, (get_sup_apply_iff s m₂).mpr ⟨P, hP, hPm⟩⟩
 
 theorem sep_mono_right (P : MProp w) {Q Q' : MProp w} (h : Q ⊑ Q') : P ∗ Q ⊑ P ∗ Q' :=

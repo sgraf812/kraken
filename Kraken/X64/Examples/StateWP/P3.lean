@@ -11,7 +11,7 @@ places the loop's labels. `p3_table` gives the assertion at each label,
 block.
 -/
 public import Kraken.StateCfg
-import all Kraken.X64.Examples.Examples
+import Kraken.X64.Examples.Examples
 
 open Std.WP
 open Lean.Order

@@ -24,9 +24,8 @@ stepping tactic and a discharge tactic.
 | --- | --- | --- | --- |
 | segadc | 19 / 13 / 36 | 53 / 11 / 153 | 248 / 12 / 713 |
 
-`segadc` steps a carry chain through the machine-founded weakest precondition
-of `Kraken/MachineWP.lean`: the program is the directive list, the specs are
-the cons-cell triples, and a run is the baseline interpreter over the ambient
-code. Its goal quantifies over the ambient code, so `intro` precedes the
-stepping tactic. One verification condition survives stepping, the read of the
+`segadc` steps a carry chain through the state wp of `Kraken/StateWP.lean`:
+the program is the directive list, the specs are one triple per directive,
+and a run is the baseline interpreter's burst. Its goal quantifies over the
+label table, so `intro` precedes the stepping tactic. One verification condition survives stepping, the read of the
 register the postcondition names, and `grind` closes it.

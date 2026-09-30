@@ -11,7 +11,7 @@ address of a label looks up to the text from that label on.
 `Program.placed_of_valid` derives it from `ValidLayout`.
 -/
 public import Kraken.StateWP
-public import Kraken.MachineWP
+public import Kraken.SegmentExtract
 
 @[expose] public section
 
