@@ -27,30 +27,30 @@ open Lean.Order
 namespace StateWP
 
 /-- Programs interpreted by their run, at predicates over machine states. -/
-scoped instance instWP : WP Program Unit (MachineData → Prop) (Int64 → MachineData → Prop) where
+scoped instance instWP [Labels] : WP Program Unit (MachineData → Prop) (Int64 → MachineData → Prop) where
   trans q := ⟨fun Q E s => Program.run q (Q ()) E s⟩
   trans_monotone _ := fun _ _ _ _ hE hQ _ h => Program.run_mono (hQ ()) hE h
 
-theorem wp_apply_iff (q : Program) (Q : Unit → MachineData → Prop)
+theorem wp_apply_iff [Labels] (q : Program) (Q : Unit → MachineData → Prop)
     (E : Int64 → MachineData → Prop) (s : MachineData) :
     WP.wp q Q E s ↔ Program.run q (Q ()) E s := Iff.rfl
 
 /-- Triples of one directive: the interpretation of the singleton program. -/
-scoped instance : WP Directive Unit (MachineData → Prop) (Int64 → MachineData → Prop) where
+scoped instance [Labels] : WP Directive Unit (MachineData → Prop) (Int64 → MachineData → Prop) where
   trans d := WP.trans (self := instWP) [d]
   trans_monotone d := WP.trans_monotone (self := instWP) [d]
 
-theorem triple_directive {d : Directive} {P : MachineData → Prop}
+theorem triple_directive [Labels] {d : Directive} {P : MachineData → Prop}
     {Q : Unit → MachineData → Prop} {E : Int64 → MachineData → Prop} :
     (⦃ P ⦄ d ⦃ Q; E ⦄) ↔ (⦃ P ⦄ [d] ⦃ Q; E ⦄) :=
   ⟨fun h => ⟨h.1⟩, fun h => ⟨h.1⟩⟩
 
-variable {Q : Unit → MachineData → Prop} {E : Int64 → MachineData → Prop}
+variable [Labels] {Q : Unit → MachineData → Prop} {E : Int64 → MachineData → Prop}
 
 /-- The empty program: its wp is the postcondition. -/
 @[spec] theorem nil_spec : ⦃ fun s => Q () s ⦄ ([] : Program) ⦃ Q; E ⦄ := by
   refine ⟨fun s hpre => ?_⟩
-  intro L ds rest pc Φ hds hQ _
+  intro ds rest pc Φ hds hQ _
   obtain rfl := List.map_eq_nil_iff.mp hds
   exact hQ s hpre
 
@@ -66,7 +66,7 @@ the post. -/
       Directive.instr (.regular asz .W64 (.mov (.reg (.low r .W64)) (.imm (.int64 i))))
     ⦃ Q ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
-  intro L ds rest pc Φ hds hQ _
+  intro ds rest pc Φ hds hQ _
   obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
     MachineData.set, MachineData.setReg, Reg64s.set_low_W64, Effects.All, List.cons_append,
@@ -86,7 +86,7 @@ the post. -/
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
   obtain ⟨hmapped, hpre⟩ := (meet_prop_eq_and _ _) ▸ hpre
   obtain ⟨i, hload⟩ := Option.isSome_iff_exists.mp hmapped
-  intro L ds rest pc Φ hds hQ _
+  intro ds rest pc Φ hds hQ _
   obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
     RegOrMem.interp, MachineData.set, MachineData.store, Reg64s.get_low_W64,
@@ -114,7 +114,7 @@ the post. -/
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
   obtain ⟨hmapped, hpre⟩ := (meet_prop_eq_and _ _) ▸ hpre
   obtain ⟨i, hload⟩ := Option.isSome_iff_exists.mp hmapped
-  intro L ds rest pc Φ hds hQ _
+  intro ds rest pc Φ hds hQ _
   obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
     RegOrMem.interp, MachineData.load, MachineData.set, MachineData.setReg,
@@ -129,18 +129,23 @@ end StateWP
 The wp of a program with no exits is a run of the laid-out program: if the wp
 holds of `s` for the postcondition that asks `post` of the final state at
 every pc, the run from `s` at the layout's start ends in `post`. The
-hypothesis is the entailment `⊤ ⊑ wp …` at `s`, the goal form of `vcgen`. -/
+hypothesis is the entailment `⊤ ⊑ wp …` at `s`, the goal form of `vcgen`,
+under every label table: the program does not jump, so its run is the same
+for every table. -/
 
 open StateWP in
 theorem straightlineStep_of_wp [layout : Layout] {p : Program} {s : MachineData}
-    {post : MachineState → Prop} (h : ⊤ ⊑ WP.wp p (fun _ s' => ∀ pc, post (s', pc)) ⊥ s) :
+    {post : MachineState → Prop}
+    (h : ∀ [Labels], ⊤ ⊑ WP.wp p (fun _ s' => ∀ pc, post (s', pc)) ⊥ s) :
     straightlineStep (layout p) (s, layout.start) post :=
-  Program.run_straightlineStep (of_top_le_prop h) rfl rfl (fun st' hq => hq st'.2)
+  Program.run_straightlineStep (of_top_le_prop (@h (Executable.labels (layout p))))
+    (fun st' hq => hq st'.2)
     (fun a s' hE => ((bot_le (α := Int64 → MachineData → Prop) fun _ _ => False) a s' hE).elim)
 
 open StateWP in
 /-- `straightlineStep_of_wp` for a burst that ends the run. -/
 theorem eventually_straightlineStep_of_wp [layout : Layout] {p : Program} {s : MachineData}
-    {post : MachineState → Prop} (h : ⊤ ⊑ WP.wp p (fun _ s' => ∀ pc, post (s', pc)) ⊥ s) :
+    {post : MachineState → Prop}
+    (h : ∀ [Labels], ⊤ ⊑ WP.wp p (fun _ s' => ∀ pc, post (s', pc)) ⊥ s) :
     Eventually (straightlineStep (layout p)) post (s, layout.start) :=
   .step _ _ (straightlineStep_of_wp h) fun _ h => .done _ h
