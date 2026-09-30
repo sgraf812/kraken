@@ -134,6 +134,23 @@ the projections of a literal reduce by the lemmas below. -/
 @[simp] theorem StatusFlags.from_result.Remaining.cf_mk (c a o : Bool) :
     (StatusFlags.from_result.Remaining.mk c a o).cf = c := rfl
 
+@[simp, grind =] theorem StatusFlags.zf_from_result {w} (v : BitVec w)
+    (f : StatusFlags.from_result.Remaining) :
+    (StatusFlags.from_result v f).zf = (v == BitVec.zero w) := rfl
+
+@[simp, grind =] theorem CondCode.interp_z (s : StatusFlags) :
+    CondCode.z.interp s = s.zf := rfl
+@[simp, grind =] theorem CondCode.interp_nz (s : StatusFlags) :
+    CondCode.nz.interp s = !s.zf := rfl
+@[simp, grind =] theorem CondCode.interp_c (s : StatusFlags) :
+    CondCode.c.interp s = s.cf := rfl
+@[simp, grind =] theorem CondCode.interp_nc (s : StatusFlags) :
+    CondCode.nc.interp s = !s.cf := rfl
+@[simp, grind =] theorem CondCode.interp_a (s : StatusFlags) :
+    CondCode.a.interp s = (!s.cf && !s.zf) := rfl
+@[simp, grind =] theorem CondCode.interp_be (s : StatusFlags) :
+    CondCode.be.interp s = (s.cf || s.zf) := rfl
+
 /-! ## Addresses -/
 
 /-- The address a `disp(base)` expression computes, at 64-bit address size:

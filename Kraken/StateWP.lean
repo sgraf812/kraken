@@ -225,6 +225,43 @@ local macro "run_step" : tactic =>
   run_step
   exact hQ _ hpre
 
+/-- Exclusive-or of two 64-bit registers. The adjust flag is unspecified, so
+the post must hold for either value. -/
+@[spec] theorem xor_reg_reg_spec (asz : Width) (rd rs : Reg64) :
+    ⦃ fun s =>
+        let v := s.regs.get64 rd ^^^ s.regs.get64 rs
+        ∀ af : Bool, Q () { s with
+          regs := s.regs.set64 rd v
+          status := StatusFlags.from_result v { cf := false, of := false, af } } ⦄
+      Directive.instr (.regular asz .W64
+          (.xor (.reg (.low rd .W64)) (.regOrMem (.reg (.low rs .W64)))))
+    ⦃ Q ⦄ := by
+  refine triple_directive.mpr ⟨fun s hpre => ?_⟩
+  intro ds rest pc Φ hds hQ _
+  obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
+  run_step
+  intro af
+  exact hQ _ (hpre af)
+
+/-- Decrement a 64-bit register. The carry flag is kept. -/
+@[spec] theorem dec_reg_spec (asz : Width) (r : Reg64) :
+    ⦃ fun s =>
+        let a := s.regs.get64 r
+        let v := a - 1
+        Q () { s with
+          regs := s.regs.set64 r v
+          status := StatusFlags.from_result v
+            { cf := s.status.cf,
+              af := (v.take 4).unsigned != (a.take 4).unsigned - 1,
+              of := v.signed != a.signed - 1 } } ⦄
+      Directive.instr (.regular asz .W64 (.dec (.reg (.low r .W64))))
+    ⦃ Q ⦄ := by
+  refine triple_directive.mpr ⟨fun s hpre => ?_⟩
+  intro ds rest pc Φ hds hQ _
+  obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
+  run_step
+  exact hQ _ hpre
+
 /-- A jump to a label exits at the label's address. -/
 @[spec] theorem jmp_label_spec (asz osz : Width) (l : Label) :
     ⦃ fun s => E (label l) s ⦄

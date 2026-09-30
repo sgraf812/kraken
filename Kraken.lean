@@ -38,4 +38,5 @@ import Kraken.X64.Examples.SepWP.PushPop
 import Kraken.X64.Examples.SepWP.Sib
 import Kraken.X64.Examples.SepWP.Swap
 import Kraken.X64.Examples.StateWP.AluMem
+import Kraken.X64.Examples.StateWP.Basic
 import Kraken.X64.Examples.StateWP.P3

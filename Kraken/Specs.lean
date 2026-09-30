@@ -34,24 +34,7 @@ def AddrExpr.interp64 (labels : Labels) (a : AddrExpr) (s : Reg64s) (p : Std.Rco
 @[grind hom] theorem BitVec.unsigned_hom {w} (x : BitVec w) : x.unsigned = (x.toNat : Int) := rfl
 @[simp] theorem BitVec.signed_eq {w} (x : BitVec w) : x.signed = x.toInt := rfl
 
-@[simp, grind =] theorem StatusFlags.zf_from_result {w} (v : BitVec w)
-    (f : StatusFlags.from_result.Remaining) :
-    (StatusFlags.from_result v f).zf = (v == BitVec.zero w) := rfl
-
 /-! ## Condition-code reductions, one lemma per code -/
-
-@[simp, grind =] theorem CondCode.interp_z (s : StatusFlags) :
-    CondCode.z.interp s = s.zf := rfl
-@[simp, grind =] theorem CondCode.interp_nz (s : StatusFlags) :
-    CondCode.nz.interp s = !s.zf := rfl
-@[simp, grind =] theorem CondCode.interp_c (s : StatusFlags) :
-    CondCode.c.interp s = s.cf := rfl
-@[simp, grind =] theorem CondCode.interp_nc (s : StatusFlags) :
-    CondCode.nc.interp s = !s.cf := rfl
-@[simp, grind =] theorem CondCode.interp_a (s : StatusFlags) :
-    CondCode.a.interp s = (!s.cf && !s.zf) := rfl
-@[simp, grind =] theorem CondCode.interp_be (s : StatusFlags) :
-    CondCode.be.interp s = (s.cf || s.zf) := rfl
 
 /-! ## Reading a named register, one lemma per field -/
 
