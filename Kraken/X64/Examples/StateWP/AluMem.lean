@@ -16,7 +16,8 @@ open scoped StateWP
 
 set_option experimental.vcgen true
 
-attribute [local grind =] UInt64.toBytes_length BitVec.ofInt_ofBytes_toBytes Mem.loadInt_storeInt
+attribute [local grind =] UInt64.toBytes_length BitVec.ofInt_ofBytes_toBytes ofBytes_toBytes
+  Mem.loadInt_storeInt
 
 namespace State
 

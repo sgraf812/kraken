@@ -2,11 +2,9 @@
 Carry chain on the deep embedding: `n` add-with-carry instructions stepped by
 the specs of the state wp of Kraken/StateWP.lean. The chain holds no jump, so
 the goal quantifies over the label table: the run computes the sum under
-every table. Kraken/StateSimp.lean registers the rewrite set that
-`simplifying_assumptions` normalizes each state literal with.
+every table.
 -/
 import Kraken.StateWP
-import Kraken.StateSimp
 
 open Kraken
 open Std.WP

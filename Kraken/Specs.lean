@@ -32,15 +32,7 @@ def AddrExpr.interp64 (labels : Labels) (a : AddrExpr) (s : Reg64s) (p : Std.Rco
 
 /-! ## `.unsigned`/`.signed` reductions -/
 @[grind hom] theorem BitVec.unsigned_hom {w} (x : BitVec w) : x.unsigned = (x.toNat : Int) := rfl
-@[simp] theorem BitVec.unsigned_eq {w} (x : BitVec w) : x.unsigned = (x.toNat : Int) := rfl
 @[simp] theorem BitVec.signed_eq {w} (x : BitVec w) : x.signed = x.toInt := rfl
-
-@[simp, grind =] theorem StatusFlags.cf_from_result {w} (v : BitVec w)
-    (f : StatusFlags.from_result.Remaining) :
-    (StatusFlags.from_result v f).cf = f.cf := rfl
-
-@[simp] theorem StatusFlags.from_result.Remaining.cf_mk (c a o : Bool) :
-    (StatusFlags.from_result.Remaining.mk c a o).cf = c := rfl
 
 @[simp, grind =] theorem StatusFlags.zf_from_result {w} (v : BitVec w)
     (f : StatusFlags.from_result.Remaining) :
@@ -119,10 +111,6 @@ attribute [grind =] Width.bytes
 @[simp, grind =] theorem MachineData.zmms_setReg (s : MachineData) {w} (r : Reg w) (v : w.type) :
     (s.setReg r v).zmms = s.zmms := rfl
 
-@[simp] theorem MachineData.regs_mk (r z st d) : (MachineData.mk r z st d).regs = r := rfl
-@[simp] theorem MachineData.dmem_mk (r z st d) : (MachineData.mk r z st d).dmem = d := rfl
-@[simp] theorem MachineData.status_mk (r z st d) : (MachineData.mk r z st d).status = st := rfl
-@[simp] theorem MachineData.zmms_mk (r z st d) : (MachineData.mk r z st d).zmms = z := rfl
 
 /-! ## Machine words in `grind`'s arithmetic
 

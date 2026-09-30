@@ -78,6 +78,62 @@ theorem Reg64s.set64_r14 (s : Reg64s) (v : BitVec 64) :
 theorem Reg64s.set64_r15 (s : Reg64s) (v : BitVec 64) :
     s.set64 .r15 v = { s with r15 := .ofBitVec v } := rfl
 
+/-! ## Register-file literals
+
+A write to a named register rebuilds the register file as a literal
+(`set64_rax` and its siblings). A read of a named register from a literal is
+its field: `get64_rax` and its siblings turn the read into a projection, and
+the projections of a literal reduce by the lemmas below. -/
+
+@[simp] theorem Reg64s.rax_mk (a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15 : UInt64) :
+    (Reg64s.mk a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15).rax = a0 := rfl
+@[simp] theorem Reg64s.rbx_mk (a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15 : UInt64) :
+    (Reg64s.mk a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15).rbx = a1 := rfl
+@[simp] theorem Reg64s.rcx_mk (a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15 : UInt64) :
+    (Reg64s.mk a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15).rcx = a2 := rfl
+@[simp] theorem Reg64s.rdx_mk (a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15 : UInt64) :
+    (Reg64s.mk a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15).rdx = a3 := rfl
+@[simp] theorem Reg64s.rsi_mk (a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15 : UInt64) :
+    (Reg64s.mk a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15).rsi = a4 := rfl
+@[simp] theorem Reg64s.rdi_mk (a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15 : UInt64) :
+    (Reg64s.mk a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15).rdi = a5 := rfl
+@[simp] theorem Reg64s.rsp_mk (a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15 : UInt64) :
+    (Reg64s.mk a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15).rsp = a6 := rfl
+@[simp] theorem Reg64s.rbp_mk (a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15 : UInt64) :
+    (Reg64s.mk a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15).rbp = a7 := rfl
+@[simp] theorem Reg64s.r8_mk (a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15 : UInt64) :
+    (Reg64s.mk a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15).r8 = a8 := rfl
+@[simp] theorem Reg64s.r9_mk (a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15 : UInt64) :
+    (Reg64s.mk a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15).r9 = a9 := rfl
+@[simp] theorem Reg64s.r10_mk (a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15 : UInt64) :
+    (Reg64s.mk a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15).r10 = a10 := rfl
+@[simp] theorem Reg64s.r11_mk (a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15 : UInt64) :
+    (Reg64s.mk a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15).r11 = a11 := rfl
+@[simp] theorem Reg64s.r12_mk (a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15 : UInt64) :
+    (Reg64s.mk a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15).r12 = a12 := rfl
+@[simp] theorem Reg64s.r13_mk (a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15 : UInt64) :
+    (Reg64s.mk a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15).r13 = a13 := rfl
+@[simp] theorem Reg64s.r14_mk (a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15 : UInt64) :
+    (Reg64s.mk a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15).r14 = a14 := rfl
+@[simp] theorem Reg64s.r15_mk (a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15 : UInt64) :
+    (Reg64s.mk a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15).r15 = a15 := rfl
+
+/-! ## The machine record and the flags -/
+
+@[simp] theorem MachineData.regs_mk (r z st d) : (MachineData.mk r z st d).regs = r := rfl
+@[simp] theorem MachineData.dmem_mk (r z st d) : (MachineData.mk r z st d).dmem = d := rfl
+@[simp] theorem MachineData.status_mk (r z st d) : (MachineData.mk r z st d).status = st := rfl
+@[simp] theorem MachineData.zmms_mk (r z st d) : (MachineData.mk r z st d).zmms = z := rfl
+
+@[simp] theorem BitVec.unsigned_eq {w} (x : BitVec w) : x.unsigned = (x.toNat : Int) := rfl
+
+@[simp, grind =] theorem StatusFlags.cf_from_result {w} (v : BitVec w)
+    (f : StatusFlags.from_result.Remaining) :
+    (StatusFlags.from_result v f).cf = f.cf := rfl
+
+@[simp] theorem StatusFlags.from_result.Remaining.cf_mk (c a o : Bool) :
+    (StatusFlags.from_result.Remaining.mk c a o).cf = c := rfl
+
 /-! ## Addresses -/
 
 /-- The address a `disp(base)` expression computes, at 64-bit address size:

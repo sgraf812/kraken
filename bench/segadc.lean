@@ -14,5 +14,5 @@ open Lean Order Parser Meta Elab Tactic Sym Std Std.WP
 open scoped StateWP
 
 #eval runBenchUsingTactic ``SegAdcChain.Goal [``SegAdcChain.prog, ``SegAdcChain.chain]
-  `(tactic| (intro _; vcgen -internalize simplifying_assumptions)) `(tactic| grind)
+  `(tactic| kvcgen64) `(tactic| grind)
   [40, 160, 640]

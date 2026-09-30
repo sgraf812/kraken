@@ -1,13 +1,9 @@
 module
 
 /-
-The rewrite set `vcgen simplifying_assumptions` normalizes each state literal
-with as it is produced, registered as `Sym.simp` theorems.
-
-The specs of `Kraken/Specs.lean` leave a program's state chain as nested record
-literals. `Sym.Simp` expands each state exactly once as it traverses the goal
-bottom-up, caching by pointer, and collapses the value on the spot with these
-rules; `kfold` reuses the same set on the finished verification condition.
+The rewrite set `kfold` normalizes a finished verification condition with:
+literal normalization, register read-over-write through `set64`, the record
+projections of the machine state, and flag reduction.
 -/
 public import Lean
 public import Kraken.Specs
@@ -69,12 +65,3 @@ which `kfold` does with the `reduceCtorEq` simproc instead. -/
 def stateLemmaNames : Array Name := lemmaNames ++ #[``add_assoc_rev, ``Reg64.eq_eq_idx_eq]
 
 end Kraken.Fold
-
--- Register the fold rewrite set as `Sym.simp` theorems, so `vcgen simplifying_assumptions`
--- normalizes the state literal a spec application leaves in the goal with the same rules
--- `kfold` uses on the finished verification condition.
-open Lean Elab Command in
-run_cmd liftTermElabM do
-  for n in Kraken.Fold.stateLemmaNames do
-    Sym.Simp.addSymSimpTheorem Sym.Simp.symSimpExtension n .global
-  Sym.Simp.addSymSimpDecl Sym.Simp.symSimpExtension ``Reg64.idx .global
