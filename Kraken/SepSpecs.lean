@@ -33,14 +33,14 @@ theorem MProp.sep_left_comm {w : Nat} (P Q R : MProp w) :
 
 namespace SepWP
 
-variable [Labels] {Q : Unit → Reg64s → RegZmms → StatusFlags → MProp 64}
+variable [Host] {Q : Unit → Reg64s → RegZmms → StatusFlags → MProp 64}
   {E : Int64 → Reg64s → RegZmms → StatusFlags → MProp 64}
 
 /-- The empty program: its wp is the postcondition. -/
 @[spec] theorem nil_spec :
     ⦃ fun rg z f => Q () rg z f ⦄ ([] : Program) ⦃ Q; E ⦄ := by
   refine sep_intro fun F s hpre => ?_
-  intro ds rest pc Φ hds hQ _
+  intro ds rest pc Φ hds _ hQ _
   obtain rfl := List.map_eq_nil_iff.mp hds
   exact hQ s hpre
 
@@ -55,7 +55,7 @@ to the updated registers and flags. -/
       Directive.instr (.regular asz .W64 (.mov (.reg (.low r .W64)) (.imm (.int64 i))))
     ⦃ Q ⦄ := by
   refine triple_directive.mpr (sep_intro fun F s hpre => ?_)
-  intro ds rest pc Φ hds hQ _
+  intro ds rest pc Φ hds _ hQ _
   obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
     MachineData.set, MachineData.setReg, Reg64s.set_low_W64, Effects.All, List.cons_append,
@@ -89,7 +89,7 @@ leaves it, at the registers and flags it produces. -/
         Std.ExtHashMap.disjoint_symm hinter, hbs, hF⟩
   have hload := Mem.loadInt_eq_of_AtM hown hlen (by decide)
   have hstore := Mem.get_AtM_sep_storeInt hown hlen (s.regs.get64 rs).toInt
-  intro ds rest pc Φ hds hQ _
+  intro ds rest pc Φ hds _ hQ _
   obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
     RegOrMem.interp, MachineData.set, MachineData.store, Reg64s.get_low_W64,
@@ -127,7 +127,7 @@ the post holds at the new register and flags. -/
       ⟨mm, mf, by rw [← hunion]; exact (Std.ExtHashMap.union_comm_of_disjoint mf mm hinter).symm,
         Std.ExtHashMap.disjoint_symm hinter, hbs, hF⟩
   have hload := Mem.loadInt_eq_of_AtM hown hlen (by decide)
-  intro ds rest pc Φ hds hQ _
+  intro ds rest pc Φ hds _ hQ _
   obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
     RegOrMem.interp, MachineData.load, MachineData.set, MachineData.setReg,
@@ -147,7 +147,7 @@ the post holds at the new register and flags. -/
           (.mov (.reg (.low rd .W64)) (.regOrMem (.reg (.low rs .W64)))))
     ⦃ Q ⦄ := by
   refine triple_directive.mpr (sep_intro fun F s hpre => ?_)
-  intro ds rest pc Φ hds hQ _
+  intro ds rest pc Φ hds _ hQ _
   obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp, RegOrMem.interp,
     MachineData.set, MachineData.setReg, Reg64s.get_low_W64, Reg64s.set_low_W64,
@@ -162,7 +162,7 @@ the post holds at the new register and flags. -/
           (.xor (.reg (.low rd .W64)) (.regOrMem (.reg (.low rs .W64)))))
     ⦃ Q ⦄ := by
   refine triple_directive.mpr (sep_intro fun F s hpre => ?_)
-  intro ds rest pc Φ hds hQ _
+  intro ds rest pc Φ hds _ hQ _
   obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp, RegOrMem.interp,
     MachineData.set, MachineData.setReg, Reg64s.get_low_W64, Reg64s.set_low_W64,
@@ -177,7 +177,7 @@ the post holds at the new register and flags. -/
           (.lea (.low rd .W64) ⟨some (.reg b), some ⟨i, .W64⟩, .int64 d⟩))
     ⦃ Q ⦄ := by
   refine triple_directive.mpr (sep_intro fun F s hpre => ?_)
-  intro ds rest pc Φ hds hQ _
+  intro ds rest pc Φ hds _ hQ _
   obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
   simp only [Directive.interp, Instr.interp, Operation.interp, MachineData.setReg,
     Reg64s.set_low_W64, AddrExpr.zeroExtend_interp_sib, Effects.All, List.cons_append, List.nil_append, Directives.interp]
@@ -202,7 +202,7 @@ the post holds at the new register and flags. -/
       ⟨mm, mf, by rw [← hunion]; exact (Std.ExtHashMap.union_comm_of_disjoint mf mm hinter).symm,
         Std.ExtHashMap.disjoint_symm hinter, hbs, hF⟩
   have hload := Mem.loadInt_eq_of_AtM hown hlen (by decide)
-  intro ds rest pc Φ hds hQ _
+  intro ds rest pc Φ hds _ hQ _
   obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp, ConstExpr.interp,
     RegOrMem.interp, MachineData.set, MachineData.store,
@@ -232,7 +232,7 @@ the post holds at the new register and flags. -/
       ⟨mm, mf, by rw [← hunion]; exact (Std.ExtHashMap.union_comm_of_disjoint mf mm hinter).symm,
         Std.ExtHashMap.disjoint_symm hinter, hbs, hF⟩
   have hload := Mem.loadInt_eq_of_AtM hown hlen (by decide)
-  intro ds rest pc Φ hds hQ _
+  intro ds rest pc Φ hds _ hQ _
   obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
     RegOrMem.interp, MachineData.set, MachineData.store, Reg64s.get_low_W64,
@@ -261,7 +261,7 @@ the post holds at the new register and flags. -/
       ⟨mm, mf, by rw [← hunion]; exact (Std.ExtHashMap.union_comm_of_disjoint mf mm hinter).symm,
         Std.ExtHashMap.disjoint_symm hinter, hbs, hF⟩
   have hload := Mem.loadInt_eq_of_AtM hown hlen (by decide)
-  intro ds rest pc Φ hds hQ _
+  intro ds rest pc Φ hds _ hQ _
   obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
     RegOrMem.interp, MachineData.load, MachineData.set, MachineData.setReg,
@@ -290,7 +290,7 @@ the post holds at the new register and flags. -/
       ⟨mm, mf, by rw [← hunion]; exact (Std.ExtHashMap.union_comm_of_disjoint mf mm hinter).symm,
         Std.ExtHashMap.disjoint_symm hinter, hbs, hF⟩
   have hload := Mem.loadInt_eq_of_AtM hown hlen (by decide)
-  intro ds rest pc Φ hds hQ _
+  intro ds rest pc Φ hds _ hQ _
   obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
     RegOrMem.interp, MachineData.load, MachineData.set, MachineData.setReg,
@@ -321,7 +321,7 @@ slot at the stack pointer and reads it. Both move the stack pointer by eight. -/
       ⟨mm, mf, by rw [← hunion]; exact (Std.ExtHashMap.union_comm_of_disjoint mf mm hinter).symm,
         Std.ExtHashMap.disjoint_symm hinter, hbs, hF⟩
   have hload := Mem.loadInt_eq_of_AtM hown hlen (by decide)
-  intro ds rest pc Φ hds hQ _
+  intro ds rest pc Φ hds _ hQ _
   obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp, RegOrMem.interp,
     MachineData.store, Reg64s.get_low_W64, Width.bytesv_W64, hload, Effects.All, List.cons_append, List.nil_append, Directives.interp]
@@ -348,7 +348,7 @@ slot at the stack pointer and reads it. Both move the stack pointer by eight. -/
       ⟨mm, mf, by rw [← hunion]; exact (Std.ExtHashMap.union_comm_of_disjoint mf mm hinter).symm,
         Std.ExtHashMap.disjoint_symm hinter, hbs, hF⟩
   have hload := Mem.loadInt_eq_of_AtM hown hlen (by decide)
-  intro ds rest pc Φ hds hQ _
+  intro ds rest pc Φ hds _ hQ _
   obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
   simp only [Directive.interp, Instr.interp, Operation.interp, MachineData.load, MachineData.set,
     MachineData.setReg, Reg64s.set_low_W64, Width.bytesv_W64, hload, Effects.All, List.cons_append, List.nil_append, Directives.interp]

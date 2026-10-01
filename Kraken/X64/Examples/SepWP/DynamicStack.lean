@@ -34,7 +34,7 @@ def dynamic_stack : Program := parse("
 attribute [local grind ←] Lean.Order.le_ofProp MProp.SliceBound.intro MProp.le_mk_of
 attribute [local grind =] Int.toBytes_length BitVec.ofInt_ofBytes_toBytes List.length_take List.length_drop
 
-theorem dynamic_stack_correct [Labels] (stack : List UInt8) (lstack : stack.length = 1024)
+theorem dynamic_stack_correct [Host] (stack : List UInt8) (lstack : stack.length = 1024)
     (rsp₀ : UInt64) :
     ⦃ fun r z f => ⌜r.rsp = rsp₀ ∧ r.r9.toNat + r.r15.toNat < 125⌝
         ⊓ stack.AtM (r.rsp.toBitVec - 1024#64) ⦄
@@ -54,5 +54,5 @@ theorem dynamic_stack_example_correct [layout : _root_.Layout] (s₀ : MachineDa
     Eventually (straightlineStep (layout dynamic_stack))
       (fun s' => s'.1.regs.rax = 42 ∧ s'.1.regs.rbx = 99 ∧ s'.1.regs.rsp = s₀.regs.rsp)
       (s₀, Kraken.Layout.start Directive) := by
-  apply eventually_straightlineStep_of_sep_wp (List.get_AtM_sep h_mem)
+  refine eventually_straightlineStep_of_sep_wp (List.get_AtM_sep h_mem) ?_
   kvcgen64 [dynamic_stack] with finish

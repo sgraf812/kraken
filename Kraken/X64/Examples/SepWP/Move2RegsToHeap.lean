@@ -28,7 +28,7 @@ def move_2_regs_to_heap : Program := parse("
     movq 8(%rdi), %r13
 ")
 
-theorem move_2_regs_to_heap_spec [Labels] (v1 v2 : UInt64) (a c d : UInt64) :
+theorem move_2_regs_to_heap_spec [Host] (v1 v2 : UInt64) (a c d : UInt64) :
     ⦃ fun r _ _ => ⌜r.rax = a ∧ r.rcx = c ∧ r.rdi = d⌝
         ⊓ (v1.AtM r.rdi.toBitVec ∗ v2.AtM (r.rdi.toBitVec + 8#64)) ⦄
       move_2_regs_to_heap
@@ -50,5 +50,5 @@ theorem move_2_regs_to_heap_correct [layout : _root_.Layout] (s₀ : MachineData
         s'.1.regs.r13 = s₀.regs.rcx ∧
         s'.1.regs.rdi = s₀.regs.rdi)
       (s₀, Kraken.Layout.start Directive) := by
-  apply eventually_straightlineStep_of_sep_wp (UInt64.get_AtM_sep_AtM_sep h_mem)
+  refine eventually_straightlineStep_of_sep_wp (UInt64.get_AtM_sep_AtM_sep h_mem) ?_
   kvcgen64 [move_2_regs_to_heap] with finish

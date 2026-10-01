@@ -27,35 +27,30 @@ open Lean.Order
 namespace StateWP
 
 /-- Programs interpreted by their run, at predicates over machine states. -/
-scoped instance instWP [Labels] : WP Program Unit (MachineData → Prop) (Int64 → MachineData → Prop) where
+scoped instance instWP [Host] : WP Program Unit (MachineData → Prop) (Int64 → MachineData → Prop) where
   trans q := ⟨fun Q E s => Program.run q (Q ()) E s⟩
   trans_monotone _ := fun _ _ _ _ hE hQ _ h => Program.run_mono (hQ ()) hE h
 
-theorem wp_apply_iff [Labels] (q : Program) (Q : Unit → MachineData → Prop)
+theorem wp_apply_iff [Host] (q : Program) (Q : Unit → MachineData → Prop)
     (E : Int64 → MachineData → Prop) (s : MachineData) :
     WP.wp q Q E s ↔ Program.run q (Q ()) E s := Iff.rfl
 
 /-- Triples of one directive: the interpretation of the singleton program. -/
-scoped instance [Labels] : WP Directive Unit (MachineData → Prop) (Int64 → MachineData → Prop) where
+scoped instance [Host] : WP Directive Unit (MachineData → Prop) (Int64 → MachineData → Prop) where
   trans d := WP.trans (self := instWP) [d]
   trans_monotone d := WP.trans_monotone (self := instWP) [d]
 
-theorem triple_directive [Labels] {d : Directive} {P : MachineData → Prop}
+theorem triple_directive [Host] {d : Directive} {P : MachineData → Prop}
     {Q : Unit → MachineData → Prop} {E : Int64 → MachineData → Prop} :
     (⦃ P ⦄ d ⦃ Q; E ⦄) ↔ (⦃ P ⦄ [d] ⦃ Q; E ⦄) :=
   ⟨fun h => ⟨h.1⟩, fun h => ⟨h.1⟩⟩
 
-theorem run_of_triple [Labels] {d : Directive} {P : MachineData → Prop}
-    {Q : Unit → MachineData → Prop} {E : Int64 → MachineData → Prop} (h : ⦃ P ⦄ d ⦃ Q; E ⦄) :
-    ∀ s, P s → Program.run [d] (Q ()) E s :=
-  h.1
-
-variable [Labels] {Q : Unit → MachineData → Prop} {E : Int64 → MachineData → Prop}
+variable [Host] {Q : Unit → MachineData → Prop} {E : Int64 → MachineData → Prop}
 
 /-- The empty program: its wp is the postcondition. -/
 @[spec] theorem nil_spec : ⦃ fun s => Q () s ⦄ ([] : Program) ⦃ Q; E ⦄ := by
   refine ⟨fun s hpre => ?_⟩
-  intro ds rest pc Φ hds hQ _
+  intro ds rest pc Φ hds _ hQ _
   obtain rfl := List.map_eq_nil_iff.mp hds
   exact hQ s hpre
 
@@ -71,7 +66,7 @@ the post. -/
       Directive.instr (.regular asz .W64 (.mov (.reg (.low r .W64)) (.imm (.int64 i))))
     ⦃ Q ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
-  intro ds rest pc Φ hds hQ _
+  intro ds rest pc Φ hds _ hQ _
   obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
     MachineData.set, MachineData.setReg, Reg64s.set_low_W64, Effects.All, List.cons_append,
@@ -91,7 +86,7 @@ the post. -/
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
   obtain ⟨hmapped, hpre⟩ := (meet_prop_eq_and _ _) ▸ hpre
   obtain ⟨i, hload⟩ := Option.isSome_iff_exists.mp hmapped
-  intro ds rest pc Φ hds hQ _
+  intro ds rest pc Φ hds _ hQ _
   obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
     RegOrMem.interp, MachineData.set, MachineData.store, Reg64s.get_low_W64,
@@ -119,7 +114,7 @@ the post. -/
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
   obtain ⟨hmapped, hpre⟩ := (meet_prop_eq_and _ _) ▸ hpre
   obtain ⟨i, hload⟩ := Option.isSome_iff_exists.mp hmapped
-  intro ds rest pc Φ hds hQ _
+  intro ds rest pc Φ hds _ hQ _
   obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
     RegOrMem.interp, MachineData.load, MachineData.set, MachineData.setReg,
@@ -139,7 +134,7 @@ local macro "run_step" : tactic =>
 /-- A label occupies no step of the machine. -/
 @[spec] theorem label_spec (l : Label) : ⦃ fun s => Q () s ⦄ Directive.label l ⦃ Q ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
-  intro ds rest pc Φ hds hQ _
+  intro ds rest pc Φ hds _ hQ _
   obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
   run_step
   exact hQ _ hpre
@@ -148,7 +143,7 @@ local macro "run_step" : tactic =>
 @[spec] theorem nop_spec (asz osz : Width) (n : Nat) :
     ⦃ fun s => Q () s ⦄ Directive.instr (.regular asz osz (.nop n)) ⦃ Q ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
-  intro ds rest pc Φ hds hQ _
+  intro ds rest pc Φ hds _ hQ _
   obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
   run_step
   exact hQ _ hpre
@@ -168,7 +163,7 @@ local macro "run_step" : tactic =>
       Directive.instr (.regular asz .W64 (.sub (.reg (.low r .W64)) (.imm (.int64 i))))
     ⦃ Q ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
-  intro ds rest pc Φ hds hQ _
+  intro ds rest pc Φ hds _ hQ _
   obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
   run_step
   exact hQ _ hpre
@@ -183,7 +178,7 @@ local macro "run_step" : tactic =>
           (.mulx (.low hi .W64) (.low lo .W64) (.reg (.low rs .W64))))
     ⦃ Q ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
-  intro ds rest pc Φ hds hQ _
+  intro ds rest pc Φ hds _ hQ _
   obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
   run_step
   exact hQ _ hpre
@@ -203,7 +198,7 @@ local macro "run_step" : tactic =>
       Directive.instr (.regular asz .W64 (.add (.reg (.low r .W64)) (.imm (.int64 i))))
     ⦃ Q ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
-  intro ds rest pc Φ hds hQ _
+  intro ds rest pc Φ hds _ hQ _
   obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
   run_step
   exact hQ _ hpre
@@ -225,7 +220,7 @@ local macro "run_step" : tactic =>
           (.adc (.reg (.low rd .W64)) (.regOrMem (.reg (.low rs .W64)))))
     ⦃ Q ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
-  intro ds rest pc Φ hds hQ _
+  intro ds rest pc Φ hds _ hQ _
   obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
   run_step
   exact hQ _ hpre
@@ -242,7 +237,7 @@ the post must hold for either value. -/
           (.xor (.reg (.low rd .W64)) (.regOrMem (.reg (.low rs .W64)))))
     ⦃ Q ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
-  intro ds rest pc Φ hds hQ _
+  intro ds rest pc Φ hds _ hQ _
   obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
   run_step
   intro af
@@ -262,7 +257,7 @@ the post must hold for either value. -/
       Directive.instr (.regular asz .W64 (.dec (.reg (.low r .W64))))
     ⦃ Q ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
-  intro ds rest pc Φ hds hQ _
+  intro ds rest pc Φ hds _ hQ _
   obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
   run_step
   exact hQ _ hpre
@@ -273,7 +268,7 @@ the post must hold for either value. -/
       Directive.instr (.regular asz osz (.jmp (.rel (.sub (.label l) .after_current_instruction))))
     ⦃ Q; E ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
-  intro ds rest pc Φ hds _ hE
+  intro ds rest pc Φ hds _ _ hE
   obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
   run_step
   have hcancel : pc + .ofNat z + (label l - (pc + .ofNat z)) = label l := by
@@ -291,7 +286,7 @@ condition holds and falls through otherwise. -/
     ⦃ Q; E ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
   obtain ⟨hjmp, hfall⟩ := (meet_prop_eq_and _ _) ▸ hpre
-  intro ds rest pc Φ hds hQ hE
+  intro ds rest pc Φ hds _ hQ hE
   obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
   run_step
   cases hc : CondCode.interp cc s.status <;>
@@ -322,7 +317,7 @@ def _root_.MachineData.retAddr (t : MachineData) : Option Int64 :=
     cases hl : Mem.loadInt s.dmem (s.regs.get64 .rsp) 8 with
     | none => rw [hl] at hra; exact absurd hra (by simp)
     | some i => exact ⟨i, rfl, by rw [hl] at hra; simpa using hra⟩
-  intro ds rest pc Φ hds _ hE
+  intro ds rest pc Φ hds _ _ hE
   obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
   simp only [Directive.interp, Instr.interp, Operation.interp, MachineData.load, hi,
     Effects.All, hval, List.cons_append, List.nil_append, Directives.interp]
@@ -336,15 +331,16 @@ The wp of a program with no exits is a run of the laid-out program: if the wp
 holds of `s` for the postcondition that asks `post` of the final state at
 every pc, the run from `s` at the layout's start ends in `post`. The
 hypothesis is the entailment `⊤ ⊑ wp …` at `s`, the goal form of `vcgen`,
-under every label table: the program does not jump, so its run is the same
-for every table. -/
+in every host: the program does not call, so its run is the same in every
+host. -/
 
 open StateWP in
 theorem straightlineStep_of_wp [layout : Layout] {p : Program} {s : MachineData}
     {post : MachineState → Prop}
-    (h : ∀ [Labels], ⊤ ⊑ WP.wp p (fun _ s' => ∀ pc, post (s', pc)) ⊥ s) :
+    (h : ∀ [Host], ⊤ ⊑ WP.wp p (fun _ s' => ∀ pc, post (s', pc)) ⊥ s)
+    (hcall : p.any Directive.isCall = false := by decide) :
     straightlineStep (layout p) (s, layout.start) post :=
-  Program.run_straightlineStep (of_top_le_prop (@h (Executable.labels (layout p))))
+  Program.run_straightlineStep (of_top_le_prop (@h ⟨layout p⟩)) hcall
     (fun st' hq => hq st'.2)
     (fun a s' hE => ((bot_le (α := Int64 → MachineData → Prop) fun _ _ => False) a s' hE).elim)
 
@@ -352,6 +348,7 @@ open StateWP in
 /-- `straightlineStep_of_wp` for a burst that ends the run. -/
 theorem eventually_straightlineStep_of_wp [layout : Layout] {p : Program} {s : MachineData}
     {post : MachineState → Prop}
-    (h : ∀ [Labels], ⊤ ⊑ WP.wp p (fun _ s' => ∀ pc, post (s', pc)) ⊥ s) :
+    (h : ∀ [Host], ⊤ ⊑ WP.wp p (fun _ s' => ∀ pc, post (s', pc)) ⊥ s)
+    (hcall : p.any Directive.isCall = false := by decide) :
     Eventually (straightlineStep (layout p)) post (s, layout.start) :=
-  .step _ _ (straightlineStep_of_wp h) fun _ h => .done _ h
+  .step _ _ (straightlineStep_of_wp h hcall) fun _ h => .done _ h

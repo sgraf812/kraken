@@ -23,7 +23,7 @@ def p6 := parse("push %rax
 mov $0, %rax
 pop %rax")
 
-theorem p6_spec [Labels] (stack : List UInt8) (h_len : stack.length = 8) (a sp : UInt64) :
+theorem p6_spec [Host] (stack : List UInt8) (h_len : stack.length = 8) (a sp : UInt64) :
     ⦃ fun r _ _ => ⌜r.rax = a ∧ r.rsp = sp⌝ ⊓ stack.AtM (r.rsp.toBitVec - 8#64) ⦄
       p6
     ⦃ fun _ r _ _ => ⌜r.rax = a ∧ r.rsp = sp⌝ ⦄ := by
@@ -40,5 +40,5 @@ theorem p6_correct [layout : _root_.Layout] (s₀ : MachineData)
     Eventually (straightlineStep (layout p6))
       (fun s' => s'.1.regs.rax = s₀.regs.rax ∧ s'.1.regs.rsp = s₀.regs.rsp)
       (s₀, Kraken.Layout.start Directive) := by
-  apply eventually_straightlineStep_of_sep_wp (List.get_AtM_sep h_mem)
+  refine eventually_straightlineStep_of_sep_wp (List.get_AtM_sep h_mem) ?_
   kvcgen64 [p6] with finish

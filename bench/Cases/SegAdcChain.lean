@@ -28,7 +28,7 @@ def prog (n : Nat) : Program :=
     :: chain n
 
 def Goal (n : Nat) : Prop :=
-  ∀ [Labels],
+  ∀ [Host],
     ⦃ fun _ => True ⦄
     prog n
     ⦃ fun _ s => s.regs.get64 .rax = BitVec.ofNat 64 (3 * n) ⦄

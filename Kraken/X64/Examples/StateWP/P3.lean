@@ -64,8 +64,7 @@ theorem p3_correct [layout : Layout] [Kraken.Executable.ValidLayout (layout p3)]
     Eventually (straightlineStep (layout p3))
       (fun s => s.1.regs.rdx.toNat = p3_spec d ∧ s.1.regs.rax = 0) (d, layout.start) := by
   simp only [p3_spec] at h_bounds ⊢
-  refine StateWP.cfg (p3_table d) (fun _ s => s.regs.rbx.toNat) ?_
-    (Program.placed_of_valid (by decide)) (by rfl) (by decide) d rfl
+  refine StateWP.cfg (p3_table d) (fun _ s => s.regs.rbx.toNat) ?_ (by rfl) (by decide) d rfl
   cfg_cases [p3]
   all_goals kvcgen64 with finish
 

@@ -6,9 +6,10 @@ basic blocks (`Program.blockAt`). `StateWP.cfg` proves the baseline judgment
 of the laid-out program from one triple per block: a table `T` gives the
 assertion at each label, and a variant `var` orders the jumps. A block falls
 into the next block inside one burst, and a jump starts a new burst at the
-target's address. `Program.LabelsPlaced` is what the rule needs of the layout: the
-address of a label looks up to the text from that label on.
-`Program.placed_of_valid` derives it from `ValidLayout`.
+target's address. `Host.Placed` is what the rule needs of the layout: the
+address of an index looks up to the text from that index on.
+`Host.placed_of_valid` derives it from `ValidLayout`. A call links to its return
+through `Host.Placed` and a `Contract` that the callee implements.
 -/
 public import Kraken.StateWP
 public import Kraken.SegmentExtract
@@ -54,50 +55,86 @@ theorem Layout.frag_map_fst [Layout] (n : Nat) (p : Program) :
     (Layout.frag n p).map (·.1) = p :=
   List.ext_getElem (by simp) (by simp [Layout.frag])
 
+/-! ## Runs at an index of the host -/
+
+/-- The burst that runs the host from index `k`. -/
+def Host.burst [Host] (k : Nat) (s : MachineData) (Φ : MachineState → Prop) : Prop :=
+  (Directives.interp (Host.exe.2.drop k) s (Host.exe.addrOf k) fun pc s => .done (s, pc)).All Φ
+
+theorem Host.burst_cell [Host] {k : Nat} {d : Directive} {z : Nat}
+    (hd : Host.exe.2[k]? = some (d, z)) (s : MachineData) (Φ : MachineState → Prop) :
+    Host.burst k s Φ =
+      (Directive.interp d s ⟨Host.exe.addrOf k, Host.exe.addrOf (k + 1)⟩
+        (fun s' => Directives.interp (Host.exe.2.drop (k + 1)) s' (Host.exe.addrOf (k + 1))
+          fun pc s => .done (s, pc))
+        (fun pc s => .done (s, pc))).All Φ := by
+  obtain ⟨hlt, hget⟩ := List.getElem?_eq_some_iff.mp hd
+  unfold Host.burst
+  rw [List.drop_eq_getElem_cons hlt, hget, Kraken.Executable.addrOf_succ _ hd]
+  rfl
+
+theorem Host.burst_label [Host] {k : Nat} {l : Label} {z : Nat}
+    (hd : Host.exe.2[k]? = some (Directive.label l, z)) (s : MachineData)
+    (Φ : MachineState → Prop) : Host.burst k s Φ = Host.burst (k + 1) s Φ := by
+  rw [Host.burst_cell hd]
+  rfl
+
+theorem Host.burst_end [Host] {k : Nat} (hk : Host.exe.2.length ≤ k) {s : MachineData}
+    {Φ : MachineState → Prop} (h : ∀ pc, Φ (s, pc)) : Host.burst k s Φ := by
+  unfold Host.burst
+  rw [List.drop_eq_nil_of_le hk]
+  exact h _
+
+theorem Program.endPc_addrOf (e : Executable) {k : Nat} {cs : List (Directive × Nat)}
+    (h : cs <+: e.2.drop k) :
+    Program.endPc (e.addrOf k) (cs.map (·.2)) = e.addrOf (k + cs.length) := by
+  induction cs generalizing k with
+  | nil => rfl
+  | cons c cs ih =>
+    obtain ⟨t, ht⟩ := h
+    have hk : e.2.drop k = c :: (cs ++ t) := ht.symm
+    have hc : e.2[k]? = some c := by simpa [List.head?_drop] using congrArg List.head? hk
+    have hcs : cs <+: e.2.drop (k + 1) := ⟨t, by rw [← List.drop_drop, hk]; rfl⟩
+    obtain ⟨d, z⟩ := c
+    have hstep : Program.endPc (e.addrOf k) (((d, z) :: cs).map (·.2))
+        = Program.endPc (e.addrOf k + .ofNat z) (cs.map (·.2)) := rfl
+    rw [hstep, ← Kraken.Executable.addrOf_succ _ hc, ih hcs, List.length_cons]
+    congr 1
+    omega
+
+/-- A run of `q` at index `k` of the host, for a `Φ` closed under bursts. -/
+theorem Program.run_at [Host] {q : Program} {Q : MachineData → Prop}
+    {E : Int64 → MachineData → Prop} {s : MachineData} (h : Program.run q Q E s) {k : Nat}
+    {Φ : MachineState → Prop} (hs : q <+: (Host.exe.2.map (·.1)).drop k)
+    (hclosed : ∀ st, (Executable.straightline Host.exe st .done).All Φ → Φ st)
+    (hQ : ∀ s', Q s' → Host.burst (k + q.length) s' Φ) (hE : ∀ a s', E a s' → Φ (s', a)) :
+    Host.burst k s Φ := by
+  have hds : ((Host.exe.2.drop k).take q.length).map (·.1) = q := by
+    rw [List.map_take, List.map_drop]
+    exact (List.prefix_iff_eq_take.mp hs).symm
+  have hlen : ((Host.exe.2.drop k).take q.length).length = q.length := by
+    rw [← List.length_map (f := (·.1)), hds]
+  have hsplit : Host.exe.2.drop k
+      = (Host.exe.2.drop k).take q.length ++ Host.exe.2.drop (k + q.length) := by
+    conv => lhs; rw [← List.take_append_drop q.length (Host.exe.2.drop k)]
+    rw [List.drop_drop]
+  unfold Host.burst
+  rw [hsplit]
+  refine h _ _ _ _ hds (fun _ => ⟨k, hsplit, rfl, hclosed⟩) (fun s' hq => ?_) hE
+  rw [Program.endPc_addrOf _ (List.take_prefix _ _), hlen]
+  exact hQ s' hq
+
+theorem eventually_closed [layout : Layout] (e : Executable) (post : MachineState → Prop)
+    (st : MachineState) (h : (Executable.straightline e st .done).All (Eventually (straightlineStep e) post)) :
+    Eventually (straightlineStep e) post st :=
+  Eventually.step _ _ h fun _ h => h
+
 /-! ## Placement -/
 
-/-- A jump to a label of the laid-out program `p` lands on the text from that
-label: the address of the label looks up to label cells of size zero,
-followed by the laid-out text from the label on. -/
-def Program.LabelsPlaced [layout : Layout] (p : Program) : Prop :=
-  ∀ l, (Program.blockAt p l).isSome →
-    ∃ pre, (layout p).directivesFromAddress ((Executable.labels (layout p)).label l)
-        = pre ++ Layout.frag (p.length - (Program.fromLabel p l).length) (Program.fromLabel p l)
-      ∧ ∀ c ∈ pre, c.1.isLabel = true ∧ c.2 = 0
-
-/-- A valid layout places every label. -/
-theorem Program.placed_of_valid [layout : Layout] {p : Program}
-    [hv : Kraken.Executable.ValidLayout (layout p)] (hwf : Program.WF p) :
-    Program.LabelsPlaced p := by
-  intro l hl
-  have hne : Program.fromLabel p l ≠ [] := by
-    obtain ⟨blk, hblk⟩ := Option.isSome_iff_exists.mp hl
-    rw [Program.fromLabel_block hwf.nodup hblk]
-    exact List.cons_ne_nil _ _
-  have hlen : (layout p).2.length = p.length := by simp [Layout.apply_snd]
-  rw [Program.label_addrOf_drop hwf.nodup (Program.drop_fromLabel p l) hne]
-  generalize hi : p.length - (Program.fromLabel p l).length = i
-  have hile : i ≤ p.length := by omega
-  obtain ⟨j, hji, hj, hleast⟩ := Nat.exists_least_le
-    (P := fun j => (layout p).addrOf j = (layout p).addrOf i) rfl
-  have hfresh : ∀ k, k < j → (layout p).addrOf k ≠ (layout p).addrOf i := hleast
-  rw [Kraken.Executable.directivesFromAddress_addrOf_first (layout p) j i hji (by omega) hj hfresh]
-  refine ⟨((layout p).2.drop j).take (i - j), ?_, ?_⟩
-  · have hd : p.drop i = Program.fromLabel p l := hi ▸ Program.drop_fromLabel p l
-    conv => lhs; rw [← List.take_append_drop (i - j) ((layout p).2.drop j)]
-    rw [List.drop_drop, show j + (i - j) = i by omega, Layout.apply_snd, Layout.frag_drop 0 i,
-      Nat.zero_add, hd]
-  · intro c hc
-    obtain ⟨k, hk, hck⟩ := List.getElem_of_mem hc
-    simp only [List.length_take, List.length_drop] at hk
-    have hkc : (layout p).2[j + k]? = some c := by
-      rw [← hck, List.getElem?_eq_getElem (by omega)]
-      simp [List.getElem_take, List.getElem_drop]
-    obtain ⟨l', z, hlz⟩ := Kraken.Executable.label_between_of_addrOf_eq (layout p)
-      (k := j + k) (by omega) (by omega) (by omega) hj
-    rw [hkc] at hlz
-    cases hlz
-    exact ⟨rfl, hv.label_size (j + k) l' z hkc⟩
+/-- Entering the host at the address of index `k` runs the host from index `k`. -/
+def Host.Placed [Host] : Prop :=
+  ∀ k s Φ, k ≤ Host.exe.2.length → Host.burst k s Φ →
+    (Executable.straightline Host.exe (s, Host.exe.addrOf k) .done).All Φ
 
 /-- Label cells of size zero cost the burst nothing. -/
 theorem Directives.interp_labels_append [Labels] {pre rest : List (Directive × Nat)}
@@ -119,9 +156,30 @@ theorem Directives.interp_labels_append [Labels] {pre rest : List (Directive × 
     | instr _ => cases hlab
     | byteArray _ => cases hlab
 
-/-! ## The control-flow rule -/
+theorem Host.placed_of_valid [Host] [hv : Kraken.Executable.ValidLayout Host.exe] : Host.Placed := by
+  intro k s Φ hk h
+  obtain ⟨j, hjk, hdir, hlab⟩ := Kraken.Executable.exists_cut Host.exe hk
+  have hsplit : Host.exe.2.drop j = (Host.exe.2.drop j).take (k - j) ++ Host.exe.2.drop k := by
+    conv => lhs; rw [← List.take_append_drop (k - j) (Host.exe.2.drop j)]
+    rw [List.drop_drop, show j + (k - j) = k by omega]
+  show (Directives.interp (Host.exe.directivesFromAddress (Host.exe.addrOf k)) s
+    (Host.exe.addrOf k) fun pc s => .done (s, pc)).All Φ
+  rw [hdir, hsplit, Directives.interp_labels_append]
+  · exact h
+  · intro c hc
+    obtain ⟨m, hm, hcm⟩ := List.getElem_of_mem hc
+    simp only [List.length_take, List.length_drop] at hm
+    have hmc : Host.exe.2[j + m]? = some c := by
+      rw [← hcm, List.getElem?_eq_getElem (by omega)]
+      simp [List.getElem_take, List.getElem_drop]
+    obtain ⟨l, z, hlz⟩ := hlab (j + m) (by omega) (by omega)
+    rw [hmc] at hlz
+    cases hlz
+    exact ⟨rfl, hv.label_size (j + m) l z hmc⟩
 
-/-- One burst of the laid-out code, from a state and address. -/
+theorem Layout.text {layout : Layout} {p : Program} : (layout p).2.map (·.1) = p := by
+  rw [Layout.apply_snd, Layout.frag_map_fst]
+
 theorem straightlineStep_eq_interp [Layout] (e : Executable) (st : MachineState)
     (post : MachineState → Prop) :
     straightlineStep e st post
@@ -130,21 +188,155 @@ theorem straightlineStep_eq_interp [Layout] (e : Executable) (st : MachineState)
   unfold straightlineStep Executable.straightline
   rfl
 
-/-- The laid-out text of `p` from the label `l` on. -/
-def Program.codeFrom [Layout] (p : Program) (l : Label) : List (Directive × Nat) :=
-  Layout.frag (p.length - (Program.fromLabel p l).length) (Program.fromLabel p l)
+theorem Effects.All.mono {P R : MachineState → Prop} (h : ∀ st, P st → R st) {eff : Effects}
+    (hp : eff.All P) : eff.All R := by
+  induction eff <;> simp_all [Effects.All]
+
+theorem closed_of_eventually [Layout] {e : Executable} {R Φ : MachineState → Prop}
+    (hR : ∀ st, R st → Φ st) (hclosed : ∀ st, (Executable.straightline e st .done).All Φ → Φ st)
+    {st : MachineState} (h : Eventually (straightlineStep e) R st) : Φ st := by
+  induction h with
+  | done st hr => exact hR st hr
+  | step st _ htrans _ ih => exact hclosed st (Effects.All.mono ih htrans)
+
+theorem eventually_of_burst [layout : Layout] {p : Program} {s : MachineData}
+    {post : MachineState → Prop}
+    (h : @Host.burst ⟨layout p⟩ 0 s (Eventually (straightlineStep (layout p)) post)) :
+    Eventually (straightlineStep (layout p)) post (s, layout.start) := by
+  refine Eventually.step _ _ ?_ fun _ h => h
+  rw [straightlineStep_eq_interp]
+  dsimp only
+  rw [Kraken.Executable.directivesFromStart]
+  unfold Host.burst at h
+  simpa [Layout.apply_snd, Layout.frag, Kraken.Executable.addrOf_zero, Layout.apply_fst] using h
+
+/-! ## Calls -/
+
+def MachineData.pushRa (s : MachineData) (ra : Int64) : MachineData :=
+  { s with regs := s.regs.set64 .rsp (s.regs.get64 .rsp - 8#64),
+           dmem := Mem.storeInt s.dmem (s.regs.get64 .rsp - 8#64) 8 ra.toBitVec.toInt }
+
+@[grind =] theorem MachineData.regs_pushRa (s : MachineData) (ra : Int64) :
+    (s.pushRa ra).regs = s.regs.set64 .rsp (s.regs.get64 .rsp - 8#64) := rfl
+
+@[grind =] theorem MachineData.dmem_pushRa (s : MachineData) (ra : Int64) :
+    (s.pushRa ra).dmem = Mem.storeInt s.dmem (s.regs.get64 .rsp - 8#64) 8 ra.toBitVec.toInt := rfl
+
+@[grind =] theorem Mem.loadInt_storeInt_64 (m : DataMem) (a : BitVec 64) (v : Int) :
+    (m.storeInt a 8 v).loadInt a 8 = some (Int.ofBytes (Int.toBytes 8 v)) :=
+  Mem.loadInt_storeInt m a _ v (by decide)
+
+@[grind =] theorem Int64.ofBitVec_ofBytes_toBytes (ra : Int64) :
+    Int64.ofBitVec (BitVec.ofInt 64 (Int.ofBytes (Int.toBytes 8 ra.toBitVec.toInt))) = ra := by
+  rw [BitVec.ofInt_ofBytes_toBytes 64 8 rfl, Int64.ofBitVec_toBitVec]
+
+@[grind =] theorem MachineData.retAddr_pushRa (s : MachineData) (ra : Int64) :
+    (s.pushRa ra).retAddr = some ra := by
+  simp only [MachineData.retAddr, MachineData.pushRa, Reg64s.get64_set64, reduceIte,
+    Mem.loadInt_storeInt _ _ _ _ (by decide : 8 ≤ 2 ^ 64), Option.map_some,
+    BitVec.ofInt_ofBytes_toBytes 64 8 rfl, Int64.ofBitVec_toBitVec]
+
+structure Contract where
+  f : Label
+  Pre : MachineData → Prop
+  Post : MachineData → MachineData → Prop
+
+/-- The code at `c.f`, entered with a return address `ra` on the stack, returns to `ra`. -/
+def Contract.Implemented [Layout] [Host] (c : Contract) : Prop :=
+  ∀ s ra, c.Pre s →
+    Eventually (straightlineStep Host.exe) (fun st => st.2 = ra ∧ c.Post s st.1)
+      (s.pushRa ra, label c.f)
+
+theorem Int64.add_sub_self_left (a b : Int64) : a + (b - a) = b := by
+  apply Int64.toBitVec_inj.mp
+  simp only [Int64.toBitVec_add, Int64.toBitVec_sub]
+  rw [BitVec.add_comm, BitVec.sub_add_cancel]
 
 namespace StateWP
 
-/-- The control-flow rule: one table `T`, one variant `var`, one triple per
-block of `Program.blockAt`, under every label table. Each block is
-entered with its table entry and the variant snapshotted as `n`. It falls into
-the next block with the entry there and the variant not increased, or, as
-the last block, falls through the end of the program with `post`. A jump exits
-at the address of a mapped label along `Program.EdgeLt`. -/
-theorem cfg [layout : Layout] {p p' : Program} {l₀ : Label} {post : MachineState → Prop}
+variable [layout : Layout] [host : Host] {Q : Unit → MachineData → Prop}
+  {E : Int64 → MachineData → Prop}
+
+@[spec] theorem call_spec (asz osz : Width) (c : Contract) :
+    ⦃ fun s => (Host.Placed ∧ c.Implemented)
+        ⊓ ((Mem.loadInt s.dmem (s.regs.get64 .rsp - 8#64) 8).isSome = true)
+        ⊓ c.Pre s ⊓ (∀ s', c.Post s s' → Q () s') ⦄
+      Directive.instr (.regular asz osz (.call (.rel (.sub (.label c.f) .after_current_instruction))))
+    ⦃ Q; E ⦄ := by
+  refine triple_directive.mpr ⟨fun s hpre => ?_⟩
+  simp only [meet_prop_eq_and] at hpre
+  obtain ⟨⟨⟨⟨hplaced, himpl⟩, hmapped⟩, hpre⟩, hcont⟩ := hpre
+  obtain ⟨i, hload⟩ := Option.isSome_iff_exists.mp hmapped
+  intro ds rest pc Φ hds hg hQ _
+  obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
+  obtain ⟨k, hdrop, hpc, hclosed⟩ := hg rfl
+  have hcell := congrArg List.head? hdrop
+  simp only [List.head?_drop, List.cons_append, List.nil_append, List.head?_cons] at hcell
+  have hk : k + 1 ≤ Host.exe.2.length := (List.getElem?_eq_some_iff.mp hcell).1
+  have hrest : Host.exe.2.drop (k + 1) = rest := by
+    rw [← List.drop_drop, hdrop]
+    rfl
+  have hra : Host.exe.addrOf (k + 1) = pc + .ofNat z := by
+    rw [Kraken.Executable.addrOf_succ _ hcell, hpc]
+  simp only [Directive.interp, Instr.interp, Operation.interp, RelRegOrMem.interp,
+    ConstExpr.interp, MachineData.store, hload, Effects.All, List.cons_append,
+    List.nil_append, Directives.interp]
+  rw [Int64.ofBitVec_toBitVec, Int64.add_sub_self_left]
+  refine closed_of_eventually ?_ hclosed (himpl s _ hpre)
+  rintro ⟨s'', a⟩ ⟨rfl, hpost⟩
+  refine hclosed _ ?_
+  rw [← hra]
+  refine hplaced (k + 1) s'' Φ hk ?_
+  unfold Host.burst
+  rw [hrest, hra]
+  exact hQ s'' (hcont s'' hpost)
+
+theorem implemented_of_triple {P body rest : Program} [Kraken.Executable.ValidLayout Host.exe]
+    (hhost : Host.exe = layout P) (hnd : (Program.labels P).Nodup) (c : Contract)
+    (hat : Program.fromLabel P c.f = Directive.label c.f :: (body ++ rest))
+    (hbody : ∀ s ra, ⦃ fun t => t = s.pushRa ra ∧ c.Pre s ⦄ body
+      ⦃ (fun _ _ => False); fun a s' => a = ra ∧ c.Post s s' ⦄) :
+    c.Implemented := by
+  have hplaced : Host.Placed := Host.placed_of_valid
+  obtain ⟨e⟩ := host
+  change e = _ at hhost
+  subst hhost
+  letI : Host := ⟨layout P⟩
+  intro s ra hpre
+  have hdrop := Program.drop_fromLabel P c.f
+  rw [show label c.f = (layout P).addrOf (P.length - (Program.fromLabel P c.f).length) from
+    Program.label_addrOf_drop hnd hdrop (by rw [hat]; exact List.cons_ne_nil _ _)]
+  have hle : P.length - (Program.fromLabel P c.f).length ≤ (layout P).2.length := by
+    simp [Layout.apply_snd]
+  generalize P.length - (Program.fromLabel P c.f).length = i at hdrop hle
+  rw [hat] at hdrop
+  have hcell : P[i]? = some (Directive.label c.f) := by
+    simpa [List.head?_drop] using congrArg List.head? hdrop
+  have hcell' : (layout P).2[i]? = some (Directive.label c.f, Kraken.Layout.size Directive i) := by
+    rw [Layout.apply_getElem?, hcell]; rfl
+  refine Eventually.step _ _ (hplaced i _ _ hle ?_) fun _ h => h
+  rw [Host.burst_label hcell']
+  refine Program.run_at ((hbody s ra).1 _ ⟨rfl, hpre⟩) ?_ (eventually_closed _ _)
+    (fun _ h => h.elim) ?_
+  · show body <+: ((layout P).2.map (·.1)).drop (i + 1)
+    rw [Layout.text, ← List.drop_drop, hdrop]
+    exact List.prefix_append _ _
+  · rintro a s' ⟨rfl, hpost⟩
+    exact Eventually.done _ ⟨rfl, hpost⟩
+
+/-! ## The control-flow rule -/
+
+omit host in
+/-- The control-flow rule: one table `T`, one variant `var`, one triple per block of
+`Program.blockAt`. Each block is entered with its table entry and the variant snapshotted as
+`n`. It falls into the next block with the entry there and the variant not increased, or, as the
+last block, falls through the end of the program with `post`. A jump exits at the address of a
+mapped label along `Program.EdgeLt`. -/
+theorem cfg {p p' : Program} {l₀ : Label} {post : MachineState → Prop}
+    [Kraken.Executable.ValidLayout (layout p)]
     (T : Label → MachineData → Prop) (var : Label → MachineData → Nat := fun _ _ => 0)
-    (hblocks : ∀ l blk, Program.blockAt p l = some blk → ∀ n : Nat, ∀ [Labels],
+    (hblocks : ∀ l blk, Program.blockAt p l = some blk → ∀ n : Nat, ∀ [Host],
+      Host.exe = layout p →
       ⦃ fun s => T l s ∧ var l s = n ⦄
         blk.body
       ⦃ (match blk.next with
@@ -152,58 +344,57 @@ theorem cfg [layout : Layout] {p p' : Program} {l₀ : Label} {post : MachineSta
          | none => fun _ s => ∀ pc, post (s, pc));
         fun a s => ∃ l', label l' = a
           ∧ (Program.blockAt p l').isSome ∧ T l' s ∧ Program.EdgeLt p var l n l' s ⦄)
-    (hplace : Program.LabelsPlaced p)
     (hp : p = Directive.label l₀ :: p' := by rfl) (hwf : Program.WF p := by decide) :
     ∀ s, T l₀ s → Eventually (straightlineStep (layout p)) post (s, layout.start) := by
-  letI : Labels := Executable.labels (layout p)
+  letI : Host := ⟨layout p⟩
+  have hplaced : Host.Placed := Host.placed_of_valid
   have hnd := hwf.nodup
   have hK : ∀ l, Program.blockIdx p l ≤ (Program.view p).2.length := Program.blockIdx_le p
   have key : ∀ x : Label × MachineData, (Program.blockAt p x.1).isSome → T x.1 x.2 →
-      ∀ pc, (Directives.interp (Program.codeFrom p x.1) x.2 pc fun pc s => .done (s, pc)).All
+      Host.burst (p.length - (Program.fromLabel p x.1).length) x.2
         (Eventually (straightlineStep (layout p)) post) := by
     intro x
     induction x using (measure (Program.cfgMeasure p var)).wf.induction with
     | _ x ih =>
       obtain ⟨l, s⟩ := x
-      intro hsome hT pc
+      intro hsome hT
       dsimp only at hsome hT ⊢
       obtain ⟨blk, hblk⟩ := Option.isSome_iff_exists.mp hsome
-      have hidx : Program.blockIdx p l < (Program.view p).2.length :=
-        Program.blockIdx_lt hnd hblk
       have htext := Program.fromLabel_block hnd hblk
       have hlen := congrArg List.length htext
       simp only [List.length_cons, List.length_append] at hlen
+      have hdrop := Program.drop_fromLabel p l
       have hsuf : (Program.fromLabel p l).length ≤ p.length := by
-        have := congrArg List.length (Program.drop_fromLabel p l)
+        have := congrArg List.length hdrop
         simp only [List.length_drop] at this
         omega
-      have hcode : Program.codeFrom p l
-          = (Directive.label l, layout.size (p.length - (Program.fromLabel p l).length))
-            :: (Layout.frag (p.length - (Program.fromLabel p l).length + 1) blk.body
-              ++ Layout.frag (p.length - (Program.fromLabel p l).length + 1 + blk.body.length)
-                (blk.next.elim [] (Program.fromLabel p))) := by
-        rw [Program.codeFrom, htext, Layout.frag_cons, Layout.frag_append]
-      rw [hcode]
-      simp only [Directives.interp, Directive.interp]
-      have hrun := (@hblocks l blk hblk (var l s) (Executable.labels (layout p))).1 s ⟨hT, rfl⟩
-      refine hrun _ _ _ _ (Layout.frag_map_fst _ _) (fun s' hq => ?_) (fun a s' hE => ?_)
+      generalize hi : p.length - (Program.fromLabel p l).length = i at hdrop
+      rw [htext] at hdrop
+      have hcell : p[i]? = some (Directive.label l) := by
+        simpa [List.head?_drop] using congrArg List.head? hdrop
+      have hcell' : (layout p).2[i]? = some (Directive.label l, Kraken.Layout.size Directive i) := by
+        rw [Layout.apply_getElem?, hcell]; rfl
+      have hbody : blk.body <+: ((layout p).2.map (·.1)).drop (i + 1) := by
+        rw [Layout.text, ← List.drop_drop, hdrop]
+        exact List.prefix_append _ _
+      rw [Host.burst_label hcell']
+      refine Program.run_at ((hblocks l blk hblk (var l s) rfl).1 s ⟨hT, rfl⟩) hbody
+        (eventually_closed _ _) (fun s' hq => ?_) (fun a s' hE => ?_)
       · cases hn : blk.next with
         | none =>
-          rw [hn] at hq
-          simp only [Option.elim_none, Layout.frag_nil, Directives.interp]
-          exact Eventually.done _ (hq _)
+          rw [hn] at hq hlen
+          refine Host.burst_end ?_ fun pc => Eventually.done _ (hq pc)
+          show (layout p).2.length ≤ _
+          simp only [Option.elim, List.length_nil] at hlen
+          simp only [Layout.apply_snd, Layout.frag, List.length_mapIdx]
+          omega
         | some l' =>
           rw [hn] at hq hlen
           obtain ⟨hT', hvar⟩ := hq
           obtain ⟨hsome', hidx'⟩ := Program.blockAt_next hnd hblk hn
-          simp only [Option.elim] at hlen ⊢
-          have hcode' : Layout.frag (p.length - (Program.fromLabel p l).length + 1 + blk.body.length)
-              (Program.fromLabel p l') = Program.codeFrom p l' := by
-            rw [Program.codeFrom]
-            congr 1
-            omega
-          rw [hcode']
-          refine ih (l', s') ?_ hsome' hT' _
+          simp only [Option.elim] at hlen
+          rw [show i + 1 + blk.body.length = p.length - (Program.fromLabel p l').length by omega]
+          refine ih (l', s') ?_ hsome' hT'
           have hK' := hK l'
           show Program.cfgMeasure p var (l', s') < Program.cfgMeasure p var (l, s)
           unfold Program.cfgMeasure
@@ -214,12 +405,14 @@ theorem cfg [layout : Layout] {p p' : Program} {l₀ : Label} {post : MachineSta
           omega
       · obtain ⟨l', hlab, hsome', hT', hedge⟩ := hE
         subst hlab
-        refine Eventually.step _ _ ?_ fun _ h => h
-        obtain ⟨pre, hdir, hpre⟩ := hplace l' hsome'
-        rw [straightlineStep_eq_interp]
-        dsimp only
-        rw [hdir, Directives.interp_labels_append hpre, ← Program.codeFrom]
-        refine ih (l', s') ?_ hsome' hT' _
+        have hne : Program.fromLabel p l' ≠ [] := by
+          obtain ⟨blk', hblk'⟩ := Option.isSome_iff_exists.mp hsome'
+          rw [Program.fromLabel_block hnd hblk']
+          exact List.cons_ne_nil _ _
+        rw [show label l' = (layout p).addrOf (p.length - (Program.fromLabel p l').length) from
+          Program.label_addrOf_drop hnd (Program.drop_fromLabel p l') hne]
+        refine eventually_closed _ _ _ (hplaced _ _ _ (by show _ ≤ (layout p).2.length; simp only [Layout.apply_snd, Layout.frag, List.length_mapIdx]; omega)
+          (ih (l', s') ?_ hsome' hT'))
         have hK' := hK l'
         show Program.cfgMeasure p var (l', s') < Program.cfgMeasure p var (l, s)
         unfold Program.cfgMeasure
@@ -239,23 +432,17 @@ theorem cfg [layout : Layout] {p p' : Program} {l₀ : Label} {post : MachineSta
     rw [hp]
     show (Program.blockAtAux (Program.view (Directive.label l₀ :: p')).2 l₀).isSome = true
     simp [Program.view, Program.blockAtAux]
-  refine Eventually.step _ _ ?_ fun _ h => h
-  rw [straightlineStep_eq_interp]
-  dsimp only
-  have hstart : (layout p).directivesFromAddress layout.start = Program.codeFrom p l₀ := by
-    rw [Kraken.Executable.directivesFromStart, Program.codeFrom]
-    have hfl : Program.fromLabel p l₀ = p := by
-      have hnot : Program.fromLabel p' l₀ = [] := Classical.byContradiction fun hne => by
-        have hmem := Program.mem_labels_of_cell (Program.fromLabel_mem hne)
-        have hnd' := hnd
-        rw [hp] at hnd'
-        simp only [Program.labels] at hnd'
-        exact (List.nodup_cons.mp hnd').1 hmem
-      rw [hp]
-      simp [hnot]
-    rw [hfl, Nat.sub_self]
-    simp [Layout.frag]
-  rw [hstart]
-  exact key (l₀, s) h0 hT _
+  have hfl : Program.fromLabel p l₀ = p := by
+    have hnot : Program.fromLabel p' l₀ = [] := Classical.byContradiction fun hne => by
+      have hmem := Program.mem_labels_of_cell (Program.fromLabel_mem hne)
+      have hnd' := hnd
+      rw [hp] at hnd'
+      simp only [Program.labels] at hnd'
+      exact (List.nodup_cons.mp hnd').1 hmem
+    rw [hp]
+    simp [hnot]
+  have := key (l₀, s) h0 hT
+  rw [hfl, Nat.sub_self] at this
+  exact eventually_of_burst this
 
 end StateWP

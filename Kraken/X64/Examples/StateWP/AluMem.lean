@@ -29,7 +29,7 @@ theorem alu_mem_example_correct [layout : Layout] (s₀ : MachineData)
       (fun s' => s'.1.regs.rcx = 142)
       (s₀, layout.start) := by
   have hload := Mem.loadInt_sep _ _ 8 _ _ h_mem (UInt64.toBytes_length v) (by decide)
-  apply eventually_straightlineStep_of_wp
+  refine eventually_straightlineStep_of_wp ?_
   kvcgen64 [alu_mem_example] with finish
 
 end State
