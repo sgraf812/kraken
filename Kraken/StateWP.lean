@@ -45,6 +45,11 @@ theorem triple_directive [Labels] {d : Directive} {P : MachineData → Prop}
     (⦃ P ⦄ d ⦃ Q; E ⦄) ↔ (⦃ P ⦄ [d] ⦃ Q; E ⦄) :=
   ⟨fun h => ⟨h.1⟩, fun h => ⟨h.1⟩⟩
 
+theorem run_of_triple [Labels] {d : Directive} {P : MachineData → Prop}
+    {Q : Unit → MachineData → Prop} {E : Int64 → MachineData → Prop} (h : ⦃ P ⦄ d ⦃ Q; E ⦄) :
+    ∀ s, P s → Program.run [d] (Q ()) E s :=
+  h.1
+
 variable [Labels] {Q : Unit → MachineData → Prop} {E : Int64 → MachineData → Prop}
 
 /-- The empty program: its wp is the postcondition. -/
@@ -293,6 +298,35 @@ condition holds and falls through otherwise. -/
     simp only [hc, Bool.false_eq_true, ite_true, ite_false]
   · exact hQ _ (hfall hc)
   · exact hE _ _ (hjmp hc)
+
+/-- The return address on top of the stack. -/
+def _root_.MachineData.retAddr (t : MachineData) : Option Int64 :=
+  (Mem.loadInt t.dmem (t.regs.get64 .rsp) 8).map (fun i => Int64.ofBitVec (BitVec.ofInt 64 i))
+
+@[grind =] theorem _root_.MachineData.retAddr_eq (t : MachineData) :
+    t.retAddr = (Mem.loadInt t.dmem (t.regs.get64 .rsp) 8).map
+      (fun i => Int64.ofBitVec (BitVec.ofInt 64 i)) := rfl
+
+@[spec] theorem ret_spec (asz osz : Width) :
+    ⦃ fun s => (s.retAddr.isSome = true)
+        ⊓ (∀ ra, s.retAddr = some ra →
+            E ra { s with regs := s.regs.set64 .rsp (s.regs.get64 .rsp + 8#64) }) ⦄
+      Directive.instr (.regular asz osz .ret)
+    ⦃ Q; E ⦄ := by
+  refine triple_directive.mpr ⟨fun s hpre => ?_⟩
+  obtain ⟨hmapped, hexit⟩ := (meet_prop_eq_and _ _) ▸ hpre
+  obtain ⟨ra, hra⟩ := Option.isSome_iff_exists.mp hmapped
+  obtain ⟨i, hi, hval⟩ : ∃ i, Mem.loadInt s.dmem (s.regs.get64 .rsp) 8 = some i
+      ∧ Int64.ofBitVec (BitVec.ofInt 64 i) = ra := by
+    unfold MachineData.retAddr at hra
+    cases hl : Mem.loadInt s.dmem (s.regs.get64 .rsp) 8 with
+    | none => rw [hl] at hra; exact absurd hra (by simp)
+    | some i => exact ⟨i, rfl, by rw [hl] at hra; simpa using hra⟩
+  intro ds rest pc Φ hds _ hE
+  obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
+  simp only [Directive.interp, Instr.interp, Operation.interp, MachineData.load, hi,
+    Effects.All, hval, List.cons_append, List.nil_append, Directives.interp]
+  exact hE _ _ (hexit ra hra)
 
 end StateWP
 

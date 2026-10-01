@@ -25,6 +25,7 @@ public import Kraken.ProgramRun
 public import Kraken.KVCGen
 public import Kraken.StateWP
 public import Kraken.StateCfg
+public import Kraken.HostWP
 public import Kraken.MProp
 public import Kraken.SepWP
 public import Kraken.SepCancel
@@ -40,3 +41,5 @@ import Kraken.X64.Examples.SepWP.Swap
 import Kraken.X64.Examples.StateWP.AluMem
 import Kraken.X64.Examples.StateWP.Basic
 import Kraken.X64.Examples.StateWP.P3
+import Kraken.X64.Examples.HostWP.P3
+import Kraken.X64.Examples.HostWP.CallSwap
