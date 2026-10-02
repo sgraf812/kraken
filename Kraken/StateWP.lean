@@ -230,6 +230,106 @@ local macro "run_step" : tactic =>
   run_step
   exact hQ _ (Or.inl ⟨rfl, hpre⟩)
 
+/-- Add a 64-bit register to a register. -/
+@[spec] theorem add_reg_reg_spec (asz : Width) (rd rs : Reg64) :
+    ⦃ fun s =>
+        let a := s.regs.get64 rs
+        let b := s.regs.get64 rd
+        let v := a + b
+        Q () { s with
+          regs := s.regs.set64 rd v
+          status := StatusFlags.from_result v
+            { cf := v.unsigned != a.unsigned + b.unsigned,
+              af := (v.take 4).unsigned != (a.take 4).unsigned + (b.take 4).unsigned,
+              of := v.signed != a.signed + b.signed } } ⦄
+      Directive.instr (.regular asz .W64
+          (.add (.reg (.low rd .W64)) (.regOrMem (.reg (.low rs .W64)))))
+    ⦃ Q ⦄ := by
+  refine triple_directive.mpr ⟨fun s hpre => ?_⟩
+  intro k hs
+  obtain ⟨z, hz⟩ := LinkedProgram.cell_of_prefix hs.1
+  refine LinkedProgram.eventually_cell hz fun R next jmp hQ _ => ?_
+  run_step
+  exact hQ _ (Or.inl ⟨rfl, hpre⟩)
+
+/-- Compare two 64-bit registers: the flags of their difference. -/
+@[spec] theorem cmp_reg_reg_spec (asz : Width) (ra rb : Reg64) :
+    ⦃ fun s =>
+        let a := s.regs.get64 ra
+        let b := s.regs.get64 rb
+        let v := a - b
+        Q () { s with
+          status := StatusFlags.from_result v
+            { cf := v.unsigned != a.unsigned - b.unsigned,
+              af := (v.take 4).unsigned != (a.take 4).unsigned - (b.take 4).unsigned,
+              of := v.signed != a.signed - b.signed } } ⦄
+      Directive.instr (.regular asz .W64
+          (.cmp (.reg (.low ra .W64)) (.regOrMem (.reg (.low rb .W64)))))
+    ⦃ Q ⦄ := by
+  refine triple_directive.mpr ⟨fun s hpre => ?_⟩
+  intro k hs
+  obtain ⟨z, hz⟩ := LinkedProgram.cell_of_prefix hs.1
+  refine LinkedProgram.eventually_cell hz fun R next jmp hQ _ => ?_
+  run_step
+  exact hQ _ (Or.inl ⟨rfl, hpre⟩)
+
+/-- Test two 64-bit registers: the flags of their conjunction. The adjust flag is
+unspecified. -/
+@[spec] theorem test_reg_reg_spec (asz : Width) (ra rb : Reg64) :
+    ⦃ fun s =>
+        let v := s.regs.get64 ra &&& s.regs.get64 rb
+        ∀ af : Bool, Q () { s with
+          status := StatusFlags.from_result v { cf := false, af, of := false } } ⦄
+      Directive.instr (.regular asz .W64
+          (.test (.reg (.low ra .W64)) (.regOrMem (.reg (.low rb .W64)))))
+    ⦃ Q ⦄ := by
+  refine triple_directive.mpr ⟨fun s hpre => ?_⟩
+  intro k hs
+  obtain ⟨z, hz⟩ := LinkedProgram.cell_of_prefix hs.1
+  refine LinkedProgram.eventually_cell hz fun R next jmp hQ _ => ?_
+  run_step
+  intro af
+  exact hQ _ (Or.inl ⟨rfl, (hpre af)⟩)
+
+/-- Load the byte at `disp(base)`, a mapped byte, into the low byte of a register. -/
+@[spec] theorem mov_load_byte_spec (r b : Reg64) (d : Int64) :
+    ⦃ fun s => ((Mem.loadInt s.dmem (s.regs.get64 b + BitVec.ofInt 64 d.toInt) 1).isSome = true)
+        ⊓ ∀ i, Mem.loadInt s.dmem (s.regs.get64 b + BitVec.ofInt 64 d.toInt) 1 = some i →
+          Q () { s with regs := s.regs.set (.low r .W8) (BitVec.ofInt 8 i) } ⦄
+      Directive.instr (.regular .W64 .W8
+          (.mov (.reg (.low r .W8)) (.regOrMem (.mem ⟨some (.reg b), none, .int64 d⟩))))
+    ⦃ Q ⦄ := by
+  refine triple_directive.mpr ⟨fun s hpre => ?_⟩
+  obtain ⟨hmapped, hpre⟩ := (meet_prop_eq_and _ _) ▸ hpre
+  obtain ⟨i, hload⟩ := Option.isSome_iff_exists.mp hmapped
+  intro k hs
+  obtain ⟨z, hz⟩ := LinkedProgram.cell_of_prefix hs.1
+  refine LinkedProgram.eventually_cell hz fun R next jmp hQ _ => ?_
+  simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
+    RegOrMem.interp, MachineData.load, MachineData.set, MachineData.setReg,
+    AddrExpr.zeroExtend_interp_base_disp, Width.bytes, hload, Effects.All]
+  exact hQ _ (Or.inl ⟨rfl, hpre i hload⟩)
+
+/-- Store the low byte of a register at `disp(base)`, a mapped byte. -/
+@[spec] theorem mov_store_byte_spec (b : Reg64) (d : Int64) (r : Reg64) :
+    ⦃ fun s => ((Mem.loadInt s.dmem (s.regs.get64 b + BitVec.ofInt 64 d.toInt) 1).isSome = true)
+        ⊓ Q () { s with
+            dmem := Mem.storeInt s.dmem (s.regs.get64 b + BitVec.ofInt 64 d.toInt) 1
+              (s.regs.get (.low r .W8)).toInt } ⦄
+      Directive.instr (.regular .W64 .W8
+          (.mov (.mem ⟨some (.reg b), none, .int64 d⟩) (.regOrMem (.reg (.low r .W8)))))
+    ⦃ Q ⦄ := by
+  refine triple_directive.mpr ⟨fun s hpre => ?_⟩
+  obtain ⟨hmapped, hpre⟩ := (meet_prop_eq_and _ _) ▸ hpre
+  obtain ⟨i, hload⟩ := Option.isSome_iff_exists.mp hmapped
+  intro k hs
+  obtain ⟨z, hz⟩ := LinkedProgram.cell_of_prefix hs.1
+  refine LinkedProgram.eventually_cell hz fun R next jmp hQ _ => ?_
+  simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
+    RegOrMem.interp, MachineData.set, MachineData.store,
+    AddrExpr.zeroExtend_interp_base_disp, Width.bytes, hload, Effects.All]
+  exact hQ _ (Or.inl ⟨rfl, hpre⟩)
+
 /-- Exclusive-or of two 64-bit registers. The adjust flag is unspecified, so
 the post must hold for either value. -/
 @[spec] theorem xor_reg_reg_spec (asz : Width) (rd rs : Reg64) :

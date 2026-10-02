@@ -2,9 +2,9 @@ module
 
 /-
 The control-flow rule of the state wp. A program with labels is a list of
-basic blocks (`Program.blockAt`). `StateWP.cfg` proves the baseline judgment
-of the laid-out program from one triple per block: a table `T` gives the
-assertion at each label, and a variant `var` orders the jumps. A block falls
+basic blocks (`Program.blockAt`). `StateWP.cfg` proves a triple for a program
+from one triple per block: a table `T` gives the assertion at
+each label, and a variant `var` orders the jumps. A block falls
 into the next block, and a jump reaches the cell of its label. A call links to
 its return through a `Contract` that the callee implements.
 -/
@@ -135,31 +135,29 @@ theorem implemented_of_triple {P body rest : Program} {k : Nat} (hP : P.LinkedAt
 
 /-! ## The control-flow rule -/
 
-omit prog in
+omit layout in
 /-- The control-flow rule: one table `T`, one variant `var`, one triple per block of
 `Program.blockAt`. Each block is entered with its table entry and the variant snapshotted as
 `n`. It falls into the next block with the entry there and the variant not increased, or, as the
-last block, falls through the end of the program with `post`. A jump exits at the address of a
-mapped label along `Program.EdgeLt`. -/
-theorem cfg {p p' : Program} {l₀ : Label} {post : MachineState → Prop}
-    [Kraken.Executable.ValidExecutable (layout p)]
-    (T : Label → MachineData → Prop) (var : Label → MachineData → Nat := fun _ _ => 0)
-    (hblocks : ∀ l blk, Program.blockAt p l = some blk → ∀ n : Nat, ∀ [LinkedProgram], p.LinkedAt 0 →
+last block, falls through the end of `p` with `Qend`. A jump either reaches a block of `p` along
+`Program.EdgeLt`, or leaves `p` with `Ext`. -/
+theorem cfg {p p' : Program} {l₀ : Label}
+    (T : Label → MachineData → Prop) (var : Label → MachineData → Nat)
+    (Qend : MachineData → Prop) (Ext : Int64 → MachineData → Prop)
+    (hblocks : ∀ l blk, Program.blockAt p l = some blk → ∀ n : Nat, ∀ k, p.LinkedAt k →
       ⦃ fun s => T l s ∧ var l s = n ⦄
         blk.body
       ⦃ (match blk.next with
          | some l' => fun _ s => T l' s ∧ var l' s ≤ n
-         | none => fun _ s => ∀ pc, post (s, pc));
-        fun a s => ∃ l', label l' = a
-          ∧ (Program.blockAt p l').isSome ∧ T l' s ∧ Program.EdgeLt p var l n l' s ⦄)
+         | none => fun _ s => Qend s);
+        fun a s => (∃ l', label l' = a
+          ∧ (Program.blockAt p l').isSome ∧ T l' s ∧ Program.EdgeLt p var l n l' s) ∨ Ext a s ⦄)
     (hp : p = Directive.label l₀ :: p' := by rfl) (hwf : Program.WF p := by decide) :
-    ∀ s, T l₀ s → Eventually (straightlineStep (layout p)) post (s, layout.start) := by
-  letI : LinkedProgram := ⟨layout p⟩
+    ⦃ fun s => T l₀ s ⦄ p ⦃ fun _ s => Qend s; Ext ⦄ := by
+  refine ⟨fun s hT k hlink => ?_⟩
   have hnd := hwf.nodup
-  have hlink : p.LinkedAt 0 := Program.linkedAt_layout
-  have hplen : (layout p).2.length = p.length := by simp [Layout.apply_snd]
-  let Fin := fun st : MachineState => st.2 = (layout p).addrOf (layout p).2.length
-    ∧ ∀ pc, post (st.1, pc)
+  let B := fun st : MachineState =>
+    (st.2 = LinkedProgram.exe.addrOf (k + p.length) ∧ Qend st.1) ∨ Ext st.2 st.1
   have hK : ∀ l, Program.blockIdx p l ≤ (Program.view p).2.length := Program.blockIdx_le p
   have hcellOf : ∀ l, Program.fromLabel p l ≠ [] →
       p[p.length - (Program.fromLabel p l).length]? = some (Directive.label l) := by
@@ -169,8 +167,8 @@ theorem cfg {p p' : Program} {l₀ : Label} {post : MachineState → Prop}
     conv at hdrop => rhs; rw [hfl]
     simpa [List.head?_drop] using congrArg List.head? hdrop
   have key : ∀ x : Label × MachineData, (Program.blockAt p x.1).isSome → T x.1 x.2 →
-      Eventually LinkedProgram.step Fin
-        (x.2, (layout p).addrOf (p.length - (Program.fromLabel p x.1).length)) := by
+      Eventually LinkedProgram.step B
+        (x.2, LinkedProgram.exe.addrOf (k + (p.length - (Program.fromLabel p x.1).length))) := by
     intro x
     induction x using (measure (Program.cfgMeasure p var)).wf.induction with
     | _ x ih =>
@@ -188,33 +186,32 @@ theorem cfg {p p' : Program} {l₀ : Label} {post : MachineState → Prop}
         omega
       have hl := hdrop ▸ hlink.drop (p.length - (Program.fromLabel p l).length)
       generalize hi : p.length - (Program.fromLabel p l).length = i at hdrop hl
-      rw [Nat.zero_add, htext] at hl
+      rw [htext] at hl
       obtain ⟨hlab, hrest⟩ := Program.LinkedAt.append (a := [Directive.label l]) hl
       obtain ⟨hbody, -⟩ := Program.LinkedAt.append hrest
       obtain ⟨z, hz⟩ := LinkedProgram.cell_of_prefix hlab.1
-      refine Eventually.step _ (fun st => st = (s, (layout p).addrOf (i + 1)))
-        ⟨i, _, z, hz, rfl, fun R next jmp hn _ => by simp only [Directive.interp]; exact hn _ rfl⟩ ?_
+      refine Eventually.step _ (fun st => st = (s, LinkedProgram.exe.addrOf (k + i + 1)))
+        ⟨k + i, _, z, hz, rfl, fun R next jmp hn _ => by simp only [Directive.interp]; exact hn _ rfl⟩ ?_
       rintro _ rfl
-      refine eventually_trans _ _ _ _ ((hblocks l blk hblk (var l s) hlink).1 s ⟨hT, rfl⟩
-        (i + 1) hbody) ?_
+      refine eventually_trans _ _ _ _ ((hblocks l blk hblk (var l s) k hlink).1 s ⟨hT, rfl⟩
+        (k + i + 1) hbody) ?_
       rintro ⟨s', a⟩ (⟨hend, hq⟩ | hE)
       · dsimp only at hend hq
         subst hend
         cases hn : blk.next with
         | none =>
           rw [hn] at hq hlen
-          refine Eventually.done _ ⟨?_, hq⟩
-          show (layout p).addrOf (i + 1 + blk.body.length) = _
+          refine Eventually.done _ (Or.inl ⟨?_, hq⟩)
           simp only [Option.elim, List.length_nil] at hlen
-          rw [hplen]
-          congr 1
-          omega
+          show LinkedProgram.exe.addrOf (k + i + 1 + blk.body.length) = _
+          rw [show k + i + 1 + blk.body.length = k + p.length by omega]
         | some l' =>
           rw [hn] at hq hlen
           obtain ⟨hT', hvar⟩ := hq
           obtain ⟨hsome', hidx'⟩ := Program.blockAt_next hnd hblk hn
           simp only [Option.elim] at hlen
-          rw [show i + 1 + blk.body.length = p.length - (Program.fromLabel p l').length by omega]
+          rw [show k + i + 1 + blk.body.length
+            = k + (p.length - (Program.fromLabel p l').length) by omega]
           refine ih (l', s') ?_ hsome' hT'
           have hK' := hK l'
           show Program.cfgMeasure p var (l', s') < Program.cfgMeasure p var (l, s)
@@ -224,30 +221,30 @@ theorem cfg {p p' : Program} {l₀ : Label} {post : MachineState → Prop}
               ≤ var l s * ((Program.view p).2.length + 1) :=
             Nat.mul_le_mul_right _ hvar
           omega
-      · obtain ⟨l', hlab', hsome', hT', hedge⟩ := hE
-        dsimp only at hlab'
-        subst hlab'
-        have hne : Program.fromLabel p l' ≠ [] := by
-          obtain ⟨blk', hblk'⟩ := Option.isSome_iff_exists.mp hsome'
-          rw [Program.fromLabel_block hnd hblk']
-          exact List.cons_ne_nil _ _
-        rw [hlink.2 _ l' (hcellOf l' hne), Nat.zero_add]
-        refine ih (l', s') ?_ hsome' hT'
-        have hK' := hK l'
-        show Program.cfgMeasure p var (l', s') < Program.cfgMeasure p var (l, s)
-        unfold Program.cfgMeasure
-        dsimp only
-        rcases hedge with hlt | ⟨heq, hij⟩
-        · have hmul : (var l' s' + 1) * ((Program.view p).2.length + 1)
-              ≤ var l s * ((Program.view p).2.length + 1) :=
-            Nat.mul_le_mul_right _ hlt
-          have hsucc : (var l' s' + 1) * ((Program.view p).2.length + 1)
-              = var l' s' * ((Program.view p).2.length + 1)
-                + ((Program.view p).2.length + 1) := Nat.succ_mul _ _
-          omega
-        · rw [heq]
-          omega
-  intro s hT
+      · rcases hE with ⟨l', hlab', hsome', hT', hedge⟩ | hext
+        · dsimp only at hlab'
+          subst hlab'
+          have hne : Program.fromLabel p l' ≠ [] := by
+            obtain ⟨blk', hblk'⟩ := Option.isSome_iff_exists.mp hsome'
+            rw [Program.fromLabel_block hnd hblk']
+            exact List.cons_ne_nil _ _
+          rw [hlink.2 _ l' (hcellOf l' hne)]
+          refine ih (l', s') ?_ hsome' hT'
+          have hK' := hK l'
+          show Program.cfgMeasure p var (l', s') < Program.cfgMeasure p var (l, s)
+          unfold Program.cfgMeasure
+          dsimp only
+          rcases hedge with hlt | ⟨heq, hij⟩
+          · have hmul : (var l' s' + 1) * ((Program.view p).2.length + 1)
+                ≤ var l s * ((Program.view p).2.length + 1) :=
+              Nat.mul_le_mul_right _ hlt
+            have hsucc : (var l' s' + 1) * ((Program.view p).2.length + 1)
+                = var l' s' * ((Program.view p).2.length + 1)
+                  + ((Program.view p).2.length + 1) := Nat.succ_mul _ _
+            omega
+          · rw [heq]
+            omega
+        · exact Eventually.done _ (Or.inr hext)
   have h0 : (Program.blockAt p l₀).isSome := by
     rw [hp]
     show (Program.blockAtAux (Program.view (Directive.label l₀ :: p')).2 l₀).isSome = true
@@ -262,9 +259,6 @@ theorem cfg {p p' : Program} {l₀ : Label} {post : MachineState → Prop}
     rw [hp]
     simp [hnot]
   have := key (l₀, s) h0 hT
-  rw [hfl, Nat.sub_self] at this
-  have := LinkedProgram.eventually_straightlineStep (e := layout p) (post := post)
-    (fun st hst => hst) this
-  rwa [Kraken.Executable.addrOf_zero, Layout.apply_fst] at this
+  rwa [hfl, Nat.sub_self, Nat.add_zero] at this
 
 end StateWP
