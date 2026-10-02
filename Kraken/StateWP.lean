@@ -50,8 +50,7 @@ variable [Host] {Q : Unit → MachineData → Prop} {E : Int64 → MachineData �
 /-- The empty program: its wp is the postcondition. -/
 @[spec] theorem nil_spec : ⦃ fun s => Q () s ⦄ ([] : Program) ⦃ Q; E ⦄ := by
   refine ⟨fun s hpre => ?_⟩
-  intro ds rest pc Φ hds _ hQ _
-  obtain rfl := List.map_eq_nil_iff.mp hds
+  intro k post _ hQ _
   exact hQ s hpre
 
 /-- Chaining: a program runs its first directive with the wp of the rest as
@@ -66,11 +65,11 @@ the post. -/
       Directive.instr (.regular asz .W64 (.mov (.reg (.low r .W64)) (.imm (.int64 i))))
     ⦃ Q ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
-  intro ds rest pc Φ hds _ hQ _
-  obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
+  intro k post hs hQ _
+  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs
+  rw [Host.burst_cell hz]
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
-    MachineData.set, MachineData.setReg, Reg64s.set_low_W64, Effects.All, List.cons_append,
-    List.nil_append, Directives.interp]
+    MachineData.set, MachineData.setReg, Reg64s.set_low_W64, Effects.All]
   exact hQ _ hpre
 
 /-- Store a 64-bit register at `disp(base)`, a mapped slot. -/
@@ -86,12 +85,12 @@ the post. -/
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
   obtain ⟨hmapped, hpre⟩ := (meet_prop_eq_and _ _) ▸ hpre
   obtain ⟨i, hload⟩ := Option.isSome_iff_exists.mp hmapped
-  intro ds rest pc Φ hds _ hQ _
-  obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
+  intro k post hs hQ _
+  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs
+  rw [Host.burst_cell hz]
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
     RegOrMem.interp, MachineData.set, MachineData.store, Reg64s.get_low_W64,
-    AddrExpr.zeroExtend_interp_base_disp, hload, Effects.All, List.cons_append, List.nil_append,
-    Directives.interp]
+    AddrExpr.zeroExtend_interp_base_disp, hload, Effects.All]
   exact hQ _ hpre
 
 /-- Add the 64-bit word at `disp(base)`, a mapped slot, to a register. -/
@@ -114,12 +113,13 @@ the post. -/
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
   obtain ⟨hmapped, hpre⟩ := (meet_prop_eq_and _ _) ▸ hpre
   obtain ⟨i, hload⟩ := Option.isSome_iff_exists.mp hmapped
-  intro ds rest pc Φ hds _ hQ _
-  obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
+  intro k post hs hQ _
+  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs
+  rw [Host.burst_cell hz]
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
     RegOrMem.interp, MachineData.load, MachineData.set, MachineData.setReg,
     Reg64s.get_low_W64, Reg64s.set_low_W64, AddrExpr.zeroExtend_interp_base_disp,
-    hload, Effects.All, List.cons_append, List.nil_append, Directives.interp]
+    hload, Effects.All]
   exact hQ _ (hpre i hload)
 
 /-! ## Control flow and the instructions of the loop examples -/
@@ -128,14 +128,14 @@ the post. -/
 local macro "run_step" : tactic =>
   `(tactic| simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
       RegOrMem.interp, RelRegOrMem.interp, ConstExpr.interp, MachineData.set, MachineData.setReg,
-      Reg64s.get_low_W64, Reg64s.set_low_W64, Effects.All, List.cons_append, List.nil_append,
-      Directives.interp])
+      Reg64s.get_low_W64, Reg64s.set_low_W64, Effects.All])
 
 /-- A label occupies no step of the machine. -/
 @[spec] theorem label_spec (l : Label) : ⦃ fun s => Q () s ⦄ Directive.label l ⦃ Q ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
-  intro ds rest pc Φ hds _ hQ _
-  obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
+  intro k post hs hQ _
+  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs
+  rw [Host.burst_cell hz]
   run_step
   exact hQ _ hpre
 
@@ -143,8 +143,9 @@ local macro "run_step" : tactic =>
 @[spec] theorem nop_spec (asz osz : Width) (n : Nat) :
     ⦃ fun s => Q () s ⦄ Directive.instr (.regular asz osz (.nop n)) ⦃ Q ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
-  intro ds rest pc Φ hds _ hQ _
-  obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
+  intro k post hs hQ _
+  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs
+  rw [Host.burst_cell hz]
   run_step
   exact hQ _ hpre
 
@@ -163,8 +164,9 @@ local macro "run_step" : tactic =>
       Directive.instr (.regular asz .W64 (.sub (.reg (.low r .W64)) (.imm (.int64 i))))
     ⦃ Q ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
-  intro ds rest pc Φ hds _ hQ _
-  obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
+  intro k post hs hQ _
+  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs
+  rw [Host.burst_cell hz]
   run_step
   exact hQ _ hpre
 
@@ -178,8 +180,9 @@ local macro "run_step" : tactic =>
           (.mulx (.low hi .W64) (.low lo .W64) (.reg (.low rs .W64))))
     ⦃ Q ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
-  intro ds rest pc Φ hds _ hQ _
-  obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
+  intro k post hs hQ _
+  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs
+  rw [Host.burst_cell hz]
   run_step
   exact hQ _ hpre
 
@@ -198,8 +201,9 @@ local macro "run_step" : tactic =>
       Directive.instr (.regular asz .W64 (.add (.reg (.low r .W64)) (.imm (.int64 i))))
     ⦃ Q ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
-  intro ds rest pc Φ hds _ hQ _
-  obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
+  intro k post hs hQ _
+  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs
+  rw [Host.burst_cell hz]
   run_step
   exact hQ _ hpre
 
@@ -220,8 +224,9 @@ local macro "run_step" : tactic =>
           (.adc (.reg (.low rd .W64)) (.regOrMem (.reg (.low rs .W64)))))
     ⦃ Q ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
-  intro ds rest pc Φ hds _ hQ _
-  obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
+  intro k post hs hQ _
+  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs
+  rw [Host.burst_cell hz]
   run_step
   exact hQ _ hpre
 
@@ -237,8 +242,9 @@ the post must hold for either value. -/
           (.xor (.reg (.low rd .W64)) (.regOrMem (.reg (.low rs .W64)))))
     ⦃ Q ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
-  intro ds rest pc Φ hds _ hQ _
-  obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
+  intro k post hs hQ _
+  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs
+  rw [Host.burst_cell hz]
   run_step
   intro af
   exact hQ _ (hpre af)
@@ -257,10 +263,16 @@ the post must hold for either value. -/
       Directive.instr (.regular asz .W64 (.dec (.reg (.low r .W64))))
     ⦃ Q ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
-  intro ds rest pc Φ hds _ hQ _
-  obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
+  intro k post hs hQ _
+  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs
+  rw [Host.burst_cell hz]
   run_step
   exact hQ _ hpre
+
+theorem _root_.Int64.add_sub_self_left (a b : Int64) : a + (b - a) = b := by
+  apply Int64.toBitVec_inj.mp
+  simp only [Int64.toBitVec_add, Int64.toBitVec_sub]
+  rw [BitVec.add_comm, BitVec.sub_add_cancel]
 
 /-- A jump to a label exits at the label's address. -/
 @[spec] theorem jmp_label_spec (asz osz : Width) (l : Label) :
@@ -268,14 +280,11 @@ the post must hold for either value. -/
       Directive.instr (.regular asz osz (.jmp (.rel (.sub (.label l) .after_current_instruction))))
     ⦃ Q; E ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
-  intro ds rest pc Φ hds _ _ hE
-  obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
+  intro k post hs _ hE
+  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs
+  rw [Host.burst_cell hz]
   run_step
-  have hcancel : pc + .ofNat z + (label l - (pc + .ofNat z)) = label l := by
-    apply Int64.toBitVec_inj.mp
-    simp only [Int64.toBitVec_add, Int64.toBitVec_sub]
-    rw [BitVec.add_comm, BitVec.sub_add_cancel]
-  simp only [Int64.ofBitVec_toBitVec, hcancel]
+  rw [Int64.ofBitVec_toBitVec, Int64.add_sub_self_left]
   exact hE _ _ hpre
 
 /-- A conditional jump to a label: it exits at the label's address when the
@@ -286,8 +295,9 @@ condition holds and falls through otherwise. -/
     ⦃ Q; E ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
   obtain ⟨hjmp, hfall⟩ := (meet_prop_eq_and _ _) ▸ hpre
-  intro ds rest pc Φ hds _ hQ hE
-  obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
+  intro k post hs hQ hE
+  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs
+  rw [Host.burst_cell hz]
   run_step
   cases hc : CondCode.interp cc s.status <;>
     simp only [hc, Bool.false_eq_true, ite_true, ite_false]
@@ -317,10 +327,11 @@ def _root_.MachineData.retAddr (t : MachineData) : Option Int64 :=
     cases hl : Mem.loadInt s.dmem (s.regs.get64 .rsp) 8 with
     | none => rw [hl] at hra; exact absurd hra (by simp)
     | some i => exact ⟨i, rfl, by rw [hl] at hra; simpa using hra⟩
-  intro ds rest pc Φ hds _ _ hE
-  obtain ⟨⟨_, z⟩, rfl, rfl⟩ := List.map_eq_singleton_iff.mp hds
+  intro k post hs _ hE
+  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs
+  rw [Host.burst_cell hz]
   simp only [Directive.interp, Instr.interp, Operation.interp, MachineData.load, hi,
-    Effects.All, hval, List.cons_append, List.nil_append, Directives.interp]
+    Effects.All, hval]
   exact hE _ _ (hexit ra hra)
 
 end StateWP
