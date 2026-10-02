@@ -27,6 +27,7 @@ done:
 ")
 
 abbrev pswap.body : Program := parse("
+swap:
   xor %rbx, %rax
   xor %rax, %rbx
   xor %rbx, %rax
@@ -83,11 +84,12 @@ theorem pswap_correct [Kraken.Executable.ValidExecutable (layout pswap)]
         ∧ s.1.regs.get64 .rsp = d.regs.get64 .rsp)
       (d, layout.start) := by
   apply eventually_straightlineStep_of_wp
-  refine fun _ => (StateWP.cfg (p := pswap) (pswap_table d) (fun _ _ => 0) _ ⊥ ?_).1 d rfl
+  intro _
+  refine StateWP.cfg_wp (pswap_table d) (fun _ _ => 0) _ ⊥ ?_ d rfl
   cfg_cases [pswap]
   · intro k hlink
     have himpl : swapC.Implemented :=
-      StateWP.implemented_of_triple (body := pswap.body) hlink swapC (by rfl) pswap_body_spec
+      StateWP.implemented_of_triple (body := pswap.body.tail) hlink swapC (by rfl) pswap_body_spec
     kvcgen64 [swap_call_spec] with finish
   · kvcgen64 with finish
   · kvcgen64 with finish

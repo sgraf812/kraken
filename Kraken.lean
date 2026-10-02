@@ -41,3 +41,4 @@ import Kraken.X64.Examples.StateWP.AluMem
 import Kraken.X64.Examples.StateWP.Basic
 import Kraken.X64.Examples.StateWP.P3
 import Kraken.X64.Examples.StateWP.CallSwap
+import Kraken.X64.Examples.StateWP.Memmove

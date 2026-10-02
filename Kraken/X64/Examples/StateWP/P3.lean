@@ -65,7 +65,8 @@ theorem p3_correct [layout : Layout] [Kraken.Executable.ValidExecutable (layout 
       (fun s => s.1.regs.rdx.toNat = p3_spec d ∧ s.1.regs.rax = 0) (d, layout.start) := by
   simp only [p3_spec] at h_bounds ⊢
   apply eventually_straightlineStep_of_wp
-  refine fun _ => (StateWP.cfg (p := p3) (p3_table d) (fun _ s => s.regs.rbx.toNat) _ ⊥ ?_).1 d rfl
+  intro _
+  refine StateWP.cfg_wp (p3_table d) (fun _ s => s.regs.rbx.toNat) _ ⊥ ?_ d rfl
   cfg_cases [p3]
   all_goals kvcgen64 with finish
 

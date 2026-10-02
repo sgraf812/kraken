@@ -89,6 +89,7 @@ namespace StateWP
 variable [layout : Layout] [prog : LinkedProgram] {Q : Unit → MachineData → Prop}
   {E : Int64 → MachineData → Prop}
 
+omit layout in
 @[spec] theorem call_spec (asz osz : Width) (c : Contract) :
     ⦃ fun s => c.Implemented
         ⊓ ((Mem.loadInt s.dmem (s.regs.get64 .rsp - 8#64) 8).isSome = true)
@@ -112,23 +113,19 @@ variable [layout : Layout] [prog : LinkedProgram] {Q : Unit → MachineData → 
     rintro ⟨s'', a⟩ ⟨ha, hpost⟩
     exact Eventually.done _ (Or.inl ⟨ha, hcont s'' hpost⟩)
 
+omit layout in
 theorem implemented_of_triple {P body rest : Program} {k : Nat} (hP : P.LinkedAt k)
     (c : Contract) (hat : Program.fromLabel P c.f = Directive.label c.f :: (body ++ rest))
-    (hbody : ∀ s ra, ⦃ fun t => t = s.pushRa ra ∧ c.Pre s ⦄ body
+    (hbody : ∀ s ra, ⦃ fun t => t = s.pushRa ra ∧ c.Pre s ⦄ (Directive.label c.f :: body)
       ⦃ (fun _ _ => False); fun a s' => a = ra ∧ c.Post s s' ⦄) :
     c.Implemented := by
   intro s ra hpre
   have hl := Program.drop_fromLabel P c.f ▸ hP.drop (P.length - (Program.fromLabel P c.f).length)
   generalize k + (P.length - (Program.fromLabel P c.f).length) = i at hl
   rw [hat] at hl
-  obtain ⟨hlab, hrest⟩ := Program.LinkedAt.append (a := [Directive.label c.f]) hl
-  obtain ⟨hbody', -⟩ := Program.LinkedAt.append hrest
-  obtain ⟨z, hz⟩ := LinkedProgram.cell_of_prefix hlab.1
-  rw [hlab.2 0 c.f rfl, Nat.add_zero]
-  refine Eventually.step _ (fun st => st = (s.pushRa ra, LinkedProgram.exe.addrOf (i + 1)))
-    ⟨i, _, z, hz, rfl, fun R next jmp hn _ => by simp only [Directive.interp]; exact hn _ rfl⟩ ?_
-  rintro _ rfl
-  refine eventually_trans _ _ _ _ ((hbody s ra).1 _ ⟨rfl, hpre⟩ (i + 1) hbody') ?_
+  obtain ⟨hbody', -⟩ := Program.LinkedAt.append (a := Directive.label c.f :: body) hl
+  rw [hl.2 0 c.f rfl, Nat.add_zero]
+  refine eventually_trans _ _ _ _ ((hbody s ra).1 _ ⟨rfl, hpre⟩ i hbody') ?_
   rintro _ (⟨_, h⟩ | ⟨rfl, hpost⟩)
   · exact h.elim
   · exact Eventually.done _ ⟨rfl, hpost⟩
@@ -260,5 +257,23 @@ theorem cfg {p p' : Program} {l₀ : Label}
     simp [hnot]
   have := key (l₀, s) h0 hT
   rwa [hfl, Nat.sub_self, Nat.add_zero] at this
+
+omit layout in
+/-- `cfg` at one state, in the goal form of `vcgen`. -/
+theorem cfg_wp {p p' : Program} {l₀ : Label}
+    (T : Label → MachineData → Prop) (var : Label → MachineData → Nat)
+    (Qend : MachineData → Prop) (Ext : Int64 → MachineData → Prop)
+    (hblocks : ∀ l blk, Program.blockAt p l = some blk → ∀ n : Nat, ∀ k, p.LinkedAt k →
+      ⦃ fun s => T l s ∧ var l s = n ⦄
+        blk.body
+      ⦃ (match blk.next with
+         | some l' => fun _ s => T l' s ∧ var l' s ≤ n
+         | none => fun _ s => Qend s);
+        fun a s => (∃ l', label l' = a
+          ∧ (Program.blockAt p l').isSome ∧ T l' s ∧ Program.EdgeLt p var l n l' s) ∨ Ext a s ⦄)
+    (s : MachineData) (hT : T l₀ s)
+    (hp : p = Directive.label l₀ :: p' := by rfl) (hwf : Program.WF p := by decide) :
+    ⊤ ⊑ WP.wp p (fun _ s => Qend s) Ext s :=
+  fun _ => (cfg T var Qend Ext hblocks hp hwf).1 s hT
 
 end StateWP

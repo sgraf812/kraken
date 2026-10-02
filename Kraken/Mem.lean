@@ -221,3 +221,44 @@ theorem Mem.storeBytes_storeBytes {w} (m : Mem w) (a : BitVec w) (bs₁ bs₂ : 
     rw [ExtHashMap.getElem?_eq_none (fun hk => hnot₂ (hmem.mp hk))]
     rfl
 
+
+/-- A load of one byte reads the map at the address. -/
+theorem Mem.loadInt_one {w} (m : Mem w) (a : BitVec w) :
+    m.loadInt a 1 = (m.get? a).map (fun b => (b.toNat : Int)) := by
+  simp only [Mem.loadInt, Mem.loadBytes, List.range_one, List.map_cons, List.map_nil,
+    BitVec.ofNat_eq_ofNat, BitVec.add_zero, List.allSome, List.mapM_cons, List.mapM_nil, id]
+  cases m.get? a <;> simp [Int.ofBytes]
+
+/-- A store of one byte writes the map at the address. -/
+theorem Mem.get?_storeInt_one {w} (m : Mem w) (a b : BitVec w) (v : Int) :
+    (m.storeInt a 1 v).get? b = if b = a then some (v.take 8).toNat.toUInt8 else m.get? b := by
+  rw [Mem.storeInt, Mem.storeBytes, get?_eq_getElem?, ExtHashMap.union_eq,
+    ExtHashMap.getElem?_union]
+  have hAt : ((Int.toBytes 1 v).At a)[b]? = if b = a then some (v.take 8).toNat.toUInt8 else none := by
+    rw [← get?_eq_getElem?]
+    simp only [Int.toBytes, List.At, List.mapIdx_cons, List.mapIdx_nil, BitVec.ofNat_eq_ofNat,
+      BitVec.add_zero]
+    by_cases h : b = a
+    · subst h; simp
+    · simp [h, Ne.symm h]
+  rw [hAt]
+  by_cases h : b = a <;> simp [h, ← get?_eq_getElem?]
+
+/-- A load reads only the bytes it covers. -/
+theorem Mem.loadInt_congr {w} {m m' : Mem w} {a : BitVec w} {n : Nat}
+    (h : ∀ i < n, m.get? (a + .ofNat w i) = m'.get? (a + .ofNat w i)) :
+    m.loadInt a n = m'.loadInt a n := by
+  simp only [Mem.loadInt, Mem.loadBytes]
+  rw [List.map_congr_left (fun i hi => h i (List.mem_range.mp hi))]
+
+/-- A byte outside a store keeps its value. -/
+theorem Mem.get?_storeInt_of_ne {w} (m : Mem w) (a b : BitVec w) (n : Nat) (v : Int)
+    (h : ∀ i < n, b ≠ a + .ofNat w i) : (m.storeInt a n v).get? b = m.get? b := by
+  rw [Mem.storeInt, Mem.storeBytes, get?_eq_getElem?, ExtHashMap.union_eq,
+    ExtHashMap.getElem?_union]
+  have hnot : b ∉ (Int.toBytes n v).At a := by
+    rw [mem_At_iff, Int.toBytes_length]
+    rintro ⟨i, hi, rfl⟩
+    exact h i hi rfl
+  rw [ExtHashMap.getElem?_eq_none hnot, ← get?_eq_getElem?]
+  rfl
