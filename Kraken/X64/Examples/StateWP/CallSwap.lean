@@ -92,6 +92,5 @@ theorem pswap_correct [Kraken.Executable.ValidExecutable (layout pswap)]
       StateWP.implemented_of_triple (body := pswap.body.tail) hlink swapC (by rfl) pswap_body_spec
     kvcgen64 [swap_call_spec] with finish
   · kvcgen64 with finish
-  · kvcgen64 with finish
 
 end State

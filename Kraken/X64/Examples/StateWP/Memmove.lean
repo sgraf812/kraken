@@ -545,6 +545,6 @@ theorem memmove_correct [layout : Layout] [Kraken.Executable.ValidExecutable (la
       StateWP.implemented_of_triple (body := memmove.tail) (rest := parse("done:\n  nop")) hlink
         memmoveC (by decide) memmove_spec
     kvcgen64 [memmove_call_spec] with finish
-  all_goals kvcgen64 with finish
+  · kvcgen64 with finish
 
 end State

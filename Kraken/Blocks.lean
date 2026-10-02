@@ -545,9 +545,16 @@ def Program.cfgMeasure (p : Program) (var : Label → MachineData → Nat)
   var x.1 x.2 * ((Program.view p).2.length + 1)
     + ((Program.view p).2.length - Program.blockIdx p x.1)
 
+/-- A triple whose precondition holds of no state: the block is dead code. -/
+theorem triple_of_dead {Prog V E' : Type} [Assertion E'] [WP Prog V (MachineData → Prop) E']
+    {x : Prog} {pre : MachineData → Prop} {Q : V → MachineData → Prop} {E : E'}
+    (h : ∀ s, ¬ pre s) : ⦃ pre ⦄ x ⦃ Q; E ⦄ :=
+  ⟨fun s hs => (h s hs).elim⟩
+
 /-- Split the control-flow obligations into one goal per block: compute the
 block map on the program's text, case on the label it matches, and substitute
-the block it names. The bracket lists the program's definitional unfoldings. -/
+the block it names. A block whose table entry is `False` is dead code, and its goal closes
+without stepping. The bracket lists the program's definitional unfoldings. -/
 macro "cfg_cases" "[" ids:Lean.Parser.Tactic.simpLemma,* "]" : tactic =>
   `(tactic|
     (intro l blk hblk n
@@ -557,5 +564,6 @@ macro "cfg_cases" "[" ids:Lean.Parser.Tactic.simpLemma,* "]" : tactic =>
      all_goals subst_vars
      all_goals simp only [Option.some.injEq, reduceCtorEq] at hblk
      all_goals subst hblk
-     all_goals dsimp only))
+     all_goals dsimp only
+     all_goals try (intro _ _; exact triple_of_dead fun _ h => h.1)))
 
