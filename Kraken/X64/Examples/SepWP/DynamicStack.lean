@@ -54,5 +54,5 @@ theorem dynamic_stack_example_correct [layout : _root_.Layout] (s₀ : MachineDa
     Eventually (straightlineStep (layout dynamic_stack))
       (fun s' => s'.1.regs.rax = 42 ∧ s'.1.regs.rbx = 99 ∧ s'.1.regs.rsp = s₀.regs.rsp)
       (s₀, Kraken.Layout.start Directive) := by
-  refine eventually_straightlineStep_of_sep_wp (List.get_AtM_sep h_mem) ?_
+  apply eventually_straightlineStep_of_sep_wp (List.get_AtM_sep h_mem)
   kvcgen64 [dynamic_stack] with finish

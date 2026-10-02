@@ -13,8 +13,8 @@ internalized on both channels: a triple `⦃P⦄ p ⦃Q; E⦄` holds when the ru
 validates it under every memory frame, held across the fall-through and
 across every exit. `SepWP.sep_intro` is the one door in, and `SepWP.frames`
 says every program frames every memory assertion, which is what the frame
-inference of `vcgen` consumes. `straightlineStep_of_sep_wp` reads the wp back
-as the `straightlineStep` judgment of the laid-out program.
+inference of `vcgen` consumes. `eventually_straightlineStep_of_sep_wp` reads the wp back
+as the `Eventually` judgment of the laid-out program.
 -/
 public import Kraken.MProp
 public import Kraken.ProgramRun
@@ -167,37 +167,23 @@ The wp of a program with no exits is a run of the laid-out program. Take a
 state `s` whose memory satisfies `footprint` next to `frame`. If `footprint`
 entails the wp of the program at `s`'s registers, vector registers and flags,
 for the postcondition that gives `frame` back and asks `post` of the whole
-final state at every pc, then the run from `s` at the layout's start ends in
-`post`. The entailment is asked under every host: the program does not
-call, so its run is the same in every host. -/
+final state at every pc, then the run from `s` at the layout's start
+eventually ends in `post`. The entailment is asked in every host. -/
 
 open SepWP in
-theorem straightlineStep_of_sep_wp [layout : Layout] {p : Program} {s : MachineData}
-    {post : MachineState → Prop} {footprint frame : MProp 64}
-    (hmem : (footprint ∗ frame).get s.dmem)
-    (ht : ∀ [Host], footprint ⊑ WP.wp p
-      (fun _ r z f => frame -∗ MProp.mk fun m => ∀ pc, post (⟨r, z, f, m⟩, pc))
-      ⊥ s.regs s.zmms s.status)
-    (hcall : p.any Directive.isCall = false := by decide) :
-    straightlineStep (layout p) (s, layout.start) post := by
-  letI : Host := ⟨layout p⟩
-  rw [MProp.sep_comm] at hmem
-  refine Program.run_straightlineStep (sep_elim ((MProp.le_def _ _).mp
-    (MProp.sep_mono_right _ (@ht this)) _ hmem)) hcall (fun st' hq => ?_) (fun a s' he => ?_)
-  · have h := (MProp.le_def _ _).mp (MProp.sep_wand_elim _ _) _ hq
-    rw [MProp.get_mk] at h
-    exact h st'.2
-  · exact (MProp.of_get_sep he
-      ((bot_le (fun _ _ _ _ => (⌜False⌝ : MProp 64))) a s'.regs s'.zmms s'.status)).elim
-
-open SepWP in
-/-- `straightlineStep_of_sep_wp` for a burst that ends the run. -/
 theorem eventually_straightlineStep_of_sep_wp [layout : Layout] {p : Program} {s : MachineData}
     {post : MachineState → Prop} {footprint frame : MProp 64}
     (hmem : (footprint ∗ frame).get s.dmem)
     (ht : ∀ [Host], footprint ⊑ WP.wp p
       (fun _ r z f => frame -∗ MProp.mk fun m => ∀ pc, post (⟨r, z, f, m⟩, pc))
-      ⊥ s.regs s.zmms s.status)
-    (hcall : p.any Directive.isCall = false := by decide) :
-    Eventually (straightlineStep (layout p)) post (s, layout.start) :=
-  .step _ _ (straightlineStep_of_sep_wp hmem ht hcall) fun _ h => .done _ h
+      ⊥ s.regs s.zmms s.status) :
+    Eventually (straightlineStep (layout p)) post (s, layout.start) := by
+  letI : Host := ⟨layout p⟩
+  rw [MProp.sep_comm] at hmem
+  refine Program.run_eventually (sep_elim ((MProp.le_def _ _).mp
+    (MProp.sep_mono_right _ (@ht this)) _ hmem)) (fun s' hq pc => ?_) (fun a s' he => ?_)
+  · have h := (MProp.le_def _ _).mp (MProp.sep_wand_elim _ _) _ hq
+    rw [MProp.get_mk] at h
+    exact h pc
+  · exact (MProp.of_get_sep he
+      ((bot_le (fun _ _ _ _ => (⌜False⌝ : MProp 64))) a s'.regs s'.zmms s'.status)).elim

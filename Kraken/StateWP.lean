@@ -11,7 +11,7 @@ opts in with `open scoped StateWP`.
 The specs below carry the schematic post to the state the instruction
 leaves. A memory access asks for the slot to be mapped. `vcgen` sequences
 them by `StateWP.cons_spec`, and `eventually_straightlineStep_of_wp` reads the
-wp of a laid-out program back as the `straightlineStep` judgment.
+wp of a laid-out program back as the `Eventually` judgment.
 -/
 public import Kraken.ProgramRun
 public import Kraken.X64.Registers
@@ -329,26 +329,14 @@ end StateWP
 
 The wp of a program with no exits is a run of the laid-out program: if the wp
 holds of `s` for the postcondition that asks `post` of the final state at
-every pc, the run from `s` at the layout's start ends in `post`. The
-hypothesis is the entailment `⊤ ⊑ wp …` at `s`, the goal form of `vcgen`,
-in every host: the program does not call, so its run is the same in every
-host. -/
+every pc, the run from `s` at the layout's start eventually ends in `post`.
+The hypothesis is the entailment `⊤ ⊑ wp …` at `s`, the goal form of `vcgen`,
+in every host. -/
 
 open StateWP in
-theorem straightlineStep_of_wp [layout : Layout] {p : Program} {s : MachineData}
-    {post : MachineState → Prop}
-    (h : ∀ [Host], ⊤ ⊑ WP.wp p (fun _ s' => ∀ pc, post (s', pc)) ⊥ s)
-    (hcall : p.any Directive.isCall = false := by decide) :
-    straightlineStep (layout p) (s, layout.start) post :=
-  Program.run_straightlineStep (of_top_le_prop (@h ⟨layout p⟩)) hcall
-    (fun st' hq => hq st'.2)
-    (fun a s' hE => ((bot_le (α := Int64 → MachineData → Prop) fun _ _ => False) a s' hE).elim)
-
-open StateWP in
-/-- `straightlineStep_of_wp` for a burst that ends the run. -/
 theorem eventually_straightlineStep_of_wp [layout : Layout] {p : Program} {s : MachineData}
     {post : MachineState → Prop}
-    (h : ∀ [Host], ⊤ ⊑ WP.wp p (fun _ s' => ∀ pc, post (s', pc)) ⊥ s)
-    (hcall : p.any Directive.isCall = false := by decide) :
+    (h : ∀ [Host], ⊤ ⊑ WP.wp p (fun _ s' => ∀ pc, post (s', pc)) ⊥ s) :
     Eventually (straightlineStep (layout p)) post (s, layout.start) :=
-  .step _ _ (straightlineStep_of_wp h hcall) fun _ h => .done _ h
+  Program.run_eventually (of_top_le_prop (@h ⟨layout p⟩)) (fun _ hq => hq)
+    (fun a s' hE => ((bot_le (α := Int64 → MachineData → Prop) fun _ _ => False) a s' hE).elim)

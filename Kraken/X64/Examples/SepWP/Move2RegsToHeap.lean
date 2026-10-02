@@ -50,5 +50,5 @@ theorem move_2_regs_to_heap_correct [layout : _root_.Layout] (s₀ : MachineData
         s'.1.regs.r13 = s₀.regs.rcx ∧
         s'.1.regs.rdi = s₀.regs.rdi)
       (s₀, Kraken.Layout.start Directive) := by
-  refine eventually_straightlineStep_of_sep_wp (UInt64.get_AtM_sep_AtM_sep h_mem) ?_
+  apply eventually_straightlineStep_of_sep_wp (UInt64.get_AtM_sep_AtM_sep h_mem)
   kvcgen64 [move_2_regs_to_heap] with finish
