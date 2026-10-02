@@ -149,10 +149,9 @@ theorem cfg {p p' : Program} {l₀ : Label}
          | none => fun _ s => Qend s);
         fun a s => (∃ l', label l' = a
           ∧ (Program.blockAt p l').isSome ∧ T l' s ∧ Program.EdgeLt p var l n l' s) ∨ Ext a s ⦄)
-    (hp : p = Directive.label l₀ :: p' := by rfl) (hwf : Program.WF p := by decide) :
+    (hp : p = Directive.label l₀ :: p' := by rfl) (hnd : (Program.labels p).Nodup := by decide) :
     ⦃ fun s => T l₀ s ⦄ p ⦃ fun _ s => Qend s; Ext ⦄ := by
   refine ⟨fun s hT k hlink => ?_⟩
-  have hnd := hwf.nodup
   let B := fun st : MachineState =>
     (st.2 = LinkedProgram.exe.addrOf (k + p.length) ∧ Qend st.1) ∨ Ext st.2 st.1
   have hK : ∀ l, Program.blockIdx p l ≤ (Program.view p).2.length := Program.blockIdx_le p
@@ -272,8 +271,8 @@ theorem cfg_wp {p p' : Program} {l₀ : Label}
         fun a s => (∃ l', label l' = a
           ∧ (Program.blockAt p l').isSome ∧ T l' s ∧ Program.EdgeLt p var l n l' s) ∨ Ext a s ⦄)
     (s : MachineData) (hT : T l₀ s)
-    (hp : p = Directive.label l₀ :: p' := by rfl) (hwf : Program.WF p := by decide) :
+    (hp : p = Directive.label l₀ :: p' := by rfl) (hnd : (Program.labels p).Nodup := by decide) :
     ⊤ ⊑ WP.wp p (fun _ s => Qend s) Ext s :=
-  fun _ => (cfg T var Qend Ext hblocks hp hwf).1 s hT
+  fun _ => (cfg T var Qend Ext hblocks hp hnd).1 s hT
 
 end StateWP

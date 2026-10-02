@@ -462,14 +462,6 @@ theorem Program.drop_flatMap_cons {bs : List (Label × Program)} {i : Nat}
   rw [List.drop_eq_getElem_cons hlt, hget, List.flatMap_cons]
   simp only [Program.blockCells, List.cons_append]
 
-/-- Wellformed text: the labels are unique. The condition is decidable, so
-`by decide` closes `WF` for a concrete program. -/
-structure Program.WF (p : Program) : Prop where
-  nodup : (Program.labels p).Nodup
-
-instance (p : Program) : Decidable (Program.WF p) :=
-  decidable_of_iff ((Program.labels p).Nodup) ⟨fun h => ⟨h⟩, fun h => h.nodup⟩
-
 /-- The split of the text at a present label: the fresh prefix, the label
 cell, and the rest. -/
 theorem Program.fromLabel_split {p : Program} {l : Label}
