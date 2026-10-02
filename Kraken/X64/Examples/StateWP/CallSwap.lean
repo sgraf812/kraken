@@ -43,11 +43,12 @@ swap:
 private abbrev SwapPre (s : MachineData) : Prop :=
   (Mem.loadInt s.dmem (s.regs.get64 .rsp - 8#64) 8).isSome = true
 
+/-- `rax` and `rbx` exchanged, and the return slot still mapped. -/
 private abbrev SwapPost (s s' : MachineData) : Prop :=
-  s'.regs.get64 .rax = s.regs.get64 .rbx ∧ s'.regs.get64 .rbx = s.regs.get64 .rax
-    ∧ s'.regs.get64 .rsp = s.regs.get64 .rsp ∧ SwapPre s'
+  s'.regs.get64 .rax = s.regs.get64 .rbx ∧ s'.regs.get64 .rbx = s.regs.get64 .rax ∧ SwapPre s'
 
-private abbrev swapC : Contract := ⟨"swap", SwapPre, SwapPost⟩
+/-- `swap` clobbers `rax` and `rbx` and writes no memory. -/
+private abbrev swapMod : Modifies := ⟨[.rax, .rbx], fun _ => 0, fun _ => 0⟩
 
 private abbrev pswap_table (d : MachineData) : Label → MachineData → Prop
   | "start", s => s = d
@@ -61,20 +62,15 @@ omit layout in
 private theorem pswap_body_spec [LinkedProgram] (s : MachineData) (ra : Int64) :
     ⦃ fun t => t = s.pushRa ra ∧ SwapPre s ⦄
       pswap.body
-    ⦃ (fun _ _ => False); fun a s' => a = ra ∧ SwapPost s s' ⦄ := by
+    ⦃ (fun _ _ => False); fun a s' => a = ra ∧ SwapPost s s' ∧ swapMod.Agree s s' ⦄ := by
   refine ⟨fun t ⟨ht, hpre⟩ => ?_⟩
   subst ht
   simp only [MachineData.pushRa]
-  kvcgen64 with finish
-
-private theorem swap_call_spec [LinkedProgram] {Q : Unit → MachineData → Prop}
-    {E : Int64 → MachineData → Prop} (asz osz : Width) :
-    ⦃ fun s => swapC.Implemented
-        ⊓ ((Mem.loadInt s.dmem (s.regs.get64 .rsp - 8#64) 8).isSome = true)
-        ⊓ SwapPre s ⊓ (∀ s', SwapPost s s' → Q () s') ⦄
-      Directive.instr (.regular asz osz (.call (.rel (.sub (.label "swap") .after_current_instruction))))
-    ⦃ Q; E ⦄ :=
-  StateWP.call_spec asz osz swapC
+  kvcgen64
+  · grind
+  · refine ⟨by grind, by grind, fun r hr => ?_, fun a _ h2 => ?_⟩
+    · cases r <;> simp_all
+    · exact Mem.get?_storeInt_of_ne _ _ _ _ _ (ne_add_of_dist h2)
 
 theorem pswap_correct [Kraken.Executable.ValidExecutable (layout pswap)]
     (d : MachineData) (hslot : SwapPre d) :
@@ -88,9 +84,9 @@ theorem pswap_correct [Kraken.Executable.ValidExecutable (layout pswap)]
   refine StateWP.cfg_wp (pswap_table d) (fun _ _ => 0) _ ⊥ ?_ d rfl
   cfg_cases [pswap]
   · intro k hlink
-    have himpl : swapC.Implemented :=
-      StateWP.implemented_of_triple (body := pswap.body.tail) hlink swapC (by rfl) pswap_body_spec
-    kvcgen64 [swap_call_spec] with finish
+    have hswap : CallSpec "swap" SwapPre SwapPost swapMod :=
+      StateWP.callSpec_of_triple (body := pswap.body.tail) hlink (by rfl) pswap_body_spec
+    kvcgen64 [hswap] with finish
   · kvcgen64 with finish
 
 end State

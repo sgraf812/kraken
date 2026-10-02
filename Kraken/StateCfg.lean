@@ -5,8 +5,8 @@ The control-flow rule of the state wp. A program with labels is a list of
 basic blocks (`Program.blockAt`). `StateWP.cfg` proves a triple for a program
 from one triple per block: a table `T` gives the assertion at
 each label, and a variant `var` orders the jumps. A block falls
-into the next block, and a jump reaches the cell of its label. A call links to
-its return through a `Contract` that the callee implements.
+into the next block, and a jump reaches the cell of its label. A call steps by
+the callee's `CallSpec`, which `callSpec_of_triple` derives from its body.
 -/
 public import Kraken.StateWP
 public import Kraken.SegmentExtract
@@ -74,61 +74,98 @@ def MachineData.pushRa (s : MachineData) (ra : Int64) : MachineData :=
     Mem.loadInt_storeInt _ _ _ _ (by decide : 8 ≤ 2 ^ 64), Option.map_some,
     BitVec.ofInt_ofBytes_toBytes 64 8 rfl, Int64.ofBitVec_toBitVec]
 
-structure Contract where
-  f : Label
-  Pre : MachineData → Prop
-  Post : MachineData → MachineData → Prop
+/-- An address at distance at least `n` from `b` is none of the `n` bytes from `b`. -/
+theorem ne_add_of_dist {a b : BitVec 64} {n : Nat} (h : n ≤ (a - b).toNat) :
+    ∀ i < n, a ≠ b + BitVec.ofNat 64 i := by
+  intro i hi he
+  rw [he, show b + BitVec.ofNat 64 i - b = BitVec.ofNat 64 i by
+    rw [BitVec.add_comm, BitVec.add_sub_cancel]] at h
+  rw [BitVec.toNat_ofNat] at h
+  have := Nat.mod_le i (2 ^ 64)
+  omega
 
-/-- The code at `c.f`, entered with a return address `ra` on the stack, returns to `ra`. -/
-def Contract.Implemented [LinkedProgram] (c : Contract) : Prop :=
-  ∀ s ra, c.Pre s →
-    Eventually LinkedProgram.step (fun st => st.2 = ra ∧ c.Post s st.1) (s.pushRa ra, label c.f)
+/-- What a callee may change: the registers it clobbers, and the `len s` bytes from `base s`,
+as functions of the entry state `s`. -/
+structure Modifies where
+  regs : List Reg64
+  base : MachineData → BitVec 64
+  len : MachineData → Nat
+
+/-- `s'` agrees with `s` outside `m` and outside the return slot below `s`'s `rsp`. -/
+def Modifies.Agree (m : Modifies) (s s' : MachineData) : Prop :=
+  (∀ r, r ∉ m.regs → s'.regs.get64 r = s.regs.get64 r)
+  ∧ ∀ a, m.len s ≤ (a - m.base s).toNat → 8 ≤ (a - (s.regs.get64 .rsp - 8#64)).toNat →
+      s'.dmem.get? a = s.dmem.get? a
+
+theorem Modifies.Agree.reg {m : Modifies} {s s' : MachineData} (h : m.Agree s s') (r : Reg64)
+    (hr : r ∉ m.regs) : s'.regs.get64 r = s.regs.get64 r := h.1 r hr
+grind_pattern Modifies.Agree.reg => m.Agree s s', s'.regs.get64 r
+
+/-- A load whose bytes miss the region and the slot reads the same. -/
+theorem Modifies.Agree.loadInt {m : Modifies} {s s' : MachineData} (h : m.Agree s s')
+    (a : BitVec 64) (n : Nat)
+    (hreg : m.len s ≤ (a - m.base s).toNat ∧ (a - m.base s).toNat + n ≤ 2 ^ 64)
+    (hslot : 8 ≤ (a - (s.regs.get64 .rsp - 8#64)).toNat
+      ∧ (a - (s.regs.get64 .rsp - 8#64)).toNat + n ≤ 2 ^ 64) :
+    Mem.loadInt s'.dmem a n = Mem.loadInt s.dmem a n := by
+  have key : ∀ (b : BitVec 64) (i : Nat), i < n → (a - b).toNat + n ≤ 2 ^ 64 →
+      (a + BitVec.ofNat 64 i - b).toNat = (a - b).toNat + i := by
+    intro b i hi hb
+    rw [show a + BitVec.ofNat 64 i - b = (a - b) + BitVec.ofNat 64 i by
+      simp only [BitVec.sub_eq_add_neg]; ac_rfl]
+    rw [BitVec.toNat_add_of_lt] <;> rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega)]
+    omega
+  apply Mem.loadInt_congr
+  intro i hi
+  exact h.2 _ (by rw [key _ i hi hreg.2]; omega) (by rw [key _ i hi hslot.2]; omega)
+grind_pattern Modifies.Agree.loadInt => m.Agree s s', Mem.loadInt s'.dmem a n
+
+open StateWP in
+/-- Calling `f` from a state that satisfies `Pre` returns with `Post`, and changes nothing
+outside `m`. -/
+abbrev CallSpec [LinkedProgram] (f : Label) (Pre : MachineData → Prop)
+    (Post : MachineData → MachineData → Prop) (m : Modifies) : Prop :=
+  ∀ asz osz (Q : Unit → MachineData → Prop) (E : Int64 → MachineData → Prop),
+    ⦃ fun s => ((Mem.loadInt s.dmem (s.regs.get64 .rsp - 8#64) 8).isSome = true) ⊓ Pre s
+        ⊓ (∀ s', Post s s' → m.Agree s s' → Q () s') ⦄
+      Directive.instr (.regular asz osz (.call (.rel (.sub (.label f) .after_current_instruction))))
+    ⦃ Q; E ⦄
 
 namespace StateWP
 
-variable [layout : Layout] [prog : LinkedProgram] {Q : Unit → MachineData → Prop}
-  {E : Int64 → MachineData → Prop}
+variable [layout : Layout] [prog : LinkedProgram]
 
 omit layout in
-@[spec] theorem call_spec (asz osz : Width) (c : Contract) :
-    ⦃ fun s => c.Implemented
-        ⊓ ((Mem.loadInt s.dmem (s.regs.get64 .rsp - 8#64) 8).isSome = true)
-        ⊓ c.Pre s ⊓ (∀ s', c.Post s s' → Q () s') ⦄
-      Directive.instr (.regular asz osz (.call (.rel (.sub (.label c.f) .after_current_instruction))))
-    ⦃ Q; E ⦄ := by
+/-- A callee's body triple, linked in the program, is its call spec. -/
+theorem callSpec_of_triple {P body rest : Program} {k : Nat} (hP : P.LinkedAt k)
+    {f : Label} {Pre : MachineData → Prop} {Post : MachineData → MachineData → Prop}
+    {m : Modifies} (hat : Program.fromLabel P f = Directive.label f :: (body ++ rest))
+    (hbody : ∀ s ra, ⦃ fun t => t = s.pushRa ra ∧ Pre s ⦄ (Directive.label f :: body)
+      ⦃ (fun _ _ => False); fun a t => a = ra ∧ Post s t ∧ m.Agree s t ⦄) :
+    CallSpec f Pre Post m := by
+  intro asz osz Q E
+  have hl := Program.drop_fromLabel P f ▸ hP.drop (P.length - (Program.fromLabel P f).length)
+  generalize k + (P.length - (Program.fromLabel P f).length) = j at hl
+  rw [hat] at hl
+  obtain ⟨hbody', -⟩ := Program.LinkedAt.append (a := Directive.label f :: body) hl
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
   simp only [meet_prop_eq_and] at hpre
-  obtain ⟨⟨⟨himpl, hmapped⟩, hpre⟩, hcont⟩ := hpre
+  obtain ⟨⟨hmapped, hpre⟩, hcont⟩ := hpre
   obtain ⟨i, hload⟩ := Option.isSome_iff_exists.mp hmapped
-  intro k hs
+  intro k' hs
   obtain ⟨z, hz⟩ := LinkedProgram.cell_of_prefix hs.1
-  refine Eventually.step _ (fun st => st = (s.pushRa (LinkedProgram.exe.addrOf (k + 1)), label c.f))
-    ⟨k, _, z, hz, rfl, fun R next jmp _ hj => ?_⟩ ?_
+  refine Eventually.step _
+    (fun st => st = (s.pushRa (LinkedProgram.exe.addrOf (k' + 1)), LinkedProgram.exe.addrOf j))
+    ⟨k', _, z, hz, rfl, fun R next jmp _ hj => ?_⟩ ?_
   · simp only [Directive.interp, Instr.interp, Operation.interp, RelRegOrMem.interp,
       ConstExpr.interp, MachineData.store, hload, Effects.All]
-    rw [Int64.ofBitVec_toBitVec, Int64.add_sub_self_left]
+    rw [Int64.ofBitVec_toBitVec, Int64.add_sub_self_left, hl.2 0 f rfl, Nat.add_zero]
     exact hj _ _ rfl
   · rintro _ rfl
-    refine eventually_trans _ _ _ _ (himpl s _ hpre) ?_
-    rintro ⟨s'', a⟩ ⟨ha, hpost⟩
-    exact Eventually.done _ (Or.inl ⟨ha, hcont s'' hpost⟩)
-
-omit layout in
-theorem implemented_of_triple {P body rest : Program} {k : Nat} (hP : P.LinkedAt k)
-    (c : Contract) (hat : Program.fromLabel P c.f = Directive.label c.f :: (body ++ rest))
-    (hbody : ∀ s ra, ⦃ fun t => t = s.pushRa ra ∧ c.Pre s ⦄ (Directive.label c.f :: body)
-      ⦃ (fun _ _ => False); fun a s' => a = ra ∧ c.Post s s' ⦄) :
-    c.Implemented := by
-  intro s ra hpre
-  have hl := Program.drop_fromLabel P c.f ▸ hP.drop (P.length - (Program.fromLabel P c.f).length)
-  generalize k + (P.length - (Program.fromLabel P c.f).length) = i at hl
-  rw [hat] at hl
-  obtain ⟨hbody', -⟩ := Program.LinkedAt.append (a := Directive.label c.f :: body) hl
-  rw [hl.2 0 c.f rfl, Nat.add_zero]
-  refine eventually_trans _ _ _ _ ((hbody s ra).1 _ ⟨rfl, hpre⟩ i hbody') ?_
-  rintro _ (⟨_, h⟩ | ⟨rfl, hpost⟩)
-  · exact h.elim
-  · exact Eventually.done _ ⟨rfl, hpost⟩
+    refine eventually_trans _ _ _ _ ((hbody s _).1 _ ⟨rfl, hpre⟩ j hbody') ?_
+    rintro ⟨t, a⟩ (⟨_, h⟩ | ⟨ha, hpost, hagree⟩)
+    · exact h.elim
+    · exact Eventually.done _ (Or.inl ⟨ha, hcont t hpost hagree⟩)
 
 /-! ## The control-flow rule -/
 

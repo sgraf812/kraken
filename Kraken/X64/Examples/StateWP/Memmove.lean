@@ -3,9 +3,9 @@ module
 /-
 A caller that moves a byte range onto an overlapping range through a call to `memmove`, after
 Erbsen et al., "Foundational Integration Verification of a Cryptographic Server" (PLDI 2024,
-§2.3). `memmove_spec` proves the contract `memmoveC` of the callee on its own. The contract
-allows the two ranges to overlap: its postcondition speaks about the bytes of the old memory.
-`memmove_correct` proves the caller from the contract alone.
+§2.3). `memmove_spec` proves the callee on its own. Its contract allows the two ranges to
+overlap: the postcondition speaks about the bytes of the old memory, and `mmMod` bounds what
+the call may change. `memmove_correct` proves the caller from the resulting `CallSpec` alone.
 -/
 public import Kraken.StateCfg
 import Kraken.X64.Parser
@@ -82,12 +82,12 @@ def MMPre (s : MachineData) : Prop :=
     ∧ (s.mmSrc.toNat + s.mmN ≤ (s.regs.get64 .rsp).toNat - 8
         ∨ (s.regs.get64 .rsp).toNat ≤ s.mmSrc.toNat)
 
-/-- The destination holds the old source bytes, and `rsp` is restored. -/
+/-- The destination holds the old source bytes. -/
 abbrev MMPost (s s' : MachineData) : Prop :=
-  (∀ i < s.mmN, s'.byte (s.mmDst + BitVec.ofNat 64 i) = s.byte (s.mmSrc + BitVec.ofNat 64 i))
-    ∧ s'.regs.get64 .rsp = s.regs.get64 .rsp
+  ∀ i < s.mmN, s'.byte (s.mmDst + BitVec.ofNat 64 i) = s.byte (s.mmSrc + BitVec.ofNat 64 i)
 
-abbrev memmoveC : Contract := ⟨"memmove", MMPre, MMPost⟩
+/-- `memmove` clobbers `rax`, `rsi`, `rdi` and `rdx`, and writes the destination. -/
+abbrev mmMod : Modifies := ⟨[.rax, .rsi, .rdi, .rdx], fun s => s.mmDst, fun s => s.mmN⟩
 
 /-! ## The callee -/
 
@@ -104,14 +104,9 @@ private theorem Reg64s.set_low_W8 (r : Reg64s) (g : Reg64) (v : BitVec 8) :
     (r.set (.low g .W8) v).get64 g' = if g' = g then (r.get64 g).replaceLow v else r.get64 g' := by
   rw [Reg64s.set_low_W8, Reg64s.get64_set64]
 
-@[grind =] private theorem Reg64s.set_al_rsi (r : Reg64s) (v : BitVec 8) :
-    (r.set (.low .rax .W8) v).rsi = r.rsi := rfl
-@[grind =] private theorem Reg64s.set_al_rdi (r : Reg64s) (v : BitVec 8) :
-    (r.set (.low .rax .W8) v).rdi = r.rdi := rfl
-@[grind =] private theorem Reg64s.set_al_rdx (r : Reg64s) (v : BitVec 8) :
-    (r.set (.low .rax .W8) v).rdx = r.rdx := rfl
-@[grind =] private theorem Reg64s.set_al_rsp (r : Reg64s) (v : BitVec 8) :
-    (r.set (.low .rax .W8) v).rsp = r.rsp := rfl
+/-- A write to `al` replaces the low byte of `rax` and keeps every other register. -/
+@[grind =] private theorem Reg64s.set_al (r : Reg64s) (v : BitVec 8) :
+    r.set (.low .rax .W8) v = { r with rax := { toBitVec := (r.get64 .rax).replaceLow v } } := rfl
 
 /-- A byte loaded and stored again is the same byte. -/
 @[grind =] private theorem UInt8.store_load (b : UInt8) :
@@ -472,19 +467,52 @@ theorem slot_facts {s : MachineData} (h : MMPre s) :
 
 end
 
+/-- The registers `memmove` does not touch. -/
+private abbrev MMKeep (s t : MachineData) : Prop :=
+  t.regs.get64 .rbx = s.regs.get64 .rbx ∧ t.regs.get64 .rcx = s.regs.get64 .rcx
+    ∧ t.regs.get64 .rbp = s.regs.get64 .rbp ∧ t.regs.get64 .r8 = s.regs.get64 .r8
+    ∧ t.regs.get64 .r9 = s.regs.get64 .r9 ∧ t.regs.get64 .r10 = s.regs.get64 .r10
+    ∧ t.regs.get64 .r11 = s.regs.get64 .r11 ∧ t.regs.get64 .r12 = s.regs.get64 .r12
+    ∧ t.regs.get64 .r13 = s.regs.get64 .r13 ∧ t.regs.get64 .r14 = s.regs.get64 .r14
+    ∧ t.regs.get64 .r15 = s.regs.get64 .r15
+
+theorem fwd_agree (s : MachineData) (ra : Int64) (t : MachineData) (c : Nat)
+    (hkeep : MMKeep s t) (hrsp : t.regs.get64 .rsp = s.regs.get64 .rsp)
+    (hmem : t.dmem = fwdMem (s.pushRa ra).dmem (s.regs.get64 .rdi) (s.regs.get64 .rsi) c)
+    (hc : c = (s.regs.get64 .rdx).toNat) : mmMod.Agree s t := by
+  refine ⟨fun r hr => ?_, fun a h1 h2 => ?_⟩
+  · cases r <;> simp_all
+  · rw [hmem, hc, fwdMem_other _ _ _ _ _ (ne_add_of_dist h1)]
+    exact get?_pushRa s ra a (ne_add_of_dist h2)
+grind_pattern fwd_agree => mmMod.Agree s t,
+  fwdMem (s.pushRa ra).dmem (s.regs.get64 .rdi) (s.regs.get64 .rsi) c
+
+theorem bwd_agree (s : MachineData) (ra : Int64) (t : MachineData) (c : Nat)
+    (hkeep : MMKeep s t) (hrsp : t.regs.get64 .rsp = s.regs.get64 .rsp)
+    (hmem : t.dmem = bwdMem (s.pushRa ra).dmem (s.regs.get64 .rdi) (s.regs.get64 .rsi)
+      (s.regs.get64 .rdx).toNat c)
+    (hc : c = (s.regs.get64 .rdx).toNat) : mmMod.Agree s t := by
+  refine ⟨fun r hr => ?_, fun a h1 h2 => ?_⟩
+  · cases r <;> simp_all
+  · rw [hmem, hc, bwdMem_other _ _ _ _ _ _ (Nat.le_refl _)
+      fun j _ hjn => ne_add_of_dist h1 j hjn]
+    exact get?_pushRa s ra a (ne_add_of_dist h2)
+grind_pattern bwd_agree => mmMod.Agree s t,
+  bwdMem (s.pushRa ra).dmem (s.regs.get64 .rdi) (s.regs.get64 .rsi) (s.regs.get64 .rdx).toNat c
+
 /-- In `fwd`, `rdx` bytes remain: `fwdMem` has copied the bytes below them. -/
 private abbrev MMFwd (s : MachineData) (ra : Int64) (t : MachineData) : Prop :=
   MMPre s ∧ s.mmDst.toNat ≤ s.mmSrc.toNat ∧ t.mmN ≤ s.mmN
     ∧ t.mmSrc = s.mmSrc + BitVec.ofNat 64 (s.mmN - t.mmN)
     ∧ t.mmDst = s.mmDst + BitVec.ofNat 64 (s.mmN - t.mmN)
-    ∧ t.regs.get64 .rsp = s.regs.get64 .rsp - 8#64
+    ∧ t.regs.get64 .rsp = s.regs.get64 .rsp - 8#64 ∧ MMKeep s t
     ∧ t.dmem = fwdMem (s.pushRa ra).dmem s.mmDst s.mmSrc (s.mmN - t.mmN)
 
 /-- In `bwd`, `rdx` bytes remain: `bwdMem` has copied the bytes above them. -/
 private abbrev MMBwd (s : MachineData) (ra : Int64) (t : MachineData) : Prop :=
   MMPre s ∧ s.mmSrc.toNat < s.mmDst.toNat ∧ t.mmN ≤ s.mmN
     ∧ t.mmSrc = s.mmSrc + t.regs.get64 .rdx ∧ t.mmDst = s.mmDst + t.regs.get64 .rdx
-    ∧ t.regs.get64 .rsp = s.regs.get64 .rsp - 8#64
+    ∧ t.regs.get64 .rsp = s.regs.get64 .rsp - 8#64 ∧ MMKeep s t
     ∧ t.dmem = bwdMem (s.pushRa ra).dmem s.mmDst s.mmSrc s.mmN (s.mmN - t.mmN)
 
 /-- The callee's table, for a call from `s` that returns to `ra`. -/
@@ -500,9 +528,9 @@ private abbrev mm_table (s : MachineData) (ra : Int64) : Label → MachineData �
 theorem memmove_spec [LinkedProgram] (s : MachineData) (ra : Int64) :
     ⦃ fun t => t = s.pushRa ra ∧ MMPre s ⦄
       memmove
-    ⦃ (fun _ _ => False); fun a t => a = ra ∧ MMPost s t ⦄ := by
+    ⦃ (fun _ _ => False); fun a t => a = ra ∧ MMPost s t ∧ mmMod.Agree s t ⦄ := by
   refine StateWP.cfg (p := memmove) (mm_table s ra) (fun _ t => (t.regs.get64 .rdx).toNat) (fun _ => False)
-    (fun a t => a = ra ∧ MMPost s t) ?_
+    (fun a t => a = ra ∧ MMPost s t ∧ mmMod.Agree s t) ?_
   cfg_cases [memmove]
   all_goals kvcgen64 [BitVec.and_self] with finish
 
@@ -520,16 +548,6 @@ private abbrev mp_table (d : MachineData) : Label → MachineData → Prop
   | "done", s => ∀ i < d.mmN, s.byte (d.mmDst + BitVec.ofNat 64 i) = d.byte (d.mmSrc + BitVec.ofNat 64 i)
   | _, _ => False
 
-private theorem memmove_call_spec [LinkedProgram] {Q : Unit → MachineData → Prop}
-    {E : Int64 → MachineData → Prop} (asz osz : Width) :
-    ⦃ fun s => memmoveC.Implemented
-        ⊓ ((Mem.loadInt s.dmem (s.regs.get64 .rsp - 8#64) 8).isSome = true)
-        ⊓ MMPre s ⊓ (∀ s', MMPost s s' → Q () s') ⦄
-      Directive.instr
-        (.regular asz osz (.call (.rel (.sub (.label "memmove") .after_current_instruction))))
-    ⦃ Q; E ⦄ :=
-  StateWP.call_spec asz osz memmoveC
-
 theorem memmove_correct [layout : Layout] [Kraken.Executable.ValidExecutable (layout memmoveProg)]
     (d : MachineData) (hpre : MMPre d)
     (hslot : (Mem.loadInt d.dmem (d.regs.get64 .rsp - 8#64) 8).isSome = true) :
@@ -541,10 +559,10 @@ theorem memmove_correct [layout : Layout] [Kraken.Executable.ValidExecutable (la
   refine StateWP.cfg_wp (mp_table d) (fun _ _ => 0) _ ⊥ ?_ d rfl
   cfg_cases [memmoveProg, memmove]
   · intro k hlink
-    have himpl : memmoveC.Implemented :=
-      StateWP.implemented_of_triple (body := memmove.tail) (rest := parse("done:\n  nop")) hlink
-        memmoveC (by decide) memmove_spec
-    kvcgen64 [memmove_call_spec] with finish
+    have hmm : CallSpec "memmove" MMPre MMPost mmMod :=
+      StateWP.callSpec_of_triple (body := memmove.tail) (rest := parse("done:\n  nop")) hlink
+        (by decide) memmove_spec
+    kvcgen64 [hmm] with finish
   · kvcgen64 with finish
 
 end State
