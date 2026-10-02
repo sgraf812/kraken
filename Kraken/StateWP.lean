@@ -27,25 +27,25 @@ open Lean.Order
 namespace StateWP
 
 /-- Programs interpreted by their run, at predicates over machine states. -/
-scoped instance instWP [Host] : WP Program Unit (MachineData → Prop) (Int64 → MachineData → Prop) where
+scoped instance instWP [LinkedProgram] : WP Program Unit (MachineData → Prop) (Int64 → MachineData → Prop) where
   trans q := ⟨fun Q E s => Program.run q (Q ()) E s⟩
   trans_monotone _ := fun _ _ _ _ hE hQ _ h => Program.run_mono (hQ ()) hE h
 
-theorem wp_apply_iff [Host] (q : Program) (Q : Unit → MachineData → Prop)
+theorem wp_apply_iff [LinkedProgram] (q : Program) (Q : Unit → MachineData → Prop)
     (E : Int64 → MachineData → Prop) (s : MachineData) :
     WP.wp q Q E s ↔ Program.run q (Q ()) E s := Iff.rfl
 
 /-- Triples of one directive: the interpretation of the singleton program. -/
-scoped instance [Host] : WP Directive Unit (MachineData → Prop) (Int64 → MachineData → Prop) where
+scoped instance [LinkedProgram] : WP Directive Unit (MachineData → Prop) (Int64 → MachineData → Prop) where
   trans d := WP.trans (self := instWP) [d]
   trans_monotone d := WP.trans_monotone (self := instWP) [d]
 
-theorem triple_directive [Host] {d : Directive} {P : MachineData → Prop}
+theorem triple_directive [LinkedProgram] {d : Directive} {P : MachineData → Prop}
     {Q : Unit → MachineData → Prop} {E : Int64 → MachineData → Prop} :
     (⦃ P ⦄ d ⦃ Q; E ⦄) ↔ (⦃ P ⦄ [d] ⦃ Q; E ⦄) :=
   ⟨fun h => ⟨h.1⟩, fun h => ⟨h.1⟩⟩
 
-variable [Host] {Q : Unit → MachineData → Prop} {E : Int64 → MachineData → Prop}
+variable [LinkedProgram] {Q : Unit → MachineData → Prop} {E : Int64 → MachineData → Prop}
 
 /-- The empty program: its wp is the postcondition. -/
 @[spec] theorem nil_spec : ⦃ fun s => Q () s ⦄ ([] : Program) ⦃ Q; E ⦄ := by
@@ -66,8 +66,8 @@ the post. -/
     ⦃ Q ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
   intro k hs
-  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs.1
-  refine Host.eventually_cell hz fun R next jmp hQ _ => ?_
+  obtain ⟨z, hz⟩ := LinkedProgram.cell_of_prefix hs.1
+  refine LinkedProgram.eventually_cell hz fun R next jmp hQ _ => ?_
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
     MachineData.set, MachineData.setReg, Reg64s.set_low_W64, Effects.All]
   exact hQ _ (Or.inl ⟨rfl, hpre⟩)
@@ -86,8 +86,8 @@ the post. -/
   obtain ⟨hmapped, hpre⟩ := (meet_prop_eq_and _ _) ▸ hpre
   obtain ⟨i, hload⟩ := Option.isSome_iff_exists.mp hmapped
   intro k hs
-  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs.1
-  refine Host.eventually_cell hz fun R next jmp hQ _ => ?_
+  obtain ⟨z, hz⟩ := LinkedProgram.cell_of_prefix hs.1
+  refine LinkedProgram.eventually_cell hz fun R next jmp hQ _ => ?_
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
     RegOrMem.interp, MachineData.set, MachineData.store, Reg64s.get_low_W64,
     AddrExpr.zeroExtend_interp_base_disp, hload, Effects.All]
@@ -114,8 +114,8 @@ the post. -/
   obtain ⟨hmapped, hpre⟩ := (meet_prop_eq_and _ _) ▸ hpre
   obtain ⟨i, hload⟩ := Option.isSome_iff_exists.mp hmapped
   intro k hs
-  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs.1
-  refine Host.eventually_cell hz fun R next jmp hQ _ => ?_
+  obtain ⟨z, hz⟩ := LinkedProgram.cell_of_prefix hs.1
+  refine LinkedProgram.eventually_cell hz fun R next jmp hQ _ => ?_
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
     RegOrMem.interp, MachineData.load, MachineData.set, MachineData.setReg,
     Reg64s.get_low_W64, Reg64s.set_low_W64, AddrExpr.zeroExtend_interp_base_disp,
@@ -134,8 +134,8 @@ local macro "run_step" : tactic =>
 @[spec] theorem label_spec (l : Label) : ⦃ fun s => Q () s ⦄ Directive.label l ⦃ Q ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
   intro k hs
-  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs.1
-  refine Host.eventually_cell hz fun R next jmp hQ _ => ?_
+  obtain ⟨z, hz⟩ := LinkedProgram.cell_of_prefix hs.1
+  refine LinkedProgram.eventually_cell hz fun R next jmp hQ _ => ?_
   run_step
   exact hQ _ (Or.inl ⟨rfl, hpre⟩)
 
@@ -144,8 +144,8 @@ local macro "run_step" : tactic =>
     ⦃ fun s => Q () s ⦄ Directive.instr (.regular asz osz (.nop n)) ⦃ Q ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
   intro k hs
-  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs.1
-  refine Host.eventually_cell hz fun R next jmp hQ _ => ?_
+  obtain ⟨z, hz⟩ := LinkedProgram.cell_of_prefix hs.1
+  refine LinkedProgram.eventually_cell hz fun R next jmp hQ _ => ?_
   run_step
   exact hQ _ (Or.inl ⟨rfl, hpre⟩)
 
@@ -165,8 +165,8 @@ local macro "run_step" : tactic =>
     ⦃ Q ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
   intro k hs
-  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs.1
-  refine Host.eventually_cell hz fun R next jmp hQ _ => ?_
+  obtain ⟨z, hz⟩ := LinkedProgram.cell_of_prefix hs.1
+  refine LinkedProgram.eventually_cell hz fun R next jmp hQ _ => ?_
   run_step
   exact hQ _ (Or.inl ⟨rfl, hpre⟩)
 
@@ -181,8 +181,8 @@ local macro "run_step" : tactic =>
     ⦃ Q ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
   intro k hs
-  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs.1
-  refine Host.eventually_cell hz fun R next jmp hQ _ => ?_
+  obtain ⟨z, hz⟩ := LinkedProgram.cell_of_prefix hs.1
+  refine LinkedProgram.eventually_cell hz fun R next jmp hQ _ => ?_
   run_step
   exact hQ _ (Or.inl ⟨rfl, hpre⟩)
 
@@ -202,8 +202,8 @@ local macro "run_step" : tactic =>
     ⦃ Q ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
   intro k hs
-  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs.1
-  refine Host.eventually_cell hz fun R next jmp hQ _ => ?_
+  obtain ⟨z, hz⟩ := LinkedProgram.cell_of_prefix hs.1
+  refine LinkedProgram.eventually_cell hz fun R next jmp hQ _ => ?_
   run_step
   exact hQ _ (Or.inl ⟨rfl, hpre⟩)
 
@@ -225,8 +225,8 @@ local macro "run_step" : tactic =>
     ⦃ Q ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
   intro k hs
-  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs.1
-  refine Host.eventually_cell hz fun R next jmp hQ _ => ?_
+  obtain ⟨z, hz⟩ := LinkedProgram.cell_of_prefix hs.1
+  refine LinkedProgram.eventually_cell hz fun R next jmp hQ _ => ?_
   run_step
   exact hQ _ (Or.inl ⟨rfl, hpre⟩)
 
@@ -243,8 +243,8 @@ the post must hold for either value. -/
     ⦃ Q ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
   intro k hs
-  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs.1
-  refine Host.eventually_cell hz fun R next jmp hQ _ => ?_
+  obtain ⟨z, hz⟩ := LinkedProgram.cell_of_prefix hs.1
+  refine LinkedProgram.eventually_cell hz fun R next jmp hQ _ => ?_
   run_step
   intro af
   exact hQ _ (Or.inl ⟨rfl, (hpre af)⟩)
@@ -264,8 +264,8 @@ the post must hold for either value. -/
     ⦃ Q ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
   intro k hs
-  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs.1
-  refine Host.eventually_cell hz fun R next jmp hQ _ => ?_
+  obtain ⟨z, hz⟩ := LinkedProgram.cell_of_prefix hs.1
+  refine LinkedProgram.eventually_cell hz fun R next jmp hQ _ => ?_
   run_step
   exact hQ _ (Or.inl ⟨rfl, hpre⟩)
 
@@ -281,8 +281,8 @@ theorem _root_.Int64.add_sub_self_left (a b : Int64) : a + (b - a) = b := by
     ⦃ Q; E ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
   intro k hs
-  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs.1
-  refine Host.eventually_cell hz fun R next jmp _ hE => ?_
+  obtain ⟨z, hz⟩ := LinkedProgram.cell_of_prefix hs.1
+  refine LinkedProgram.eventually_cell hz fun R next jmp _ hE => ?_
   run_step
   rw [Int64.ofBitVec_toBitVec, Int64.add_sub_self_left]
   exact hE _ _ (Or.inr hpre)
@@ -296,8 +296,8 @@ condition holds and falls through otherwise. -/
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
   obtain ⟨hjmp, hfall⟩ := (meet_prop_eq_and _ _) ▸ hpre
   intro k hs
-  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs.1
-  refine Host.eventually_cell hz fun R next jmp hQ hE => ?_
+  obtain ⟨z, hz⟩ := LinkedProgram.cell_of_prefix hs.1
+  refine LinkedProgram.eventually_cell hz fun R next jmp hQ hE => ?_
   run_step
   cases hc : CondCode.interp cc s.status <;>
     simp only [hc, Bool.false_eq_true, ite_true, ite_false]
@@ -328,8 +328,8 @@ def _root_.MachineData.retAddr (t : MachineData) : Option Int64 :=
     | none => rw [hl] at hra; exact absurd hra (by simp)
     | some i => exact ⟨i, rfl, by rw [hl] at hra; simpa using hra⟩
   intro k hs
-  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs.1
-  refine Host.eventually_cell hz fun R next jmp _ hE => ?_
+  obtain ⟨z, hz⟩ := LinkedProgram.cell_of_prefix hs.1
+  refine LinkedProgram.eventually_cell hz fun R next jmp _ hE => ?_
   simp only [Directive.interp, Instr.interp, Operation.interp, MachineData.load, hi,
     Effects.All, hval]
   exact hE _ _ (Or.inr (hexit ra hra))
@@ -342,14 +342,13 @@ The wp of a program with no exits is a run of the laid-out program: if the wp
 holds of `s` for the postcondition that asks `post` of the final state at
 every pc, the run from `s` at the layout's start eventually ends in `post`.
 The hypothesis is the entailment `⊤ ⊑ wp …` at `s`, the goal form of `vcgen`,
-in every host. The layout is valid, and the labels of the program are distinct. -/
+in every linked program. The laid-out program is a valid executable. -/
 
 open StateWP in
 theorem eventually_straightlineStep_of_wp [layout : Layout] {p : Program}
-    [Kraken.Executable.ValidLayout (layout p)] {s : MachineData} {post : MachineState → Prop}
-    (h : ∀ [Host], ⊤ ⊑ WP.wp p (fun _ s' => ∀ pc, post (s', pc)) ⊥ s)
-    (hnd : (Program.labels p).Nodup := by decide) :
+    [Kraken.Executable.ValidExecutable (layout p)] {s : MachineData} {post : MachineState → Prop}
+    (h : ∀ [LinkedProgram], ⊤ ⊑ WP.wp p (fun _ s' => ∀ pc, post (s', pc)) ⊥ s) :
     Eventually (straightlineStep (layout p)) post (s, layout.start) :=
-  Program.run_eventually hnd (Q := fun s' => ∀ pc, post (s', pc))
+  Program.run_eventually (Q := fun s' => ∀ pc, post (s', pc))
     (E := (⊥ : Int64 → MachineData → Prop)) (of_top_le_prop (@h ⟨layout p⟩)) (fun _ hq => hq)
     (fun a s' hE => (bot_le (α := Int64 → MachineData → Prop) fun _ _ => False) a s' hE)

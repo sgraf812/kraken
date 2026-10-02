@@ -6,9 +6,9 @@ the directive at an index; `Executable.label_addrOf` computes a label's
 address and `Executable.directivesFromAddress_addrOf` cuts the directive list
 at an index whose address is fresh, so one `simp` with these two equations
 rewrites a straightline judgment's segment into a literal directive list.
-`Executable.ValidLayout` packages the facts that make the addresses
-well-behaved: labels occupy no bytes, a cell of no bytes does nothing when it
-runs, and the program fits in the address space.
+`Executable.ValidExecutable` packages what an assembler guarantees: labels occupy
+no bytes, a cell of no bytes does nothing when it runs, the program fits in the
+address space, and no label is defined twice.
 -/
 public import Kraken.Blocks
 
@@ -257,13 +257,13 @@ def _root_.Directive.Inert (d : Directive) : Prop :=
   ∀ [Labels] s p (next : MachineData → Effects) (jmp : Int64 → MachineData → Effects),
     d.interp s p next jmp = next s
 
-/-- The facts about a laid-out executable that keep its addresses
-well-behaved: labels occupy no bytes, a cell of no bytes does nothing when it runs, and the
-program fits in the address space. -/
-class ValidLayout (e : Kraken.Executable Directive) : Prop where
+/-- What an assembler guarantees of an executable: labels occupy no bytes, a cell of no bytes
+does nothing when it runs, the program fits in the address space, and no label is defined twice. -/
+class ValidExecutable (e : Kraken.Executable Directive) : Prop where
   label_size : ∀ (i : Nat) l z, e.2[i]? = some (Directive.label l, z) → z = 0
   zero_inert : ∀ (i : Nat) d, e.2[i]? = some (d, 0) → d.Inert
   no_wrap : (e.2.map (·.2)).sum < 2 ^ 64
+  labels_nodup : (Program.labels (e.2.map (·.1))).Nodup
 
 private theorem sum_map_take_le {α} (f : α → Nat) (l : List α) (k : Nat) :
     ((l.take k).map f).sum ≤ (l.map f).sum := by
@@ -329,7 +329,7 @@ theorem exists_pos_of_directivesFromAddress (e : Kraken.Executable Directive) {a
 
 /-- Coincident addresses have equal byte counts: the total byte count fits
 the address space, so `Int64.ofNat` acts injectively on the counts. -/
-theorem sizeBefore_eq_of_addrOf_eq (e : Kraken.Executable Directive) [hv : ValidLayout e] {k n : Nat}
+theorem sizeBefore_eq_of_addrOf_eq (e : Kraken.Executable Directive) [hv : ValidExecutable e] {k n : Nat}
     (heq : e.addrOf k = e.addrOf n) : e.sizeBefore k = e.sizeBefore n := by
   have hbk : e.sizeBefore k < 2 ^ 64 :=
     Nat.lt_of_le_of_lt (sizeBefore_le_sum e k) hv.no_wrap
@@ -355,7 +355,7 @@ theorem _root_.Nat.exists_least_le {P : Nat → Prop} {n : Nat} (h : P n) :
     · exact ⟨n, Nat.le_refl n, h, fun k hk hPk => hb ⟨k, hk, hPk⟩⟩
 
 /-- Between two cut points with one address every cell occupies no bytes. -/
-theorem zero_between_of_addrOf_eq (e : Kraken.Executable Directive) [hv : ValidLayout e]
+theorem zero_between_of_addrOf_eq (e : Kraken.Executable Directive) [hv : ValidExecutable e]
     {j k n : Nat} (hjk : j ≤ k) (hkn : k < n) (hn : n ≤ e.2.length)
     (heq : e.addrOf j = e.addrOf n) :
     ∃ d, e.2[k]? = some (d, 0) := by
@@ -370,7 +370,7 @@ theorem zero_between_of_addrOf_eq (e : Kraken.Executable Directive) [hv : ValidL
 /-- The cut point of the address of index `n`: the segment there starts at
 the least index `j` with that address, and every cell from `j` up to `n`
 occupies no bytes. -/
-theorem exists_cut (e : Kraken.Executable Directive) [ValidLayout e] {n : Nat} (hn : n ≤ e.2.length) :
+theorem exists_cut (e : Kraken.Executable Directive) [ValidExecutable e] {n : Nat} (hn : n ≤ e.2.length) :
     ∃ j, j ≤ n ∧ e.directivesFromAddress (e.addrOf n) = e.2.drop j
       ∧ ∀ m, j ≤ m → m < n → ∃ d, e.2[m]? = some (d, 0) := by
   obtain ⟨j, hjn, hj, hmin⟩ :=
@@ -396,7 +396,7 @@ theorem Layout.apply_getElem? [layout : Layout] (p : Program) (i : Nat) :
 
 /-- The address of a label, from the position its scope suffix starts at. -/
 theorem Program.label_addrOf_drop [layout : Layout] {p : Program}
-    [hv : Kraken.Executable.ValidLayout (layout p)] (hnd : (Program.labels p).Nodup)
+    [hv : Kraken.Executable.ValidExecutable (layout p)] (hnd : (Program.labels p).Nodup)
     {l : Label} {i : Nat} (hdrop : p.drop i = Program.fromLabel p l)
     (hne : Program.fromLabel p l ≠ []) :
     (Executable.labels (layout p)).label l = (layout p).addrOf i := by

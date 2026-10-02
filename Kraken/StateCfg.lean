@@ -80,13 +80,13 @@ structure Contract where
   Post : MachineData → MachineData → Prop
 
 /-- The code at `c.f`, entered with a return address `ra` on the stack, returns to `ra`. -/
-def Contract.Implemented [Host] (c : Contract) : Prop :=
+def Contract.Implemented [LinkedProgram] (c : Contract) : Prop :=
   ∀ s ra, c.Pre s →
-    Eventually Host.step (fun st => st.2 = ra ∧ c.Post s st.1) (s.pushRa ra, label c.f)
+    Eventually LinkedProgram.step (fun st => st.2 = ra ∧ c.Post s st.1) (s.pushRa ra, label c.f)
 
 namespace StateWP
 
-variable [layout : Layout] [host : Host] {Q : Unit → MachineData → Prop}
+variable [layout : Layout] [prog : LinkedProgram] {Q : Unit → MachineData → Prop}
   {E : Int64 → MachineData → Prop}
 
 @[spec] theorem call_spec (asz osz : Width) (c : Contract) :
@@ -100,8 +100,8 @@ variable [layout : Layout] [host : Host] {Q : Unit → MachineData → Prop}
   obtain ⟨⟨⟨himpl, hmapped⟩, hpre⟩, hcont⟩ := hpre
   obtain ⟨i, hload⟩ := Option.isSome_iff_exists.mp hmapped
   intro k hs
-  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs.1
-  refine Eventually.step _ (fun st => st = (s.pushRa (Host.exe.addrOf (k + 1)), label c.f))
+  obtain ⟨z, hz⟩ := LinkedProgram.cell_of_prefix hs.1
+  refine Eventually.step _ (fun st => st = (s.pushRa (LinkedProgram.exe.addrOf (k + 1)), label c.f))
     ⟨k, _, z, hz, rfl, fun R next jmp _ hj => ?_⟩ ?_
   · simp only [Directive.interp, Instr.interp, Operation.interp, RelRegOrMem.interp,
       ConstExpr.interp, MachineData.store, hload, Effects.All]
@@ -123,9 +123,9 @@ theorem implemented_of_triple {P body rest : Program} {k : Nat} (hP : P.LinkedAt
   rw [hat] at hl
   obtain ⟨hlab, hrest⟩ := Program.LinkedAt.append (a := [Directive.label c.f]) hl
   obtain ⟨hbody', -⟩ := Program.LinkedAt.append hrest
-  obtain ⟨z, hz⟩ := Host.cell_of_prefix hlab.1
+  obtain ⟨z, hz⟩ := LinkedProgram.cell_of_prefix hlab.1
   rw [hlab.2 0 c.f rfl, Nat.add_zero]
-  refine Eventually.step _ (fun st => st = (s.pushRa ra, Host.exe.addrOf (i + 1)))
+  refine Eventually.step _ (fun st => st = (s.pushRa ra, LinkedProgram.exe.addrOf (i + 1)))
     ⟨i, _, z, hz, rfl, fun R next jmp hn _ => by simp only [Directive.interp]; exact hn _ rfl⟩ ?_
   rintro _ rfl
   refine eventually_trans _ _ _ _ ((hbody s ra).1 _ ⟨rfl, hpre⟩ (i + 1) hbody') ?_
@@ -135,16 +135,16 @@ theorem implemented_of_triple {P body rest : Program} {k : Nat} (hP : P.LinkedAt
 
 /-! ## The control-flow rule -/
 
-omit host in
+omit prog in
 /-- The control-flow rule: one table `T`, one variant `var`, one triple per block of
 `Program.blockAt`. Each block is entered with its table entry and the variant snapshotted as
 `n`. It falls into the next block with the entry there and the variant not increased, or, as the
 last block, falls through the end of the program with `post`. A jump exits at the address of a
 mapped label along `Program.EdgeLt`. -/
 theorem cfg {p p' : Program} {l₀ : Label} {post : MachineState → Prop}
-    [Kraken.Executable.ValidLayout (layout p)]
+    [Kraken.Executable.ValidExecutable (layout p)]
     (T : Label → MachineData → Prop) (var : Label → MachineData → Nat := fun _ _ => 0)
-    (hblocks : ∀ l blk, Program.blockAt p l = some blk → ∀ n : Nat, ∀ [Host], p.LinkedAt 0 →
+    (hblocks : ∀ l blk, Program.blockAt p l = some blk → ∀ n : Nat, ∀ [LinkedProgram], p.LinkedAt 0 →
       ⦃ fun s => T l s ∧ var l s = n ⦄
         blk.body
       ⦃ (match blk.next with
@@ -154,9 +154,9 @@ theorem cfg {p p' : Program} {l₀ : Label} {post : MachineState → Prop}
           ∧ (Program.blockAt p l').isSome ∧ T l' s ∧ Program.EdgeLt p var l n l' s ⦄)
     (hp : p = Directive.label l₀ :: p' := by rfl) (hwf : Program.WF p := by decide) :
     ∀ s, T l₀ s → Eventually (straightlineStep (layout p)) post (s, layout.start) := by
-  letI : Host := ⟨layout p⟩
+  letI : LinkedProgram := ⟨layout p⟩
   have hnd := hwf.nodup
-  have hlink : p.LinkedAt 0 := Program.linkedAt_layout hnd
+  have hlink : p.LinkedAt 0 := Program.linkedAt_layout
   have hplen : (layout p).2.length = p.length := by simp [Layout.apply_snd]
   let Fin := fun st : MachineState => st.2 = (layout p).addrOf (layout p).2.length
     ∧ ∀ pc, post (st.1, pc)
@@ -169,7 +169,7 @@ theorem cfg {p p' : Program} {l₀ : Label} {post : MachineState → Prop}
     conv at hdrop => rhs; rw [hfl]
     simpa [List.head?_drop] using congrArg List.head? hdrop
   have key : ∀ x : Label × MachineData, (Program.blockAt p x.1).isSome → T x.1 x.2 →
-      Eventually Host.step Fin
+      Eventually LinkedProgram.step Fin
         (x.2, (layout p).addrOf (p.length - (Program.fromLabel p x.1).length)) := by
     intro x
     induction x using (measure (Program.cfgMeasure p var)).wf.induction with
@@ -191,7 +191,7 @@ theorem cfg {p p' : Program} {l₀ : Label} {post : MachineState → Prop}
       rw [Nat.zero_add, htext] at hl
       obtain ⟨hlab, hrest⟩ := Program.LinkedAt.append (a := [Directive.label l]) hl
       obtain ⟨hbody, -⟩ := Program.LinkedAt.append hrest
-      obtain ⟨z, hz⟩ := Host.cell_of_prefix hlab.1
+      obtain ⟨z, hz⟩ := LinkedProgram.cell_of_prefix hlab.1
       refine Eventually.step _ (fun st => st = (s, (layout p).addrOf (i + 1)))
         ⟨i, _, z, hz, rfl, fun R next jmp hn _ => by simp only [Directive.interp]; exact hn _ rfl⟩ ?_
       rintro _ rfl
@@ -263,7 +263,7 @@ theorem cfg {p p' : Program} {l₀ : Label} {post : MachineState → Prop}
     simp [hnot]
   have := key (l₀, s) h0 hT
   rw [hfl, Nat.sub_self] at this
-  have := Host.eventually_straightlineStep (e := layout p) (post := post)
+  have := LinkedProgram.eventually_straightlineStep (e := layout p) (post := post)
     (fun st hst => hst) this
   rwa [Kraken.Executable.addrOf_zero, Layout.apply_fst] at this
 

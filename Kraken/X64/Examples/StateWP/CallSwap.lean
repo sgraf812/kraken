@@ -57,7 +57,7 @@ private abbrev pswap_table (d : MachineData) : Label → MachineData → Prop
 variable [layout : Layout]
 
 omit layout in
-private theorem pswap_body_spec [Host] (s : MachineData) (ra : Int64) :
+private theorem pswap_body_spec [LinkedProgram] (s : MachineData) (ra : Int64) :
     ⦃ fun t => t = s.pushRa ra ∧ SwapPre s ⦄
       pswap.body
     ⦃ (fun _ _ => False); fun a s' => a = ra ∧ SwapPost s s' ⦄ := by
@@ -66,7 +66,7 @@ private theorem pswap_body_spec [Host] (s : MachineData) (ra : Int64) :
   simp only [MachineData.pushRa]
   kvcgen64 with finish
 
-private theorem swap_call_spec [Host] {Q : Unit → MachineData → Prop}
+private theorem swap_call_spec [LinkedProgram] {Q : Unit → MachineData → Prop}
     {E : Int64 → MachineData → Prop} (asz osz : Width) :
     ⦃ fun s => swapC.Implemented
         ⊓ ((Mem.loadInt s.dmem (s.regs.get64 .rsp - 8#64) 8).isSome = true)
@@ -75,7 +75,7 @@ private theorem swap_call_spec [Host] {Q : Unit → MachineData → Prop}
     ⦃ Q; E ⦄ :=
   StateWP.call_spec asz osz swapC
 
-theorem pswap_correct [Kraken.Executable.ValidLayout (layout pswap)]
+theorem pswap_correct [Kraken.Executable.ValidExecutable (layout pswap)]
     (d : MachineData) (hslot : SwapPre d) :
     Eventually (straightlineStep (layout pswap))
       (fun s => s.1.regs.get64 .rax = d.regs.get64 .rax

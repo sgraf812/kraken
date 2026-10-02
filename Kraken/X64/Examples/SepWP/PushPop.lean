@@ -23,7 +23,7 @@ def p6 := parse("push %rax
 mov $0, %rax
 pop %rax")
 
-theorem p6_spec [Host] (stack : List UInt8) (h_len : stack.length = 8) (a sp : UInt64) :
+theorem p6_spec [LinkedProgram] (stack : List UInt8) (h_len : stack.length = 8) (a sp : UInt64) :
     ⦃ fun r _ _ => ⌜r.rax = a ∧ r.rsp = sp⌝ ⊓ stack.AtM (r.rsp.toBitVec - 8#64) ⦄
       p6
     ⦃ fun _ r _ _ => ⌜r.rax = a ∧ r.rsp = sp⌝ ⦄ := by
@@ -34,11 +34,11 @@ theorem p6_spec [Host] (stack : List UInt8) (h_len : stack.length = 8) (a sp : U
 `p6_spec` read back as the judgment of the baseline example `p6_correct`,
 over the same program text. -/
 
-theorem p6_correct [layout : _root_.Layout] [Kraken.Executable.ValidLayout (layout p6)] (s₀ : MachineData)
+theorem p6_correct [layout : _root_.Layout] [Kraken.Executable.ValidExecutable (layout p6)] (s₀ : MachineData)
     (stack : List UInt8) (h_len : stack.length = 8) (R : DataMem → Prop)
     (h_mem : s₀.dmem =⋆ Eq (stack.At (s₀.regs.rsp.toBitVec - 8#64)) ⋆ R) :
     Eventually (straightlineStep (layout p6))
       (fun s' => s'.1.regs.rax = s₀.regs.rax ∧ s'.1.regs.rsp = s₀.regs.rsp)
       (s₀, Kraken.Layout.start Directive) := by
-  refine eventually_straightlineStep_of_sep_wp (List.get_AtM_sep h_mem) ?_
+  apply eventually_straightlineStep_of_sep_wp (List.get_AtM_sep h_mem)
   kvcgen64 [p6] with finish

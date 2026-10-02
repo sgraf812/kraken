@@ -1,44 +1,44 @@
 module
 
 /-
-The run of a program fragment inside the executable that hosts it.
-`Program.run p Q E s` says: started at the first cell of `p` in state `s`, the host eventually
-reaches the end of `p` with `Q`, or an exit `a` with `E a`. The weakest preconditions of
+The run of a program fragment inside the linked program that contains it.
+`Program.run p Q E s` says: started at the first cell of `p` in state `s`, the linked program
+eventually reaches the end of `p` with `Q`, or an exit `a` with `E a`. The weakest preconditions of
 Kraken/StateWP.lean and Kraken/SepWP.lean interpret a `Program` by this run.
 -/
 public import Kraken.SegmentExtract
 
 @[expose] public section
 
-/-- The executable that hosts the fragment under verification. -/
-class Host where
+/-- The linked program that contains the fragment under verification. -/
+class LinkedProgram where
   exe : Executable
 
-instance [Host] : Labels := Executable.labels Host.exe
+instance [LinkedProgram] : Labels := Executable.labels LinkedProgram.exe
 
-/-- One cell of the host, at its address: for every continuation of the cell, the cell leads to
+/-- One cell of the linked program, at its address: for every continuation of the cell, the cell leads to
 the continuation of a state in `P`. -/
-def Host.step [Host] (st : MachineState) (P : MachineState → Prop) : Prop :=
-  ∃ j d z, Host.exe.2[j]? = some (d, z) ∧ st.2 = Host.exe.addrOf j ∧
+def LinkedProgram.step [LinkedProgram] (st : MachineState) (P : MachineState → Prop) : Prop :=
+  ∃ j d z, LinkedProgram.exe.2[j]? = some (d, z) ∧ st.2 = LinkedProgram.exe.addrOf j ∧
     ∀ (R : MachineState → Prop) (next : MachineData → Effects)
       (jmp : Int64 → MachineData → Effects),
-      (∀ s', P (s', Host.exe.addrOf (j + 1)) → (next s').All R) →
+      (∀ s', P (s', LinkedProgram.exe.addrOf (j + 1)) → (next s').All R) →
       (∀ a s', P (s', a) → (jmp a s').All R) →
-      (d.interp st.1 ⟨Host.exe.addrOf j, Host.exe.addrOf (j + 1)⟩ next jmp).All R
+      (d.interp st.1 ⟨LinkedProgram.exe.addrOf j, LinkedProgram.exe.addrOf (j + 1)⟩ next jmp).All R
 
-/-- `p` sits at cell `k` of the host, and every label of `p` resolves to its own cell. -/
-def Program.LinkedAt [Host] (p : Program) (k : Nat) : Prop :=
-  p <+: (Host.exe.2.map (·.1)).drop k ∧
-  ∀ i l, p[i]? = some (Directive.label l) → label l = Host.exe.addrOf (k + i)
+/-- `p` sits at cell `k` of the linked program, and every label of `p` resolves to its own cell. -/
+def Program.LinkedAt [LinkedProgram] (p : Program) (k : Nat) : Prop :=
+  p <+: (LinkedProgram.exe.2.map (·.1)).drop k ∧
+  ∀ i l, p[i]? = some (Directive.label l) → label l = LinkedProgram.exe.addrOf (k + i)
 
-def Program.run [Host] (p : Program) (Q : MachineData → Prop)
+def Program.run [LinkedProgram] (p : Program) (Q : MachineData → Prop)
     (E : Int64 → MachineData → Prop) (s : MachineData) : Prop :=
   ∀ k, p.LinkedAt k →
-    Eventually Host.step
-      (fun st => (st.2 = Host.exe.addrOf (k + p.length) ∧ Q st.1) ∨ E st.2 st.1)
-      (s, Host.exe.addrOf k)
+    Eventually LinkedProgram.step
+      (fun st => (st.2 = LinkedProgram.exe.addrOf (k + p.length) ∧ Q st.1) ∨ E st.2 st.1)
+      (s, LinkedProgram.exe.addrOf k)
 
-theorem Program.run_mono [Host] {p : Program} {Q₁ Q₂ : MachineData → Prop}
+theorem Program.run_mono [LinkedProgram] {p : Program} {Q₁ Q₂ : MachineData → Prop}
     {E₁ E₂ : Int64 → MachineData → Prop} (hQ : ∀ s, Q₁ s → Q₂ s) (hE : ∀ a s, E₁ a s → E₂ a s)
     {s : MachineData} (h : Program.run p Q₁ E₁ s) : Program.run p Q₂ E₂ s :=
   fun k hk => eventually_trans _ _ _ _ (h k hk) fun _ hb => Eventually.done _ <|
@@ -53,7 +53,7 @@ theorem List.cons_prefix_drop {α : Type} {d : α} {q L : List α} {k : Nat}
   · rw [← List.drop_drop, hk]
     rfl
 
-theorem Program.LinkedAt.append [Host] {a b : Program} {k : Nat}
+theorem Program.LinkedAt.append [LinkedProgram] {a b : Program} {k : Nat}
     (h : Program.LinkedAt (a ++ b) k) : a.LinkedAt k ∧ b.LinkedAt (k + a.length) := by
   obtain ⟨⟨t, ht⟩, hlab⟩ := h
   refine ⟨⟨⟨b ++ t, by rw [← ht, List.append_assoc]⟩, fun i l hi => hlab i l ?_⟩,
@@ -64,7 +64,7 @@ theorem Program.LinkedAt.append [Host] {a b : Program} {k : Nat}
   · rw [hlab (a.length + i) l (by rw [List.getElem?_append_right (by omega)]; simpa using hi),
       Nat.add_assoc]
 
-theorem Program.LinkedAt.drop [Host] {p : Program} {k : Nat} (h : p.LinkedAt k) (m : Nat) :
+theorem Program.LinkedAt.drop [LinkedProgram] {p : Program} {k : Nat} (h : p.LinkedAt k) (m : Nat) :
     Program.LinkedAt (p.drop m) (k + m) := by
   by_cases hm : m ≤ p.length
   · have h' := (Program.LinkedAt.append (a := p.take m) (b := p.drop m)
@@ -74,7 +74,7 @@ theorem Program.LinkedAt.drop [Host] {p : Program} {k : Nat} (h : p.LinkedAt k) 
     exact ⟨List.nil_prefix, fun _ _ h => by simp at h⟩
 
 /-- The run of `d :: p` is the run of `d` with the run of `p` as its post. -/
-theorem Program.run_cons [Host] {d : Directive} {p : Program} {Q : MachineData → Prop}
+theorem Program.run_cons [LinkedProgram] {d : Directive} {p : Program} {Q : MachineData → Prop}
     {E : Int64 → MachineData → Prop} {s : MachineData}
     (h : Program.run [d] (fun s' => Program.run p Q E s') E s) : Program.run (d :: p) Q E s := by
   intro k hk
@@ -91,11 +91,11 @@ theorem Program.run_cons [Host] {d : Directive} {p : Program} {Q : MachineData �
 
 /-! ## One cell -/
 
-theorem Host.cell_of_prefix [Host] {d : Directive} {p : Program} {k : Nat}
-    (h : (d :: p) <+: (Host.exe.2.map (·.1)).drop k) : ∃ z, Host.exe.2[k]? = some (d, z) := by
+theorem LinkedProgram.cell_of_prefix [LinkedProgram] {d : Directive} {p : Program} {k : Nat}
+    (h : (d :: p) <+: (LinkedProgram.exe.2.map (·.1)).drop k) : ∃ z, LinkedProgram.exe.2[k]? = some (d, z) := by
   have hd := (List.cons_prefix_drop h).1
   rw [List.getElem?_map] at hd
-  cases hc : Host.exe.2[k]? with
+  cases hc : LinkedProgram.exe.2[k]? with
   | none => rw [hc] at hd; cases hd
   | some c =>
     rw [hc] at hd
@@ -104,14 +104,14 @@ theorem Host.cell_of_prefix [Host] {d : Directive} {p : Program} {k : Nat}
     exact ⟨z, rfl⟩
 
 /-- A cell whose every outcome lies in `B`. -/
-theorem Host.eventually_cell [Host] {k : Nat} {d : Directive} {z : Nat}
-    (hd : Host.exe.2[k]? = some (d, z)) {B : MachineState → Prop} {s : MachineData}
+theorem LinkedProgram.eventually_cell [LinkedProgram] {k : Nat} {d : Directive} {z : Nat}
+    (hd : LinkedProgram.exe.2[k]? = some (d, z)) {B : MachineState → Prop} {s : MachineData}
     (h : ∀ (R : MachineState → Prop) (next : MachineData → Effects)
       (jmp : Int64 → MachineData → Effects),
-      (∀ s', B (s', Host.exe.addrOf (k + 1)) → (next s').All R) →
+      (∀ s', B (s', LinkedProgram.exe.addrOf (k + 1)) → (next s').All R) →
       (∀ a s', B (s', a) → (jmp a s').All R) →
-      (d.interp s ⟨Host.exe.addrOf k, Host.exe.addrOf (k + 1)⟩ next jmp).All R) :
-    Eventually Host.step B (s, Host.exe.addrOf k) :=
+      (d.interp s ⟨LinkedProgram.exe.addrOf k, LinkedProgram.exe.addrOf (k + 1)⟩ next jmp).All R) :
+    Eventually LinkedProgram.step B (s, LinkedProgram.exe.addrOf k) :=
   Eventually.step _ _ ⟨k, d, z, hd, rfl, h⟩ fun _ h => Eventually.done _ h
 
 /-! ## Reading a run back as the baseline judgment -/
@@ -149,7 +149,7 @@ theorem Directives.interp_inert_append [Labels] {pre rest : List (Directive × N
     exact ih (fun c hc => hpre c (List.mem_cons_of_mem _ hc))
 
 /-- The cells from `j` up to `j'` occupy no bytes and do nothing. -/
-theorem Executable.inert_between (e : Executable) [hv : Kraken.Executable.ValidLayout e]
+theorem Executable.inert_between (e : Executable) [hv : Kraken.Executable.ValidExecutable e]
     {j j' : Nat} (hjj : j ≤ j') (hj' : j' ≤ e.2.length)
     (hzero : ∀ m, j ≤ m → m < j' → ∃ d, e.2[m]? = some (d, 0)) :
     ∀ c ∈ (e.2.drop j).take (j' - j), c.2 = 0 ∧ c.1.Inert := by
@@ -169,11 +169,11 @@ theorem Executable.drop_split (e : Executable) {j j' : Nat} (hjj : j ≤ j') :
   conv => lhs; rw [← List.take_append_drop (j' - j) (e.2.drop j)]
   rw [List.drop_drop, show j + (j' - j) = j' by omega]
 
-/-- Cell steps that end only at the end of the host make up bursts that end there. -/
-theorem Host.eventually_straightlineStep [Layout] {e : Executable}
-    [hv : Kraken.Executable.ValidLayout e] {B post : MachineState → Prop}
+/-- Cell steps that end only at the end of the program make up bursts that end there. -/
+theorem LinkedProgram.eventually_straightlineStep [Layout] {e : Executable}
+    [hv : Kraken.Executable.ValidExecutable e] {B post : MachineState → Prop}
     (hB : ∀ st, B st → st.2 = e.addrOf e.2.length ∧ ∀ pc, post (st.1, pc))
-    {st : MachineState} (h : @Eventually _ (@Host.step ⟨e⟩) B st) :
+    {st : MachineState} (h : @Eventually _ (@LinkedProgram.step ⟨e⟩) B st) :
     Eventually (straightlineStep e) post st := by
   letI : Labels := Executable.labels e
   let G := Eventually (straightlineStep e) post
@@ -195,7 +195,7 @@ theorem Host.eventually_straightlineStep [Layout] {e : Executable}
     rw [hdir, Executable.drop_split e hj₀,
       Directives.interp_inert_append (Executable.inert_between e hj₀ hj hzero)]
     exact hb
-  have key : ∀ st, @Eventually _ (@Host.step ⟨e⟩) B st →
+  have key : ∀ st, @Eventually _ (@LinkedProgram.step ⟨e⟩) B st →
       G st ∧ ∀ j, j ≤ e.2.length → st.2 = e.addrOf j → Burst j st.1 := by
     intro st h
     induction h with
@@ -233,8 +233,9 @@ theorem Host.eventually_straightlineStep [Layout] {e : Executable}
   exact (key st h).1
 
 theorem Program.linkedAt_layout [layout : Layout] {p : Program}
-    [hv : Kraken.Executable.ValidLayout (layout p)] (hnd : (Program.labels p).Nodup) :
+    [hv : Kraken.Executable.ValidExecutable (layout p)] :
     @Program.LinkedAt ⟨layout p⟩ p 0 := by
+  have hnd : (Program.labels p).Nodup := Layout.text (p := p) ▸ hv.labels_nodup
   refine ⟨?_, fun i l hi => ?_⟩
   · show p <+: ((layout p).2.map (·.1)).drop 0
     rw [Layout.text, List.drop_zero]
@@ -263,13 +264,12 @@ theorem Program.linkedAt_layout [layout : Layout] {p : Program}
       exact (List.nodup_append.mp hnd').2.2 l h1 l h2 rfl
 
 theorem Program.run_eventually [layout : Layout] {p : Program}
-    [hv : Kraken.Executable.ValidLayout (layout p)] (hnd : (Program.labels p).Nodup)
-    {Q : MachineData → Prop} {E : Int64 → MachineData → Prop} {s : MachineData}
+    [Kraken.Executable.ValidExecutable (layout p)] {Q : MachineData → Prop} {E : Int64 → MachineData → Prop} {s : MachineData}
     {post : MachineState → Prop} (h : @Program.run ⟨layout p⟩ p Q E s)
     (hQ : ∀ s', Q s' → ∀ pc, post (s', pc)) (hE : ∀ a s', ¬ E a s') :
     Eventually (straightlineStep (layout p)) post (s, layout.start) := by
-  have := Host.eventually_straightlineStep (e := layout p) (post := post) ?_
-    (h 0 (Program.linkedAt_layout hnd))
+  have := LinkedProgram.eventually_straightlineStep (e := layout p) (post := post) ?_
+    (h 0 Program.linkedAt_layout)
   · change Eventually _ _ (s, (layout p).addrOf 0) at this
     rwa [Kraken.Executable.addrOf_zero, Layout.apply_fst] at this
   · rintro ⟨s', a⟩ (⟨ha, hq⟩ | he)
