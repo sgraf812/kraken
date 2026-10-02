@@ -56,7 +56,7 @@ theorem Program.drop_fromLabel (p : Program) (l : Label) :
 /-- Entering the host at the address of index `k` runs the host from index `k`. -/
 def Host.Placed [Host] : Prop :=
   ∀ k, k ≤ Host.exe.2.length → ∀ s post, Host.burst k s post →
-    Host.Eventually post (s, Host.exe.addrOf k)
+    Eventually (straightlineStep Host.exe) post (s, Host.exe.addrOf k)
 
 /-- Label cells of size zero cost the burst nothing. -/
 theorem Directives.interp_labels_append [Labels] {pre rest : List (Directive × Nat)}
@@ -86,7 +86,7 @@ theorem Host.placed_of_valid [Host] [hv : Kraken.Executable.ValidLayout Host.exe
     conv => lhs; rw [← List.take_append_drop (k - j) (Host.exe.2.drop j)]
     rw [List.drop_drop, show j + (k - j) = k by omega]
   show (Directives.interp (Host.exe.directivesFromAddress (Host.exe.addrOf k)) s
-    (Host.exe.addrOf k) fun pc s => .done (s, pc)).All (Host.Eventually post)
+    (Host.exe.addrOf k) fun pc s => .done (s, pc)).All (Eventually (straightlineStep Host.exe) post)
   rw [hdir, hsplit, Directives.interp_labels_append]
   · exact h
   · intro c hc
@@ -134,7 +134,7 @@ structure Contract where
 /-- The code at `c.f`, entered with a return address `ra` on the stack, returns to `ra`. -/
 def Contract.Implemented [Host] (c : Contract) : Prop :=
   ∀ s ra, c.Pre s →
-    Host.Eventually (fun st => st.2 = ra ∧ c.Post s st.1) (s.pushRa ra, label c.f)
+    Eventually (straightlineStep Host.exe) (fun st => st.2 = ra ∧ c.Post s st.1) (s.pushRa ra, label c.f)
 
 namespace StateWP
 

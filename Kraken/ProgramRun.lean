@@ -18,20 +18,16 @@ class Host where
 
 instance [Host] : Labels := Executable.labels Host.exe
 
-/-- `post` holds after finitely many bursts of the host. -/
-def Host.Eventually [Host] (post : MachineState → Prop) : MachineState → Prop :=
-  _root_.Eventually (fun st P => (Executable.straightline Host.exe st .done).All P) post
-
 /-- The burst that runs the host from index `k` eventually reaches `post`. -/
 def Host.burst [Host] (k : Nat) (s : MachineData) (post : MachineState → Prop) : Prop :=
   (Directives.interp (Host.exe.2.drop k) s (Host.exe.addrOf k) fun pc s => .done (s, pc)).All
-    (Host.Eventually post)
+    (Eventually (straightlineStep Host.exe) post)
 
 def Program.run [Host] (q : Program) (Q : MachineData → Prop)
     (E : Int64 → MachineData → Prop) (s : MachineData) : Prop :=
   ∀ k post, q <+: (Host.exe.2.map (·.1)).drop k →
     (∀ s', Q s' → Host.burst (k + q.length) s' post) →
-    (∀ a s', E a s' → Host.Eventually post (s', a)) →
+    (∀ a s', E a s' → Eventually (straightlineStep Host.exe) post (s', a)) →
     Host.burst k s post
 
 theorem Program.run_mono [Host] {q : Program} {Q₁ Q₂ : MachineData → Prop}
@@ -78,7 +74,7 @@ theorem Host.burst_cell [Host] {k : Nat} {d : Directive} {z : Nat}
       (Directive.interp d s ⟨Host.exe.addrOf k, Host.exe.addrOf (k + 1)⟩
         (fun s' => Directives.interp (Host.exe.2.drop (k + 1)) s' (Host.exe.addrOf (k + 1))
           fun pc s => .done (s, pc))
-        (fun pc s => .done (s, pc))).All (Host.Eventually post) := by
+        (fun pc s => .done (s, pc))).All (Eventually (straightlineStep Host.exe) post) := by
   obtain ⟨hlt, hget⟩ := List.getElem?_eq_some_iff.mp hd
   unfold Host.burst
   rw [List.drop_eq_getElem_cons hlt, hget, Kraken.Executable.addrOf_succ _ hd]
@@ -105,7 +101,7 @@ theorem Layout.frag_map_fst [Layout] (n : Nat) (p : Program) :
 theorem Layout.text {layout : Layout} {p : Program} : (layout p).2.map (·.1) = p := by
   rw [Layout.apply_snd, Layout.frag_map_fst]
 
-theorem straightlineStep_eq_interp [Layout] (e : Executable) (st : MachineState)
+theorem straightlineStep_eq_interp (e : Executable) (st : MachineState)
     (post : MachineState → Prop) :
     straightlineStep e st post
       = (@Directives.interp (Executable.labels e) (e.directivesFromAddress st.2) st.1 st.2
@@ -113,18 +109,14 @@ theorem straightlineStep_eq_interp [Layout] (e : Executable) (st : MachineState)
   unfold straightlineStep Executable.straightline
   rfl
 
-theorem Host.eventually_eq [Layout] (e : Executable) (post : MachineState → Prop) :
-    @Host.Eventually (Host.mk e) post = _root_.Eventually (straightlineStep e) post := rfl
-
 theorem Host.eventually_of_burst [layout : Layout] {p : Program} {s : MachineData}
     {post : MachineState → Prop} (h : @Host.burst ⟨layout p⟩ 0 s post) :
-    _root_.Eventually (straightlineStep (layout p)) post (s, layout.start) := by
-  refine _root_.Eventually.step _ _ ?_ fun _ h => h
+    Eventually (straightlineStep (layout p)) post (s, layout.start) := by
+  refine Eventually.step _ _ ?_ fun _ h => h
   rw [straightlineStep_eq_interp]
   dsimp only
   rw [Kraken.Executable.directivesFromStart]
   unfold Host.burst at h
-  rw [Host.eventually_eq] at h
   simpa [Layout.apply_snd, Layout.frag, Kraken.Executable.addrOf_zero, Layout.apply_fst] using h
 
 theorem Program.run_eventually [layout : Layout] {p : Program} {Q : MachineData → Prop}
