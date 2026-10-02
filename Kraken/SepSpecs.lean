@@ -40,8 +40,8 @@ variable [Host] {Q : Unit → Reg64s → RegZmms → StatusFlags → MProp 64}
 @[spec] theorem nil_spec :
     ⦃ fun rg z f => Q () rg z f ⦄ ([] : Program) ⦃ Q; E ⦄ := by
   refine sep_intro fun F s hpre => ?_
-  intro k post _ hQ _
-  exact hQ s hpre
+  intro k _
+  exact Eventually.done _ (Or.inl ⟨rfl, hpre⟩)
 
 /-! ## Register instructions
 
@@ -54,12 +54,12 @@ to the updated registers and flags. -/
       Directive.instr (.regular asz .W64 (.mov (.reg (.low r .W64)) (.imm (.int64 i))))
     ⦃ Q ⦄ := by
   refine triple_directive.mpr (sep_intro fun F s hpre => ?_)
-  intro k post hs hQ _
-  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs
-  rw [Host.burst_cell hz]
+  intro k hs
+  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs.1
+  refine Host.eventually_cell hz fun R next jmp hQ _ => ?_
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
     MachineData.set, MachineData.setReg, Reg64s.set_low_W64, Effects.All]
-  exact hQ _ hpre
+  exact hQ _ (Or.inl ⟨rfl, hpre⟩)
 
 /-! ## Memory instructions
 
@@ -88,13 +88,13 @@ leaves it, at the registers and flags it produces. -/
         Std.ExtHashMap.disjoint_symm hinter, hbs, hF⟩
   have hload := Mem.loadInt_eq_of_AtM hown hlen (by decide)
   have hstore := Mem.get_AtM_sep_storeInt hown hlen (s.regs.get64 rs).toInt
-  intro k post hs hQ _
-  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs
-  rw [Host.burst_cell hz]
+  intro k hs
+  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs.1
+  refine Host.eventually_cell hz fun R next jmp hQ _ => ?_
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
     RegOrMem.interp, MachineData.set, MachineData.store, Reg64s.get_low_W64,
     AddrExpr.zeroExtend_interp_base_disp, hload, Effects.All]
-  refine hQ _ ?_
+  refine hQ _ (Or.inl ⟨rfl, ?_⟩)
   rw [MProp.sep_comm] at hstore
   exact (MProp.le_def _ _).mp (MProp.sep_mono_right F hpost) _ hstore
 
@@ -126,14 +126,14 @@ the post holds at the new register and flags. -/
       ⟨mm, mf, by rw [← hunion]; exact (Std.ExtHashMap.union_comm_of_disjoint mf mm hinter).symm,
         Std.ExtHashMap.disjoint_symm hinter, hbs, hF⟩
   have hload := Mem.loadInt_eq_of_AtM hown hlen (by decide)
-  intro k post hs hQ _
-  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs
-  rw [Host.burst_cell hz]
+  intro k hs
+  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs.1
+  refine Host.eventually_cell hz fun R next jmp hQ _ => ?_
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
     RegOrMem.interp, MachineData.load, MachineData.set, MachineData.setReg,
     Reg64s.get_low_W64, Reg64s.set_low_W64, AddrExpr.zeroExtend_interp_base_disp,
     hload, Effects.All]
-  refine hQ _ ?_
+  refine hQ _ (Or.inl ⟨rfl, ?_⟩)
   rw [MProp.sep_comm] at hown
   exact (MProp.le_def _ _).mp (MProp.sep_mono_right F hpost) _ hown
 
@@ -147,13 +147,13 @@ the post holds at the new register and flags. -/
           (.mov (.reg (.low rd .W64)) (.regOrMem (.reg (.low rs .W64)))))
     ⦃ Q ⦄ := by
   refine triple_directive.mpr (sep_intro fun F s hpre => ?_)
-  intro k post hs hQ _
-  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs
-  rw [Host.burst_cell hz]
+  intro k hs
+  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs.1
+  refine Host.eventually_cell hz fun R next jmp hQ _ => ?_
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp, RegOrMem.interp,
     MachineData.set, MachineData.setReg, Reg64s.get_low_W64, Reg64s.set_low_W64,
     Effects.All]
-  exact hQ _ hpre
+  exact hQ _ (Or.inl ⟨rfl, hpre⟩)
 
 /-- Exclusive-or of two 64-bit registers; the adjust flag is unspecified. -/
 @[spec] theorem xor_reg_reg_spec (asz : Width) (rd rs : Reg64) :
@@ -163,14 +163,14 @@ the post holds at the new register and flags. -/
           (.xor (.reg (.low rd .W64)) (.regOrMem (.reg (.low rs .W64)))))
     ⦃ Q ⦄ := by
   refine triple_directive.mpr (sep_intro fun F s hpre => ?_)
-  intro k post hs hQ _
-  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs
-  rw [Host.burst_cell hz]
+  intro k hs
+  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs.1
+  refine Host.eventually_cell hz fun R next jmp hQ _ => ?_
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp, RegOrMem.interp,
     MachineData.set, MachineData.setReg, Reg64s.get_low_W64, Reg64s.set_low_W64,
     Effects.All]
   intro af
-  exact hQ _ ((MProp.le_def _ _).mp (MProp.sep_mono_right F (iInf_le _ af)) _ hpre)
+  exact hQ _ (Or.inl ⟨rfl, ((MProp.le_def _ _).mp (MProp.sep_mono_right F (iInf_le _ af)) _ hpre)⟩)
 
 /-- Load the address `disp(base, index, 8)` into a register. -/
 @[spec] theorem lea_sib_spec (rd b i : Reg64) (d : Int64) :
@@ -179,12 +179,12 @@ the post holds at the new register and flags. -/
           (.lea (.low rd .W64) ⟨some (.reg b), some ⟨i, .W64⟩, .int64 d⟩))
     ⦃ Q ⦄ := by
   refine triple_directive.mpr (sep_intro fun F s hpre => ?_)
-  intro k post hs hQ _
-  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs
-  rw [Host.burst_cell hz]
+  intro k hs
+  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs.1
+  refine Host.eventually_cell hz fun R next jmp hQ _ => ?_
   simp only [Directive.interp, Instr.interp, Operation.interp, MachineData.setReg,
     Reg64s.set_low_W64, AddrExpr.zeroExtend_interp_sib, Effects.All]
-  exact hQ _ hpre
+  exact hQ _ (Or.inl ⟨rfl, hpre⟩)
 
 /-- Store an immediate at `disp(base)`. -/
 @[spec] theorem mov_store_imm_spec (b : Reg64) (d : Int64) (i : Int64)
@@ -205,13 +205,13 @@ the post holds at the new register and flags. -/
       ⟨mm, mf, by rw [← hunion]; exact (Std.ExtHashMap.union_comm_of_disjoint mf mm hinter).symm,
         Std.ExtHashMap.disjoint_symm hinter, hbs, hF⟩
   have hload := Mem.loadInt_eq_of_AtM hown hlen (by decide)
-  intro k post hs hQ _
-  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs
-  rw [Host.burst_cell hz]
+  intro k hs
+  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs.1
+  refine Host.eventually_cell hz fun R next jmp hQ _ => ?_
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp, ConstExpr.interp,
     RegOrMem.interp, MachineData.set, MachineData.store,
     AddrExpr.zeroExtend_interp_base_disp, hload, Effects.All]
-  refine hQ _ ?_
+  refine hQ _ (Or.inl ⟨rfl, ?_⟩)
   have hstore := Mem.get_AtM_sep_storeInt hown hlen ((BitVec.setWidth 64 i.toBitVec).toInt)
   rw [MProp.sep_comm] at hstore
   exact (MProp.le_def _ _).mp (MProp.sep_mono_right F hpost) _ hstore
@@ -236,13 +236,13 @@ the post holds at the new register and flags. -/
       ⟨mm, mf, by rw [← hunion]; exact (Std.ExtHashMap.union_comm_of_disjoint mf mm hinter).symm,
         Std.ExtHashMap.disjoint_symm hinter, hbs, hF⟩
   have hload := Mem.loadInt_eq_of_AtM hown hlen (by decide)
-  intro k post hs hQ _
-  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs
-  rw [Host.burst_cell hz]
+  intro k hs
+  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs.1
+  refine Host.eventually_cell hz fun R next jmp hQ _ => ?_
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
     RegOrMem.interp, MachineData.set, MachineData.store, Reg64s.get_low_W64,
     AddrExpr.zeroExtend_interp_sib, hload, Effects.All]
-  refine hQ _ ?_
+  refine hQ _ (Or.inl ⟨rfl, ?_⟩)
   have hstore := Mem.get_AtM_sep_storeInt hown hlen ((s.regs.get64 rs).toInt)
   rw [MProp.sep_comm] at hstore
   exact (MProp.le_def _ _).mp (MProp.sep_mono_right F hpost) _ hstore
@@ -266,13 +266,13 @@ the post holds at the new register and flags. -/
       ⟨mm, mf, by rw [← hunion]; exact (Std.ExtHashMap.union_comm_of_disjoint mf mm hinter).symm,
         Std.ExtHashMap.disjoint_symm hinter, hbs, hF⟩
   have hload := Mem.loadInt_eq_of_AtM hown hlen (by decide)
-  intro k post hs hQ _
-  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs
-  rw [Host.burst_cell hz]
+  intro k hs
+  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs.1
+  refine Host.eventually_cell hz fun R next jmp hQ _ => ?_
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
     RegOrMem.interp, MachineData.load, MachineData.set, MachineData.setReg,
     Reg64s.set_low_W64, AddrExpr.zeroExtend_interp_base_disp, hload, Effects.All]
-  refine hQ _ ?_
+  refine hQ _ (Or.inl ⟨rfl, ?_⟩)
   rw [MProp.sep_comm] at hown
   exact (MProp.le_def _ _).mp (MProp.sep_mono_right F hpost) _ hown
 
@@ -296,13 +296,13 @@ the post holds at the new register and flags. -/
       ⟨mm, mf, by rw [← hunion]; exact (Std.ExtHashMap.union_comm_of_disjoint mf mm hinter).symm,
         Std.ExtHashMap.disjoint_symm hinter, hbs, hF⟩
   have hload := Mem.loadInt_eq_of_AtM hown hlen (by decide)
-  intro k post hs hQ _
-  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs
-  rw [Host.burst_cell hz]
+  intro k hs
+  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs.1
+  refine Host.eventually_cell hz fun R next jmp hQ _ => ?_
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
     RegOrMem.interp, MachineData.load, MachineData.set, MachineData.setReg,
     Reg64s.set_low_W64, AddrExpr.zeroExtend_interp_sib, hload, Effects.All]
-  refine hQ _ ?_
+  refine hQ _ (Or.inl ⟨rfl, ?_⟩)
   rw [MProp.sep_comm] at hown
   exact (MProp.le_def _ _).mp (MProp.sep_mono_right F hpost) _ hown
 
@@ -328,12 +328,12 @@ slot at the stack pointer and reads it. Both move the stack pointer by eight. -/
       ⟨mm, mf, by rw [← hunion]; exact (Std.ExtHashMap.union_comm_of_disjoint mf mm hinter).symm,
         Std.ExtHashMap.disjoint_symm hinter, hbs, hF⟩
   have hload := Mem.loadInt_eq_of_AtM hown hlen (by decide)
-  intro k post hs hQ _
-  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs
-  rw [Host.burst_cell hz]
+  intro k hs
+  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs.1
+  refine Host.eventually_cell hz fun R next jmp hQ _ => ?_
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp, RegOrMem.interp,
     MachineData.store, Reg64s.get_low_W64, Width.bytesv_W64, hload, Effects.All]
-  refine hQ _ ?_
+  refine hQ _ (Or.inl ⟨rfl, ?_⟩)
   have hstore := Mem.get_AtM_sep_storeInt hown hlen ((s.regs.get64 rs).toInt)
   rw [MProp.sep_comm] at hstore
   exact (MProp.le_def _ _).mp (MProp.sep_mono_right F hpost) _ hstore
@@ -356,12 +356,12 @@ slot at the stack pointer and reads it. Both move the stack pointer by eight. -/
       ⟨mm, mf, by rw [← hunion]; exact (Std.ExtHashMap.union_comm_of_disjoint mf mm hinter).symm,
         Std.ExtHashMap.disjoint_symm hinter, hbs, hF⟩
   have hload := Mem.loadInt_eq_of_AtM hown hlen (by decide)
-  intro k post hs hQ _
-  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs
-  rw [Host.burst_cell hz]
+  intro k hs
+  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs.1
+  refine Host.eventually_cell hz fun R next jmp hQ _ => ?_
   simp only [Directive.interp, Instr.interp, Operation.interp, MachineData.load, MachineData.set,
     MachineData.setReg, Reg64s.set_low_W64, Width.bytesv_W64, hload, Effects.All]
-  refine hQ _ ?_
+  refine hQ _ (Or.inl ⟨rfl, ?_⟩)
   rw [MProp.sep_comm] at hown
   exact (MProp.le_def _ _).mp (MProp.sep_mono_right F hpost) _ hown
 

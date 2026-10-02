@@ -47,12 +47,12 @@ theorem dynamic_stack_correct [Host] (stack : List UInt8) (lstack : stack.length
 `dynamic_stack_correct` read back as the judgment of the baseline example
 `dynamic_stack_example_correct`, over the same program text. -/
 
-theorem dynamic_stack_example_correct [layout : _root_.Layout] (s₀ : MachineData)
+theorem dynamic_stack_example_correct [layout : _root_.Layout] [Kraken.Executable.ValidLayout (layout dynamic_stack)] (s₀ : MachineData)
     (stack : List UInt8) (lstack : stack.length = 1024) (R : Mem 64 → Prop)
     (h : s₀.regs.r9.toNat + s₀.regs.r15.toNat < 125)
     (h_mem : s₀.dmem =⋆ Eq (stack.At (s₀.regs.rsp.toBitVec - 1024)) ⋆ R) :
     Eventually (straightlineStep (layout dynamic_stack))
       (fun s' => s'.1.regs.rax = 42 ∧ s'.1.regs.rbx = 99 ∧ s'.1.regs.rsp = s₀.regs.rsp)
       (s₀, Kraken.Layout.start Directive) := by
-  apply eventually_straightlineStep_of_sep_wp (List.get_AtM_sep h_mem)
+  refine eventually_straightlineStep_of_sep_wp (List.get_AtM_sep h_mem) ?_
   kvcgen64 [dynamic_stack] with finish

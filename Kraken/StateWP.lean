@@ -50,8 +50,8 @@ variable [Host] {Q : Unit → MachineData → Prop} {E : Int64 → MachineData �
 /-- The empty program: its wp is the postcondition. -/
 @[spec] theorem nil_spec : ⦃ fun s => Q () s ⦄ ([] : Program) ⦃ Q; E ⦄ := by
   refine ⟨fun s hpre => ?_⟩
-  intro k post _ hQ _
-  exact hQ s hpre
+  intro k _
+  exact Eventually.done _ (Or.inl ⟨rfl, hpre⟩)
 
 /-- Chaining: a program runs its first directive with the wp of the rest as
 the post. -/
@@ -65,12 +65,12 @@ the post. -/
       Directive.instr (.regular asz .W64 (.mov (.reg (.low r .W64)) (.imm (.int64 i))))
     ⦃ Q ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
-  intro k post hs hQ _
-  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs
-  rw [Host.burst_cell hz]
+  intro k hs
+  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs.1
+  refine Host.eventually_cell hz fun R next jmp hQ _ => ?_
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
     MachineData.set, MachineData.setReg, Reg64s.set_low_W64, Effects.All]
-  exact hQ _ hpre
+  exact hQ _ (Or.inl ⟨rfl, hpre⟩)
 
 /-- Store a 64-bit register at `disp(base)`, a mapped slot. -/
 @[spec] theorem mov_store_reg_spec (b : Reg64) (d : Int64) (rs : Reg64) :
@@ -85,13 +85,13 @@ the post. -/
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
   obtain ⟨hmapped, hpre⟩ := (meet_prop_eq_and _ _) ▸ hpre
   obtain ⟨i, hload⟩ := Option.isSome_iff_exists.mp hmapped
-  intro k post hs hQ _
-  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs
-  rw [Host.burst_cell hz]
+  intro k hs
+  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs.1
+  refine Host.eventually_cell hz fun R next jmp hQ _ => ?_
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
     RegOrMem.interp, MachineData.set, MachineData.store, Reg64s.get_low_W64,
     AddrExpr.zeroExtend_interp_base_disp, hload, Effects.All]
-  exact hQ _ hpre
+  exact hQ _ (Or.inl ⟨rfl, hpre⟩)
 
 /-- Add the 64-bit word at `disp(base)`, a mapped slot, to a register. -/
 @[spec] theorem add_reg_mem_spec (rd b : Reg64) (d : Int64) :
@@ -113,14 +113,14 @@ the post. -/
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
   obtain ⟨hmapped, hpre⟩ := (meet_prop_eq_and _ _) ▸ hpre
   obtain ⟨i, hload⟩ := Option.isSome_iff_exists.mp hmapped
-  intro k post hs hQ _
-  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs
-  rw [Host.burst_cell hz]
+  intro k hs
+  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs.1
+  refine Host.eventually_cell hz fun R next jmp hQ _ => ?_
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
     RegOrMem.interp, MachineData.load, MachineData.set, MachineData.setReg,
     Reg64s.get_low_W64, Reg64s.set_low_W64, AddrExpr.zeroExtend_interp_base_disp,
     hload, Effects.All]
-  exact hQ _ (hpre i hload)
+  exact hQ _ (Or.inl ⟨rfl, (hpre i hload)⟩)
 
 /-! ## Control flow and the instructions of the loop examples -/
 
@@ -133,21 +133,21 @@ local macro "run_step" : tactic =>
 /-- A label occupies no step of the machine. -/
 @[spec] theorem label_spec (l : Label) : ⦃ fun s => Q () s ⦄ Directive.label l ⦃ Q ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
-  intro k post hs hQ _
-  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs
-  rw [Host.burst_cell hz]
+  intro k hs
+  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs.1
+  refine Host.eventually_cell hz fun R next jmp hQ _ => ?_
   run_step
-  exact hQ _ hpre
+  exact hQ _ (Or.inl ⟨rfl, hpre⟩)
 
 /-- A no-op. -/
 @[spec] theorem nop_spec (asz osz : Width) (n : Nat) :
     ⦃ fun s => Q () s ⦄ Directive.instr (.regular asz osz (.nop n)) ⦃ Q ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
-  intro k post hs hQ _
-  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs
-  rw [Host.burst_cell hz]
+  intro k hs
+  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs.1
+  refine Host.eventually_cell hz fun R next jmp hQ _ => ?_
   run_step
-  exact hQ _ hpre
+  exact hQ _ (Or.inl ⟨rfl, hpre⟩)
 
 /-- Subtract an immediate from a 64-bit register. -/
 @[spec] theorem sub_reg_imm_spec (asz : Width) (r : Reg64) (i : Int64) :
@@ -164,11 +164,11 @@ local macro "run_step" : tactic =>
       Directive.instr (.regular asz .W64 (.sub (.reg (.low r .W64)) (.imm (.int64 i))))
     ⦃ Q ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
-  intro k post hs hQ _
-  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs
-  rw [Host.burst_cell hz]
+  intro k hs
+  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs.1
+  refine Host.eventually_cell hz fun R next jmp hQ _ => ?_
   run_step
-  exact hQ _ hpre
+  exact hQ _ (Or.inl ⟨rfl, hpre⟩)
 
 /-- The unsigned product of a register and `rdx`, split into two registers. -/
 @[spec] theorem mulx_reg_spec (asz : Width) (hi lo rs : Reg64) :
@@ -180,11 +180,11 @@ local macro "run_step" : tactic =>
           (.mulx (.low hi .W64) (.low lo .W64) (.reg (.low rs .W64))))
     ⦃ Q ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
-  intro k post hs hQ _
-  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs
-  rw [Host.burst_cell hz]
+  intro k hs
+  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs.1
+  refine Host.eventually_cell hz fun R next jmp hQ _ => ?_
   run_step
-  exact hQ _ hpre
+  exact hQ _ (Or.inl ⟨rfl, hpre⟩)
 
 /-- Add an immediate to a 64-bit register. -/
 @[spec] theorem add_reg_imm_spec (asz : Width) (r : Reg64) (i : Int64) :
@@ -201,11 +201,11 @@ local macro "run_step" : tactic =>
       Directive.instr (.regular asz .W64 (.add (.reg (.low r .W64)) (.imm (.int64 i))))
     ⦃ Q ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
-  intro k post hs hQ _
-  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs
-  rw [Host.burst_cell hz]
+  intro k hs
+  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs.1
+  refine Host.eventually_cell hz fun R next jmp hQ _ => ?_
   run_step
-  exact hQ _ hpre
+  exact hQ _ (Or.inl ⟨rfl, hpre⟩)
 
 /-- Add a 64-bit register and the carry flag to a register. -/
 @[spec] theorem adc_reg_reg_spec (asz : Width) (rd rs : Reg64) :
@@ -224,11 +224,11 @@ local macro "run_step" : tactic =>
           (.adc (.reg (.low rd .W64)) (.regOrMem (.reg (.low rs .W64)))))
     ⦃ Q ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
-  intro k post hs hQ _
-  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs
-  rw [Host.burst_cell hz]
+  intro k hs
+  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs.1
+  refine Host.eventually_cell hz fun R next jmp hQ _ => ?_
   run_step
-  exact hQ _ hpre
+  exact hQ _ (Or.inl ⟨rfl, hpre⟩)
 
 /-- Exclusive-or of two 64-bit registers. The adjust flag is unspecified, so
 the post must hold for either value. -/
@@ -242,12 +242,12 @@ the post must hold for either value. -/
           (.xor (.reg (.low rd .W64)) (.regOrMem (.reg (.low rs .W64)))))
     ⦃ Q ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
-  intro k post hs hQ _
-  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs
-  rw [Host.burst_cell hz]
+  intro k hs
+  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs.1
+  refine Host.eventually_cell hz fun R next jmp hQ _ => ?_
   run_step
   intro af
-  exact hQ _ (hpre af)
+  exact hQ _ (Or.inl ⟨rfl, (hpre af)⟩)
 
 /-- Decrement a 64-bit register. The carry flag is kept. -/
 @[spec] theorem dec_reg_spec (asz : Width) (r : Reg64) :
@@ -263,11 +263,11 @@ the post must hold for either value. -/
       Directive.instr (.regular asz .W64 (.dec (.reg (.low r .W64))))
     ⦃ Q ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
-  intro k post hs hQ _
-  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs
-  rw [Host.burst_cell hz]
+  intro k hs
+  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs.1
+  refine Host.eventually_cell hz fun R next jmp hQ _ => ?_
   run_step
-  exact hQ _ hpre
+  exact hQ _ (Or.inl ⟨rfl, hpre⟩)
 
 theorem _root_.Int64.add_sub_self_left (a b : Int64) : a + (b - a) = b := by
   apply Int64.toBitVec_inj.mp
@@ -280,12 +280,12 @@ theorem _root_.Int64.add_sub_self_left (a b : Int64) : a + (b - a) = b := by
       Directive.instr (.regular asz osz (.jmp (.rel (.sub (.label l) .after_current_instruction))))
     ⦃ Q; E ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
-  intro k post hs _ hE
-  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs
-  rw [Host.burst_cell hz]
+  intro k hs
+  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs.1
+  refine Host.eventually_cell hz fun R next jmp _ hE => ?_
   run_step
   rw [Int64.ofBitVec_toBitVec, Int64.add_sub_self_left]
-  exact hE _ _ hpre
+  exact hE _ _ (Or.inr hpre)
 
 /-- A conditional jump to a label: it exits at the label's address when the
 condition holds and falls through otherwise. -/
@@ -295,14 +295,14 @@ condition holds and falls through otherwise. -/
     ⦃ Q; E ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
   obtain ⟨hjmp, hfall⟩ := (meet_prop_eq_and _ _) ▸ hpre
-  intro k post hs hQ hE
-  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs
-  rw [Host.burst_cell hz]
+  intro k hs
+  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs.1
+  refine Host.eventually_cell hz fun R next jmp hQ hE => ?_
   run_step
   cases hc : CondCode.interp cc s.status <;>
     simp only [hc, Bool.false_eq_true, ite_true, ite_false]
-  · exact hQ _ (hfall hc)
-  · exact hE _ _ (hjmp hc)
+  · exact hQ _ (Or.inl ⟨rfl, (hfall hc)⟩)
+  · exact hE _ _ (Or.inr (hjmp hc))
 
 /-- The return address on top of the stack. -/
 def _root_.MachineData.retAddr (t : MachineData) : Option Int64 :=
@@ -327,12 +327,12 @@ def _root_.MachineData.retAddr (t : MachineData) : Option Int64 :=
     cases hl : Mem.loadInt s.dmem (s.regs.get64 .rsp) 8 with
     | none => rw [hl] at hra; exact absurd hra (by simp)
     | some i => exact ⟨i, rfl, by rw [hl] at hra; simpa using hra⟩
-  intro k post hs _ hE
-  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs
-  rw [Host.burst_cell hz]
+  intro k hs
+  obtain ⟨z, hz⟩ := Host.cell_of_prefix hs.1
+  refine Host.eventually_cell hz fun R next jmp _ hE => ?_
   simp only [Directive.interp, Instr.interp, Operation.interp, MachineData.load, hi,
     Effects.All, hval]
-  exact hE _ _ (hexit ra hra)
+  exact hE _ _ (Or.inr (hexit ra hra))
 
 end StateWP
 
@@ -342,12 +342,14 @@ The wp of a program with no exits is a run of the laid-out program: if the wp
 holds of `s` for the postcondition that asks `post` of the final state at
 every pc, the run from `s` at the layout's start eventually ends in `post`.
 The hypothesis is the entailment `⊤ ⊑ wp …` at `s`, the goal form of `vcgen`,
-in every host. -/
+in every host. The layout is valid, and the labels of the program are distinct. -/
 
 open StateWP in
-theorem eventually_straightlineStep_of_wp [layout : Layout] {p : Program} {s : MachineData}
-    {post : MachineState → Prop}
-    (h : ∀ [Host], ⊤ ⊑ WP.wp p (fun _ s' => ∀ pc, post (s', pc)) ⊥ s) :
+theorem eventually_straightlineStep_of_wp [layout : Layout] {p : Program}
+    [Kraken.Executable.ValidLayout (layout p)] {s : MachineData} {post : MachineState → Prop}
+    (h : ∀ [Host], ⊤ ⊑ WP.wp p (fun _ s' => ∀ pc, post (s', pc)) ⊥ s)
+    (hnd : (Program.labels p).Nodup := by decide) :
     Eventually (straightlineStep (layout p)) post (s, layout.start) :=
-  Program.run_eventually (of_top_le_prop (@h ⟨layout p⟩)) (fun _ hq => hq)
-    (fun a s' hE => ((bot_le (α := Int64 → MachineData → Prop) fun _ _ => False) a s' hE).elim)
+  Program.run_eventually hnd (Q := fun s' => ∀ pc, post (s', pc))
+    (E := (⊥ : Int64 → MachineData → Prop)) (of_top_le_prop (@h ⟨layout p⟩)) (fun _ hq => hq)
+    (fun a s' hE => (bot_le (α := Int64 → MachineData → Prop) fun _ _ => False) a s' hE)

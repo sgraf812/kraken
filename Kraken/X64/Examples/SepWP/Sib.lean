@@ -36,11 +36,11 @@ theorem sib_correct [Host] (v : UInt64) :
 `sib_correct` read back as the judgment of the baseline example
 `sib_example_correct`, over the same program text. -/
 
-theorem sib_example_correct [layout : _root_.Layout] (s₀ : MachineData)
+theorem sib_example_correct [layout : _root_.Layout] [Kraken.Executable.ValidLayout (layout sib_example)] (s₀ : MachineData)
     (v : UInt64) (R : DataMem → Prop)
     (h_mem : s₀.dmem =⋆ Eq (v.At (s₀.regs.rdi.toBitVec + BitVec.ofInt 64 (s₀.regs.r15.toBitVec.toInt * 8))) ⋆ R) :
     Eventually (straightlineStep (layout sib_example))
       (fun s' => s'.1.regs.rax = 42)
       (s₀, Kraken.Layout.start Directive) := by
-  apply eventually_straightlineStep_of_sep_wp (UInt64.get_AtM_sep h_mem)
+  refine eventually_straightlineStep_of_sep_wp (UInt64.get_AtM_sep h_mem) ?_
   kvcgen64 [sib_example] with finish

@@ -29,13 +29,13 @@ namespace Sep
   kvcgen64 [alu_mem_example] with finish
 
 /-- The statement of the baseline's `alu_mem_example_correct`. -/
-theorem alu_mem_example_correct [layout : Layout] (s₀ : MachineData)
+theorem alu_mem_example_correct [layout : Layout] [Kraken.Executable.ValidLayout (layout alu_mem_example)] (s₀ : MachineData)
     (v : UInt64) (R : DataMem → Prop)
     (h_mem : s₀.dmem =⋆ Eq (v.At (s₀.regs.rdx.toBitVec + 136#64)) ⋆ R) :
     Eventually (straightlineStep (layout alu_mem_example))
       (fun s' => s'.1.regs.rcx = 142)
       (s₀, layout.start) := by
-  apply eventually_straightlineStep_of_sep_wp (UInt64.get_AtM_sep h_mem)
+  refine eventually_straightlineStep_of_sep_wp (UInt64.get_AtM_sep h_mem) ?_
   kvcgen64 with finish
 
 /-! ## A block of register writes

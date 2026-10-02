@@ -168,22 +168,25 @@ state `s` whose memory satisfies `footprint` next to `frame`. If `footprint`
 entails the wp of the program at `s`'s registers, vector registers and flags,
 for the postcondition that gives `frame` back and asks `post` of the whole
 final state at every pc, then the run from `s` at the layout's start
-eventually ends in `post`. The entailment is asked in every host. -/
+eventually ends in `post`. The entailment is asked in every host. The layout is valid, and
+the labels of the program are distinct. -/
 
 open SepWP in
-theorem eventually_straightlineStep_of_sep_wp [layout : Layout] {p : Program} {s : MachineData}
+theorem eventually_straightlineStep_of_sep_wp [layout : Layout] {p : Program}
+    [Kraken.Executable.ValidLayout (layout p)] {s : MachineData}
     {post : MachineState → Prop} {footprint frame : MProp 64}
     (hmem : (footprint ∗ frame).get s.dmem)
     (ht : ∀ [Host], footprint ⊑ WP.wp p
       (fun _ r z f => frame -∗ MProp.mk fun m => ∀ pc, post (⟨r, z, f, m⟩, pc))
-      ⊥ s.regs s.zmms s.status) :
+      ⊥ s.regs s.zmms s.status)
+    (hnd : (Program.labels p).Nodup := by decide) :
     Eventually (straightlineStep (layout p)) post (s, layout.start) := by
   letI : Host := ⟨layout p⟩
   rw [MProp.sep_comm] at hmem
-  refine Program.run_eventually (sep_elim ((MProp.le_def _ _).mp
+  refine Program.run_eventually hnd (sep_elim ((MProp.le_def _ _).mp
     (MProp.sep_mono_right _ (@ht this)) _ hmem)) (fun s' hq pc => ?_) (fun a s' he => ?_)
   · have h := (MProp.le_def _ _).mp (MProp.sep_wand_elim _ _) _ hq
     rw [MProp.get_mk] at h
     exact h pc
-  · exact (MProp.of_get_sep he
-      ((bot_le (fun _ _ _ _ => (⌜False⌝ : MProp 64))) a s'.regs s'.zmms s'.status)).elim
+  · exact MProp.of_get_sep he
+      ((bot_le (fun _ _ _ _ => (⌜False⌝ : MProp 64))) a s'.regs s'.zmms s'.status)

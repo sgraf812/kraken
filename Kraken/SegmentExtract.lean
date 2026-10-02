@@ -7,10 +7,8 @@ address and `Executable.directivesFromAddress_addrOf` cuts the directive list
 at an index whose address is fresh, so one `simp` with these two equations
 rewrites a straightline judgment's segment into a literal directive list.
 `Executable.ValidLayout` packages the facts that make the addresses
-well-behaved: labels occupy no bytes, every other directive occupies at least
-one, and the program fits in the address space; `addrOf_ne_of_valid`
-discharges the freshness hypothesis at any index that follows a non-label
-directive.
+well-behaved: labels occupy no bytes, a cell of no bytes does nothing when it
+runs, and the program fits in the address space.
 -/
 public import Kraken.Blocks
 
@@ -253,14 +251,18 @@ theorem label_addrOf (e : Kraken.Executable Directive) (l : Label) (n : Nat)
 
 /-! ## Valid layouts -/
 
+/-- A directive that falls through without effect, such as a label or an alignment that pads
+nothing. -/
+def _root_.Directive.Inert (d : Directive) : Prop :=
+  ∀ [Labels] s p (next : MachineData → Effects) (jmp : Int64 → MachineData → Effects),
+    d.interp s p next jmp = next s
+
 /-- The facts about a laid-out executable that keep its addresses
-well-behaved: labels occupy no bytes, every other directive occupies at least
-one, and the program fits in the address space. Distinct cut points that
-follow a non-label directive then sit at distinct addresses
-(`addrOf_ne_of_valid`). -/
+well-behaved: labels occupy no bytes, a cell of no bytes does nothing when it runs, and the
+program fits in the address space. -/
 class ValidLayout (e : Kraken.Executable Directive) : Prop where
   label_size : ∀ (i : Nat) l z, e.2[i]? = some (Directive.label l, z) → z = 0
-  instr_size : ∀ (i : Nat) d z, e.2[i]? = some (d, z) → (∀ l, d ≠ Directive.label l) → 0 < z
+  zero_inert : ∀ (i : Nat) d, e.2[i]? = some (d, 0) → d.Inert
   no_wrap : (e.2.map (·.2)).sum < 2 ^ 64
 
 private theorem sum_map_take_le {α} (f : α → Nat) (l : List α) (k : Nat) :
@@ -341,22 +343,6 @@ theorem sizeBefore_eq_of_addrOf_eq (e : Kraken.Executable Directive) [hv : Valid
   simp only [BitVec.toNat_ofNat] at hnat
   omega
 
-/-- Distinct addresses at a cut point that follows a non-label directive. -/
-theorem addrOf_ne_of_valid (e : Kraken.Executable Directive) [hv : ValidLayout e] {k n : Nat}
-    (hk : k < n) (hsome : (e.2[n - 1]?).isSome)
-    (hd : ∀ l z, e.2[n - 1]? ≠ some (Directive.label l, z)) :
-    e.addrOf k ≠ e.addrOf n := by
-  obtain ⟨⟨d, z⟩, hdz⟩ := Option.isSome_iff_exists.mp hsome
-  have hz : 0 < z := hv.instr_size _ _ _ hdz (fun l hl => hd l z (by rw [hdz, hl]))
-  have h1 : e.sizeBefore k ≤ e.sizeBefore (n - 1) := sizeBefore_mono e (by omega)
-  have h2 : e.sizeBefore n = e.sizeBefore (n - 1) + z := by
-    have hs := sizeBefore_succ e hdz
-    rw [show n - 1 + 1 = n by omega] at hs
-    exact hs
-  intro heq
-  have h3 := sizeBefore_eq_of_addrOf_eq e heq
-  omega
-
 /-- The least index that satisfies a predicate, at or below a witness. -/
 theorem _root_.Nat.exists_least_le {P : Nat → Prop} {n : Nat} (h : P n) :
     ∃ j, j ≤ n ∧ P j ∧ ∀ k, k < j → ¬P k := by
@@ -368,35 +354,29 @@ theorem _root_.Nat.exists_least_le {P : Nat → Prop} {n : Nat} (h : P n) :
       exact ⟨j, by omega, hPj, hmin⟩
     · exact ⟨n, Nat.le_refl n, h, fun k hk hPk => hb ⟨k, hk, hPk⟩⟩
 
-/-- Between two cut points with one address every cell is a label: a
-non-label cell occupies at least one byte and separates the addresses. -/
-theorem label_between_of_addrOf_eq (e : Kraken.Executable Directive) [hv : ValidLayout e] {j k n : Nat}
-    (hjk : j ≤ k) (hkn : k < n) (hn : n ≤ e.2.length)
+/-- Between two cut points with one address every cell occupies no bytes. -/
+theorem zero_between_of_addrOf_eq (e : Kraken.Executable Directive) [hv : ValidLayout e]
+    {j k n : Nat} (hjk : j ≤ k) (hkn : k < n) (hn : n ≤ e.2.length)
     (heq : e.addrOf j = e.addrOf n) :
-    ∃ l z, e.2[k]? = some (Directive.label l, z) := by
+    ∃ d, e.2[k]? = some (d, 0) := by
   obtain ⟨⟨d, z⟩, hdz⟩ : ∃ dz, e.2[k]? = some dz :=
     ⟨_, List.getElem?_eq_getElem (by omega)⟩
-  cases d with
-  | label l => exact ⟨l, z, hdz⟩
-  | instr i | byteArray a =>
-    exfalso
-    have hz : 0 < z := hv.instr_size _ _ _ hdz (fun l h => Directive.noConfusion h)
-    have h1 : e.sizeBefore j ≤ e.sizeBefore k := sizeBefore_mono e hjk
-    have h2 : e.sizeBefore (k + 1) = e.sizeBefore k + z := sizeBefore_succ e hdz
-    have h3 : e.sizeBefore (k + 1) ≤ e.sizeBefore n := sizeBefore_mono e hkn
-    have h4 := sizeBefore_eq_of_addrOf_eq e heq
-    omega
+  have h1 : e.sizeBefore j ≤ e.sizeBefore k := sizeBefore_mono e hjk
+  have h2 : e.sizeBefore (k + 1) = e.sizeBefore k + z := sizeBefore_succ e hdz
+  have h3 : e.sizeBefore (k + 1) ≤ e.sizeBefore n := sizeBefore_mono e hkn
+  have h4 := sizeBefore_eq_of_addrOf_eq e heq
+  exact ⟨d, by rw [hdz, show z = 0 by omega]⟩
 
 /-- The cut point of the address of index `n`: the segment there starts at
-the least index `j` with that address, and every cell from `j` up to `n` is a
-label. -/
+the least index `j` with that address, and every cell from `j` up to `n`
+occupies no bytes. -/
 theorem exists_cut (e : Kraken.Executable Directive) [ValidLayout e] {n : Nat} (hn : n ≤ e.2.length) :
     ∃ j, j ≤ n ∧ e.directivesFromAddress (e.addrOf n) = e.2.drop j
-      ∧ ∀ m, j ≤ m → m < n → ∃ l z, e.2[m]? = some (Directive.label l, z) := by
+      ∧ ∀ m, j ≤ m → m < n → ∃ d, e.2[m]? = some (d, 0) := by
   obtain ⟨j, hjn, hj, hmin⟩ :=
     Nat.exists_least_le (P := fun k => e.addrOf k = e.addrOf n) rfl
   exact ⟨j, hjn, directivesFromAddress_addrOf_first e j n hjn hn hj hmin,
-    fun m hjm hmn => label_between_of_addrOf_eq e hjm hmn hn hj⟩
+    fun m hjm hmn => zero_between_of_addrOf_eq e hjm hmn hn hj⟩
 
 end Kraken.Executable
 

@@ -68,14 +68,14 @@ private theorem pswap_body_spec [Host] (s : MachineData) (ra : Int64) :
 
 private theorem swap_call_spec [Host] {Q : Unit → MachineData → Prop}
     {E : Int64 → MachineData → Prop} (asz osz : Width) :
-    ⦃ fun s => (Host.Placed ∧ swapC.Implemented)
+    ⦃ fun s => swapC.Implemented
         ⊓ ((Mem.loadInt s.dmem (s.regs.get64 .rsp - 8#64) 8).isSome = true)
         ⊓ SwapPre s ⊓ (∀ s', SwapPost s s' → Q () s') ⦄
       Directive.instr (.regular asz osz (.call (.rel (.sub (.label "swap") .after_current_instruction))))
     ⦃ Q; E ⦄ :=
   StateWP.call_spec asz osz swapC
 
-theorem pswap_correct [hv : Kraken.Executable.ValidLayout (layout pswap)]
+theorem pswap_correct [Kraken.Executable.ValidLayout (layout pswap)]
     (d : MachineData) (hslot : SwapPre d) :
     Eventually (straightlineStep (layout pswap))
       (fun s => s.1.regs.get64 .rax = d.regs.get64 .rax
@@ -84,12 +84,9 @@ theorem pswap_correct [hv : Kraken.Executable.ValidLayout (layout pswap)]
       (d, layout.start) := by
   refine StateWP.cfg (l₀ := "start") (pswap_table d) (fun _ _ => 0) ?_ (by rfl) (by decide) d rfl
   cfg_cases [pswap]
-  · intro _ hhost
-    haveI : Kraken.Executable.ValidLayout Host.exe := hhost ▸ hv
-    have hplaced : Host.Placed := Host.placed_of_valid
+  · intro _ hlink
     have himpl : swapC.Implemented :=
-      StateWP.implemented_of_triple (body := pswap.body) hhost (by decide) swapC (by rfl)
-        pswap_body_spec
+      StateWP.implemented_of_triple (body := pswap.body) hlink swapC (by rfl) pswap_body_spec
     kvcgen64 [swap_call_spec] with finish
   · kvcgen64 with finish
   · kvcgen64 with finish

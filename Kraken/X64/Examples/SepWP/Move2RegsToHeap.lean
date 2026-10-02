@@ -40,7 +40,7 @@ theorem move_2_regs_to_heap_spec [Host] (v1 v2 : UInt64) (a c d : UInt64) :
 `move_2_regs_to_heap_spec` read back as the judgment of the baseline example
 `move_2_regs_to_heap_correct`, over the same program text. -/
 
-theorem move_2_regs_to_heap_correct [layout : _root_.Layout] (s₀ : MachineData)
+theorem move_2_regs_to_heap_correct [layout : _root_.Layout] [Kraken.Executable.ValidLayout (layout move_2_regs_to_heap)] (s₀ : MachineData)
   (v1 v2 : UInt64)
   (R : DataMem → Prop)
   (h_mem : s₀.dmem =⋆ Eq (v1.At s₀.regs.rdi.toBitVec) ⋆ Eq (v2.At (s₀.regs.rdi.toBitVec + 8#64)) ⋆ R)
@@ -50,5 +50,5 @@ theorem move_2_regs_to_heap_correct [layout : _root_.Layout] (s₀ : MachineData
         s'.1.regs.r13 = s₀.regs.rcx ∧
         s'.1.regs.rdi = s₀.regs.rdi)
       (s₀, Kraken.Layout.start Directive) := by
-  apply eventually_straightlineStep_of_sep_wp (UInt64.get_AtM_sep_AtM_sep h_mem)
+  refine eventually_straightlineStep_of_sep_wp (UInt64.get_AtM_sep_AtM_sep h_mem) ?_
   kvcgen64 [move_2_regs_to_heap] with finish
