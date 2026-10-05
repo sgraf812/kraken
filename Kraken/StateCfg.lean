@@ -74,54 +74,51 @@ def MachineData.pushRa (s : MachineData) (ra : Int64) : MachineData :=
     Mem.loadInt_storeInt _ _ _ _ (by decide : 8 ≤ 2 ^ 64), Option.map_some,
     BitVec.ofInt_ofBytes_toBytes 64 8 rfl, Int64.ofBitVec_toBitVec]
 
-/-- An address at distance at least `n` from `b` is none of the `n` bytes from `b`. -/
-theorem ne_add_of_dist {a b : BitVec 64} {n : Nat} (h : n ≤ (a - b).toNat) :
-    ∀ i < n, a ≠ b + BitVec.ofNat 64 i := by
-  intro i hi he
-  rw [he, show b + BitVec.ofNat 64 i - b = BitVec.ofNat 64 i by
-    rw [BitVec.add_comm, BitVec.add_sub_cancel]] at h
-  rw [BitVec.toNat_ofNat] at h
-  have := Nat.mod_le i (2 ^ 64)
-  omega
-
-/-- What a callee may change: the registers it clobbers, and the `len s` bytes from `base s`,
-as functions of the entry state `s`. -/
+/-- The registers a callee may change. -/
 structure Modifies where
   regs : List Reg64
-  base : MachineData → BitVec 64
-  len : MachineData → Nat
 
-/-- `s'` agrees with `s` outside `m` and outside the return slot below `s`'s `rsp`. -/
+/-- `s'` agrees with `s` on the registers outside `m`. -/
 def Modifies.Agree (m : Modifies) (s s' : MachineData) : Prop :=
-  (∀ r, r ∉ m.regs → s'.regs.get64 r = s.regs.get64 r)
-  ∧ ∀ a, m.len s ≤ (a - m.base s).toNat → 8 ≤ (a - (s.regs.get64 .rsp - 8#64)).toNat →
-      s'.dmem.get? a = s.dmem.get? a
+  ∀ r, r ∉ m.regs → s'.regs.get64 r = s.regs.get64 r
 
 theorem Modifies.Agree.reg {m : Modifies} {s s' : MachineData} (h : m.Agree s s') (r : Reg64)
-    (hr : r ∉ m.regs) : s'.regs.get64 r = s.regs.get64 r := h.1 r hr
+    (hr : r ∉ m.regs) : s'.regs.get64 r = s.regs.get64 r := h r hr
 grind_pattern Modifies.Agree.reg => m.Agree s s', s'.regs.get64 r
 
-/-- A load whose bytes miss the region and the slot reads the same. -/
-theorem Modifies.Agree.loadInt {m : Modifies} {s s' : MachineData} (h : m.Agree s s')
-    (a : BitVec 64) (n : Nat)
-    (hreg : m.len s ≤ (a - m.base s).toNat ∧ (a - m.base s).toNat + n ≤ 2 ^ 64)
-    (hslot : 8 ≤ (a - (s.regs.get64 .rsp - 8#64)).toNat
-      ∧ (a - (s.regs.get64 .rsp - 8#64)).toNat + n ≤ 2 ^ 64) :
-    Mem.loadInt s'.dmem a n = Mem.loadInt s.dmem a n := by
-  have key : ∀ (b : BitVec 64) (i : Nat), i < n → (a - b).toNat + n ≤ 2 ^ 64 →
-      (a + BitVec.ofNat 64 i - b).toNat = (a - b).toNat + i := by
-    intro b i hi hb
-    rw [show a + BitVec.ofNat 64 i - b = (a - b) + BitVec.ofNat 64 i by
-      simp only [BitVec.sub_eq_add_neg]; ac_rfl]
-    rw [BitVec.toNat_add_of_lt] <;> rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega)]
-    omega
-  apply Mem.loadInt_congr
-  intro i hi
-  exact h.2 _ (by rw [key _ i hi hreg.2]; omega) (by rw [key _ i hi hslot.2]; omega)
-grind_pattern Modifies.Agree.loadInt => m.Agree s s', Mem.loadInt s'.dmem a n
+@[grind =] theorem Modifies.agree_iff (m : Modifies) (s s' : MachineData) :
+    m.Agree s s' ↔
+      (.rax ∈ m.regs ∨ s'.regs.get64 .rax = s.regs.get64 .rax)
+      ∧ (.rbx ∈ m.regs ∨ s'.regs.get64 .rbx = s.regs.get64 .rbx)
+      ∧ (.rcx ∈ m.regs ∨ s'.regs.get64 .rcx = s.regs.get64 .rcx)
+      ∧ (.rdx ∈ m.regs ∨ s'.regs.get64 .rdx = s.regs.get64 .rdx)
+      ∧ (.rsi ∈ m.regs ∨ s'.regs.get64 .rsi = s.regs.get64 .rsi)
+      ∧ (.rdi ∈ m.regs ∨ s'.regs.get64 .rdi = s.regs.get64 .rdi)
+      ∧ (.rsp ∈ m.regs ∨ s'.regs.get64 .rsp = s.regs.get64 .rsp)
+      ∧ (.rbp ∈ m.regs ∨ s'.regs.get64 .rbp = s.regs.get64 .rbp)
+      ∧ (.r8 ∈ m.regs ∨ s'.regs.get64 .r8 = s.regs.get64 .r8)
+      ∧ (.r9 ∈ m.regs ∨ s'.regs.get64 .r9 = s.regs.get64 .r9)
+      ∧ (.r10 ∈ m.regs ∨ s'.regs.get64 .r10 = s.regs.get64 .r10)
+      ∧ (.r11 ∈ m.regs ∨ s'.regs.get64 .r11 = s.regs.get64 .r11)
+      ∧ (.r12 ∈ m.regs ∨ s'.regs.get64 .r12 = s.regs.get64 .r12)
+      ∧ (.r13 ∈ m.regs ∨ s'.regs.get64 .r13 = s.regs.get64 .r13)
+      ∧ (.r14 ∈ m.regs ∨ s'.regs.get64 .r14 = s.regs.get64 .r14)
+      ∧ (.r15 ∈ m.regs ∨ s'.regs.get64 .r15 = s.regs.get64 .r15) := by
+  constructor
+  · intro h
+    exact ⟨Classical.or_iff_not_imp_left.mpr (h _), Classical.or_iff_not_imp_left.mpr (h _),
+      Classical.or_iff_not_imp_left.mpr (h _), Classical.or_iff_not_imp_left.mpr (h _),
+      Classical.or_iff_not_imp_left.mpr (h _), Classical.or_iff_not_imp_left.mpr (h _),
+      Classical.or_iff_not_imp_left.mpr (h _), Classical.or_iff_not_imp_left.mpr (h _),
+      Classical.or_iff_not_imp_left.mpr (h _), Classical.or_iff_not_imp_left.mpr (h _),
+      Classical.or_iff_not_imp_left.mpr (h _), Classical.or_iff_not_imp_left.mpr (h _),
+      Classical.or_iff_not_imp_left.mpr (h _), Classical.or_iff_not_imp_left.mpr (h _),
+      Classical.or_iff_not_imp_left.mpr (h _), Classical.or_iff_not_imp_left.mpr (h _)⟩
+  · intro h r hr
+    cases r <;> simp_all
 
 open StateWP in
-/-- Calling `f` from a state that satisfies `Pre` returns with `Post`, and changes nothing
+/-- Calling `f` from a state that satisfies `Pre` returns with `Post`, and keeps the registers
 outside `m`. -/
 abbrev CallSpec [LinkedProgram] (f : Label) (Pre : MachineData → Prop)
     (Post : MachineData → MachineData → Prop) (m : Modifies) : Prop :=
