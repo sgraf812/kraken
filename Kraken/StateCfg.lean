@@ -2,13 +2,13 @@ module
 
 /-
 The control-flow rule of the state wp. A program with labels is a list of
-basic blocks (`Program.blockAt`). `StateWP.cfg` proves a triple for a program
+basic blocks (`Program.blockAt`). `Program.WP.cfg` proves a triple for a program
 from one triple per block: a table `T` gives the assertion at
 each label, and a variant `var` orders the jumps. A block falls
 into the next block, and a jump reaches the cell of its label. A call steps by
 the callee's `CallSpec`, which `callSpec_of_triple` derives from its body.
 -/
-public import Kraken.StateWP
+public import Kraken.X64.WP.Instance
 public import Kraken.Blocks
 
 @[expose] public section
@@ -117,7 +117,7 @@ grind_pattern Modifies.Agree.reg => m.Agree s s', s'.regs.get64 r
   · intro h r hr
     cases r <;> simp_all
 
-open StateWP in
+open Program.WP in
 /-- Calling `f` from a state that satisfies `Pre` returns with `Post`, and keeps the registers
 outside `m`. -/
 abbrev CallSpec [LinkedProgram] (f : Label) (Pre : MachineData → Prop)
@@ -128,10 +128,10 @@ abbrev CallSpec [LinkedProgram] (f : Label) (Pre : MachineData → Prop)
       Directive.instr (.regular asz osz (.call (.rel (.sub (.label f) .after_current_instruction))))
     ⦃ Q; E ⦄
 
-namespace StateWP
+namespace Program.WP
 
 /- A jump exit of `cfg` asks where its target sits in the list of labels of the program,
-`["start", ".loop", …]`. With `StateWP` open, `grind`'s normalizer answers by evaluation. -/
+`["start", ".loop", …]`. With `Program.WP` open, `grind`'s normalizer answers by evaluation. -/
 attribute [scoped grind norm] List.idxOf_cons List.contains_cons
 
 variable [layout : Layout] [prog : LinkedProgram]
@@ -313,4 +313,4 @@ theorem cfg_wp {p p' : Program} {l₀ : Label}
     ⊤ ⊑ WP.wp p (fun _ s => Qend s) Ext s :=
   fun _ => (cfg T var Qend Ext hblocks hp hnd).1 s hT
 
-end StateWP
+end Program.WP

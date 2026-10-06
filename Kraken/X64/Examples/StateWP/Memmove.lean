@@ -15,7 +15,7 @@ import Kraken.X64.Parser
 open Kraken.X64.Parser
 open Std.WP
 open Lean.Order
-open scoped StateWP
+open scoped Program.WP
 
 set_option experimental.vcgen true
 
@@ -126,7 +126,7 @@ theorem memmove_spec [LinkedProgram] (bs : List UInt8) (R₁ R₂ : DataMem → 
     ⦃ (fun _ _ => False); fun a t => a = ra
       ∧ (t.dmem =⋆ Mem.Blocks [(s.regs.get64 .rsp - 8#64, 8)] ⋆ Mem.Bytes (s.regs.get64 .rdi) bs ⋆ R₂)
       ∧ mmMod.Agree s t ⦄ := by
-  refine StateWP.cfg (p := memmove) (mm_table ?_ bs R₂ s ra) (fun _ t => (t.regs.get64 .rdx).toNat)
+  refine Program.WP.cfg (p := memmove) (mm_table ?_ bs R₂ s ra) (fun _ t => (t.regs.get64 .rdx).toNat)
     (fun _ => False) _ ?_
   cfg_cases [memmove]
   all_goals kvcgen64 with finish
@@ -153,12 +153,12 @@ theorem memmove_correct [layout : Layout] [Kraken.Executable.Assembled (layout m
       (fun st => st.1.dmem =⋆ Mem.Blocks [(d.regs.get64 .rsp - 8#64, 8)]
         ⋆ Mem.Bytes (d.regs.get64 .rdi) bs ⋆ R₂)
       (d, layout.start) := by
-  apply eventually_straightlineStep_of_wp
+  apply Program.WP.straightline_of_wp
   intro _
-  refine StateWP.cfg_wp (l₀ := "start") (mp_table d bs R₂) (fun _ _ => 0) _ ⊥ ?_ d rfl
+  refine Program.WP.cfg_wp (l₀ := "start") (mp_table d bs R₂) (fun _ _ => 0) _ ⊥ ?_ d rfl
   cfg_cases [memmoveProg, memmove]
   · intro k hlink
-    have hmm := StateWP.callSpec_of_triple (f := "memmove") (body := memmove.tail)
+    have hmm := Program.WP.callSpec_of_triple (f := "memmove") (body := memmove.tail)
       (rest := parse("done:\n  nop")) hlink (by decide) (memmove_spec bs R₁ R₂)
     kvcgen64 [hmm] with finish
   · kvcgen64 with finish

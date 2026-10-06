@@ -543,7 +543,7 @@ the block it names. A block whose table entry is `False` is dead code, and its g
 without stepping. The bracket lists the program's definitional unfoldings. A jump exit asks
 whether its target is mapped and at which position through the list of labels,
 `["start", ".loop", …]`; once vcgen supplies the target, `grind` evaluates the question with
-the `StateWP` normalization rules. -/
+the `Program.WP` normalization rules. -/
 macro "cfg_cases" "[" ids:Lean.Parser.Tactic.simpLemma,* "]" : tactic =>
   `(tactic|
     (intro l blk hblk n

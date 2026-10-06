@@ -7,7 +7,7 @@ computes `rdx = 2 ^ 2 ^ rbx`. The proposition is the baseline's
 `p3_correct` with two more hypotheses: `rax` starts at zero, which the
 statement needs when the loop does not run, and the layout is valid, which
 places the loop's labels. `p3_table` gives the assertion at each label,
-`rbx` is the variant, and `StateWP.cfg` leaves one `kvcgen64` obligation per
+`rbx` is the variant, and `Program.WP.cfg` leaves one `kvcgen64` obligation per
 block.
 -/
 public import Kraken.StateCfg
@@ -15,7 +15,7 @@ import Kraken.X64.Examples.Examples
 
 open Std.WP
 open Lean.Order
-open scoped StateWP
+open scoped Program.WP
 
 set_option experimental.vcgen true
 
@@ -55,9 +55,9 @@ theorem p3_correct [layout : Layout] [Kraken.Executable.Assembled (layout p3)]
     Eventually (straightlineStep (layout p3))
       (fun s => s.1.regs.rdx.toNat = p3_spec d ∧ s.1.regs.rax = 0) (d, layout.start) := by
   simp only [p3_spec] at h_bounds ⊢
-  apply eventually_straightlineStep_of_wp
+  apply Program.WP.straightline_of_wp
   intro _
-  refine StateWP.cfg_wp (p3_table d) (fun _ s => s.regs.rbx.toNat) _ ⊥ ?_ d rfl
+  refine Program.WP.cfg_wp (p3_table d) (fun _ s => s.regs.rbx.toNat) _ ⊥ ?_ d rfl
   cfg_cases [p3]
   all_goals kvcgen64 with finish
 

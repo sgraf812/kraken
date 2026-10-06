@@ -7,7 +7,7 @@ import Kraken.X64.Parser
 open Kraken.X64.Parser
 open Std.WP
 open Lean.Order
-open scoped StateWP
+open scoped Program.WP
 
 set_option experimental.vcgen true
 
@@ -70,12 +70,12 @@ theorem pswap_correct [Kraken.Executable.Assembled (layout pswap)]
         ∧ s.1.regs.get64 .rbx = d.regs.get64 .rbx
         ∧ s.1.regs.get64 .rsp = d.regs.get64 .rsp)
       (d, layout.start) := by
-  apply eventually_straightlineStep_of_wp
+  apply Program.WP.straightline_of_wp
   intro _
-  refine StateWP.cfg_wp (l₀ := "start") (pswap_table d R) (fun _ _ => 0) _ ⊥ ?_ d ⟨rfl, hmem⟩
+  refine Program.WP.cfg_wp (l₀ := "start") (pswap_table d R) (fun _ _ => 0) _ ⊥ ?_ d ⟨rfl, hmem⟩
   cfg_cases [pswap]
   · intro k hlink
-    have hswap := StateWP.callSpec_of_triple (body := pswap.body.tail) hlink (by rfl)
+    have hswap := Program.WP.callSpec_of_triple (body := pswap.body.tail) hlink (by rfl)
       (pswap_body_spec (R := R))
     kvcgen64 [hswap] with finish
   · kvcgen64 with finish
