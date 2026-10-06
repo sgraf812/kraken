@@ -22,6 +22,7 @@ public import Kraken.Specs
 public import Kraken.Tactics
 public import Kraken.X64.Registers
 public import Kraken.ProgramRun
+public import Kraken.ProgramRunSound
 public import Kraken.KVCGen
 public import Kraken.StateWP
 public import Kraken.StateCfg

@@ -17,7 +17,7 @@ inference of `vcgen` consumes. `eventually_straightlineStep_of_sep_wp` reads the
 as the `Eventually` judgment of the laid-out program.
 -/
 public import Kraken.MProp
-public import Kraken.ProgramRun
+public import Kraken.ProgramRunSound
 
 @[expose] public section
 
@@ -173,7 +173,7 @@ valid executable. -/
 
 open SepWP in
 theorem eventually_straightlineStep_of_sep_wp [layout : Layout] {p : Program}
-    [Kraken.Executable.ValidExecutable (layout p)] {s : MachineData}
+    [Kraken.Executable.Assembled (layout p)] {s : MachineData}
     {post : MachineState → Prop} {footprint frame : MProp 64}
     (hmem : (footprint ∗ frame).get s.dmem)
     (ht : ∀ [LinkedProgram], footprint ⊑ WP.wp p
@@ -182,7 +182,7 @@ theorem eventually_straightlineStep_of_sep_wp [layout : Layout] {p : Program}
     Eventually (straightlineStep (layout p)) post (s, layout.start) := by
   letI : LinkedProgram := ⟨layout p⟩
   rw [MProp.sep_comm] at hmem
-  refine Program.run_eventually (sep_elim ((MProp.le_def _ _).mp
+  refine Program.straightline_of_run (sep_elim ((MProp.le_def _ _).mp
     (MProp.sep_mono_right _ (@ht this)) _ hmem)) (fun s' hq pc => ?_) (fun a s' he => ?_)
   · have h := (MProp.le_def _ _).mp (MProp.sep_wand_elim _ _) _ hq
     rw [MProp.get_mk] at h

@@ -34,7 +34,7 @@ theorem p6_spec [LinkedProgram] (stack : List UInt8) (h_len : stack.length = 8) 
 `p6_spec` read back as the judgment of the baseline example `p6_correct`,
 over the same program text. -/
 
-theorem p6_correct [layout : _root_.Layout] [Kraken.Executable.ValidExecutable (layout p6)] (s₀ : MachineData)
+theorem p6_correct [layout : _root_.Layout] [Kraken.Executable.Assembled (layout p6)] (s₀ : MachineData)
     (stack : List UInt8) (h_len : stack.length = 8) (R : DataMem → Prop)
     (h_mem : s₀.dmem =⋆ Eq (stack.At (s₀.regs.rsp.toBitVec - 8#64)) ⋆ R) :
     Eventually (straightlineStep (layout p6))

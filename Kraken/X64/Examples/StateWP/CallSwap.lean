@@ -62,7 +62,7 @@ private theorem pswap_body_spec [LinkedProgram] (R : DataMem → Prop) (s : Mach
   · refine ⟨by grind, by grind, fun r _ => ?_⟩
     cases r <;> simp_all
 
-theorem pswap_correct [Kraken.Executable.ValidExecutable (layout pswap)]
+theorem pswap_correct [Kraken.Executable.Assembled (layout pswap)]
     (d : MachineData) (R : DataMem → Prop)
     (hmem : d.dmem =⋆ Mem.Blocks [(d.regs.get64 .rsp - 8#64, 8)] ⋆ R) :
     Eventually (straightlineStep (layout pswap))

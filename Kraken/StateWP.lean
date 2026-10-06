@@ -13,7 +13,7 @@ leaves. A memory access asks for the slot to be mapped. `vcgen` sequences
 them by `StateWP.cons_spec`, and `eventually_straightlineStep_of_wp` reads the
 wp of a laid-out program back as the `Eventually` judgment.
 -/
-public import Kraken.ProgramRun
+public import Kraken.ProgramRunSound
 public import Kraken.X64.Registers
 public import Kraken.KVCGen
 public import Std.WP
@@ -446,9 +446,9 @@ in every linked program. The laid-out program is a valid executable. -/
 
 open StateWP in
 theorem eventually_straightlineStep_of_wp [layout : Layout] {p : Program}
-    [Kraken.Executable.ValidExecutable (layout p)] {s : MachineData} {post : MachineState → Prop}
+    [Kraken.Executable.Assembled (layout p)] {s : MachineData} {post : MachineState → Prop}
     (h : ∀ [LinkedProgram], ⊤ ⊑ WP.wp p (fun _ s' => ∀ pc, post (s', pc)) ⊥ s) :
     Eventually (straightlineStep (layout p)) post (s, layout.start) :=
-  Program.run_eventually (Q := fun s' => ∀ pc, post (s', pc))
+  Program.straightline_of_run (Q := fun s' => ∀ pc, post (s', pc))
     (E := (⊥ : Int64 → MachineData → Prop)) (of_top_le_prop (@h ⟨layout p⟩)) (fun _ hq => hq)
     (fun a s' hE => (bot_le (α := Int64 → MachineData → Prop) fun _ _ => False) a s' hE)

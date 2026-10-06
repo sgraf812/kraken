@@ -33,7 +33,7 @@ theorem swap_spec [LinkedProgram] (a b : BitVec 64) :
 `swap_spec` read back as the judgment of the baseline example `swap_correct`,
 over the same program text. -/
 
-theorem swap_correct [layout : _root_.Layout] [Kraken.Executable.ValidExecutable (layout swap)] (d : MachineData) :
+theorem swap_correct [layout : _root_.Layout] [Kraken.Executable.Assembled (layout swap)] (d : MachineData) :
       Eventually (straightlineStep (layout swap))
       (fun s' =>
           s'.1.regs.get Reg.rax = d.regs.get Reg.rbx ∧

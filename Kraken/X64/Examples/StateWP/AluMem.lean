@@ -22,7 +22,7 @@ attribute [local grind =] UInt64.toBytes_length BitVec.ofInt_ofBytes_toBytes ofB
 namespace State
 
 /-- The statement of the baseline's `alu_mem_example_correct`. -/
-theorem alu_mem_example_correct [layout : Layout] [Kraken.Executable.ValidExecutable (layout alu_mem_example)] (s₀ : MachineData)
+theorem alu_mem_example_correct [layout : Layout] [Kraken.Executable.Assembled (layout alu_mem_example)] (s₀ : MachineData)
     (v : UInt64) (R : DataMem → Prop)
     (h_mem : s₀.dmem =⋆ Eq (v.At (s₀.regs.rdx.toBitVec + 136#64)) ⋆ R) :
     Eventually (straightlineStep (layout alu_mem_example))

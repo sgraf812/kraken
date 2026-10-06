@@ -50,7 +50,7 @@ private abbrev p3_table (d : MachineData) : Label → MachineData → Prop
 
 /-- The baseline's `p3_correct`, for a start state with `rax = 0` and a valid
 layout. -/
-theorem p3_correct [layout : Layout] [Kraken.Executable.ValidExecutable (layout p3)]
+theorem p3_correct [layout : Layout] [Kraken.Executable.Assembled (layout p3)]
     (d : MachineData) (h_bounds : p3_spec d < 2 ^ 64) (h_rax : d.regs.rax = 0) :
     Eventually (straightlineStep (layout p3))
       (fun s => s.1.regs.rdx.toNat = p3_spec d ∧ s.1.regs.rax = 0) (d, layout.start) := by

@@ -142,7 +142,7 @@ private abbrev mp_table (d : MachineData) (bs : List UInt8) (R₂ : DataMem → 
       ⋆ Mem.Bytes (d.regs.get64 .rdi) bs ⋆ R₂
   | _, _ => False
 
-theorem memmove_correct [layout : Layout] [Kraken.Executable.ValidExecutable (layout memmoveProg)]
+theorem memmove_correct [layout : Layout] [Kraken.Executable.Assembled (layout memmoveProg)]
     (d : MachineData) (bs : List UInt8) (R₁ R₂ : DataMem → Prop)
     (hn : bs.length = (d.regs.get64 .rdx).toNat)
     (hsrc : (d.regs.get64 .rsi).toNat + bs.length < 2 ^ 64)

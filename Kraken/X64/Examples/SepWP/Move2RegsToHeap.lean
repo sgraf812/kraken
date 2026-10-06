@@ -40,7 +40,7 @@ theorem move_2_regs_to_heap_spec [LinkedProgram] (v1 v2 : UInt64) (a c d : UInt6
 `move_2_regs_to_heap_spec` read back as the judgment of the baseline example
 `move_2_regs_to_heap_correct`, over the same program text. -/
 
-theorem move_2_regs_to_heap_correct [layout : _root_.Layout] [Kraken.Executable.ValidExecutable (layout move_2_regs_to_heap)] (s₀ : MachineData)
+theorem move_2_regs_to_heap_correct [layout : _root_.Layout] [Kraken.Executable.Assembled (layout move_2_regs_to_heap)] (s₀ : MachineData)
   (v1 v2 : UInt64)
   (R : DataMem → Prop)
   (h_mem : s₀.dmem =⋆ Eq (v1.At s₀.regs.rdi.toBitVec) ⋆ Eq (v2.At (s₀.regs.rdi.toBitVec + 8#64)) ⋆ R)

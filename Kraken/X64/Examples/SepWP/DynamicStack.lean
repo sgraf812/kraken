@@ -47,7 +47,7 @@ theorem dynamic_stack_correct [LinkedProgram] (stack : List UInt8) (lstack : sta
 `dynamic_stack_correct` read back as the judgment of the baseline example
 `dynamic_stack_example_correct`, over the same program text. -/
 
-theorem dynamic_stack_example_correct [layout : _root_.Layout] [Kraken.Executable.ValidExecutable (layout dynamic_stack)] (s₀ : MachineData)
+theorem dynamic_stack_example_correct [layout : _root_.Layout] [Kraken.Executable.Assembled (layout dynamic_stack)] (s₀ : MachineData)
     (stack : List UInt8) (lstack : stack.length = 1024) (R : Mem 64 → Prop)
     (h : s₀.regs.r9.toNat + s₀.regs.r15.toNat < 125)
     (h_mem : s₀.dmem =⋆ Eq (stack.At (s₀.regs.rsp.toBitVec - 1024)) ⋆ R) :

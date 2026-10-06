@@ -9,7 +9,7 @@ into the next block, and a jump reaches the cell of its label. A call steps by
 the callee's `CallSpec`, which `callSpec_of_triple` derives from its body.
 -/
 public import Kraken.StateWP
-public import Kraken.SegmentExtract
+public import Kraken.Blocks
 
 @[expose] public section
 

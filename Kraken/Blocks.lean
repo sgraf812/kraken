@@ -1,8 +1,7 @@
 module
 
 /-
-The text of a program, as the control-flow rule reads it. `Layout.frag` names
-a fragment as it is laid out at a position of its host program.
+The text of a program, as the control-flow rule reads it.
 `Program.fromLabel` is the scope suffix at a label: the text from the label's
 cell on. `Program.view` parses the text once into the label-free entry segment
 and one `(label, body)` pair per label cell; `Program.blockAt` reads a block
@@ -14,74 +13,8 @@ public meta import Lean.Elab.Tactic
 
 @[expose] public section
 
-/-- A layout applied to a program, at the X64 `Executable` abbreviation: dot
-notation on the result resolves through the `Executable` namespace. -/
-instance (priority := high) : CoeFun Layout (fun _ => Program → Executable) :=
-  ⟨Kraken.Layout.apply⟩
-
-
 open Std.WP
 open Lean.Order
-
-/-! ### Fragments
-
-`Layout.frag` names a fragment as it is laid out at a position of its host
-program. Extraction lemmas end in `Layout.frag` terms, and `Program.wp_sound`
-transports a fragment's wp at them. -/
-
-/-- The fragment `p` as it is laid out from position `n` of the program that
-contains it: each directive paired with the size the layout assigns to its
-position. -/
-def Layout.frag [layout : Layout] (n : Nat) (p : Program) : List (Directive × Nat) :=
-  p.mapIdx (fun i d => (d, layout.size (n + i)))
-
-@[simp] theorem Layout.frag_nil [Layout] (n : Nat) :
-    Layout.frag n [] = [] := rfl
-
-@[simp] theorem Layout.frag_length [Layout] (n : Nat) (p : Program) :
-    (Layout.frag n p).length = p.length := by simp [Layout.frag]
-
-@[simp] theorem Layout.frag_cons [layout : Layout] (n : Nat) (d : Directive) (ds : Program) :
-    Layout.frag n (d :: ds) = (d, layout.size n) :: Layout.frag (n + 1) ds := by
-  simp [Layout.frag, List.mapIdx_cons, Nat.add_assoc, Nat.add_comm 1]
-
-theorem Layout.frag_getElem? [layout : Layout] (n : Nat) (p : Program) (i : Nat) :
-    (Layout.frag n p)[i]? = (p[i]?).map (fun d => (d, layout.size (n + i))) := by
-  induction p generalizing n i with
-  | nil => simp
-  | cons d ds ih =>
-    cases i with
-    | zero => simp
-    | succ j =>
-      rw [show n + (j + 1) = n + 1 + j from by omega]
-      simp only [Layout.frag_cons, List.getElem?_cons_succ, ih (n + 1) j]
-
-theorem Layout.frag_drop [Layout] (n k : Nat) (p : Program) :
-    (Layout.frag n p).drop k = Layout.frag (n + k) (p.drop k) := by
-  induction p generalizing n k with
-  | nil => simp
-  | cons d ds ih =>
-    cases k with
-    | zero => simp
-    | succ m =>
-      rw [Layout.frag_cons, List.drop_succ_cons, List.drop_succ_cons, ih (n + 1) m,
-        show n + 1 + m = n + (m + 1) from by omega]
-
-theorem Layout.frag_mem [Layout] {n : Nat} {p : Program} {dz : Directive × Nat}
-    (h : dz ∈ Layout.frag n p) : dz.1 ∈ p := by
-  induction p generalizing n with
-  | nil => cases h
-  | cons d ds ih =>
-    rw [Layout.frag_cons] at h
-    rcases List.mem_cons.mp h with heq | hmem
-    · rw [heq]
-      exact List.mem_cons_self
-    · exact List.mem_cons_of_mem _ (ih hmem)
-
-/-- A fragment splits where the program it lays out splits. -/
-theorem Layout.frag_append [layout : Layout] (n : Nat) (as bs : Program) :
-    Layout.frag n (as ++ bs) = Layout.frag n as ++ Layout.frag (n + as.length) bs := by
-  simp [Layout.frag, List.mapIdx_append, Nat.add_left_comm, Nat.add_comm]
 
 /-! ### Runs
 
@@ -380,12 +313,6 @@ def Program.blockAt (p : Program) (l : Label) : Option Program.Block :=
 def Program.blockIdx (p : Program) (l : Label) : Nat :=
   (Program.labels p).idxOf l
 
-theorem Program.labels_eq_view (p : Program) :
-    Program.labels p = (Program.view p).2.map (·.1) := by
-  induction p with
-  | nil => rfl
-  | cons d p ih => cases d <;> simp [Program.labels, Program.view, ih]
-
 theorem Program.isSome_blockAtAux (bs : List (Label × Program)) (l : Label) :
     (Program.blockAtAux bs l).isSome = (bs.map (·.1)).contains l := by
   induction bs with
@@ -403,7 +330,7 @@ theorem Program.isSome_blockAt (p : Program) (l : Label) :
 
 theorem Program.blockIdx_eq_view (p : Program) (l : Label) :
     Program.blockIdx p l = ((Program.view p).2.map (·.1)).idxOf l := by
-  rw [Program.blockIdx, Program.labels_eq_view]
+  rw [Program.blockIdx, Program.labels_view]
 
 /-- What the block map found: the label's position in the view, its body
 there, and the following label. -/

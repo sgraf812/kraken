@@ -36,7 +36,7 @@ theorem sib_correct [LinkedProgram] (v : UInt64) :
 `sib_correct` read back as the judgment of the baseline example
 `sib_example_correct`, over the same program text. -/
 
-theorem sib_example_correct [layout : _root_.Layout] [Kraken.Executable.ValidExecutable (layout sib_example)] (s₀ : MachineData)
+theorem sib_example_correct [layout : _root_.Layout] [Kraken.Executable.Assembled (layout sib_example)] (s₀ : MachineData)
     (v : UInt64) (R : DataMem → Prop)
     (h_mem : s₀.dmem =⋆ Eq (v.At (s₀.regs.rdi.toBitVec + BitVec.ofInt 64 (s₀.regs.r15.toBitVec.toInt * 8))) ⋆ R) :
     Eventually (straightlineStep (layout sib_example))
