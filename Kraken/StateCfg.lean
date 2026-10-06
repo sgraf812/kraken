@@ -130,6 +130,10 @@ abbrev CallSpec [LinkedProgram] (f : Label) (Pre : MachineData → Prop)
 
 namespace StateWP
 
+/- A jump exit of `cfg` asks where its target sits in the list of labels of the program,
+`["start", ".loop", …]`. With `StateWP` open, `grind`'s normalizer answers by evaluation. -/
+attribute [scoped grind norm] List.idxOf_cons List.contains_cons
+
 variable [layout : Layout] [prog : LinkedProgram]
 
 omit layout in

@@ -35,12 +35,6 @@ swap:
   ret
 ")
 
-@[grind .] private theorem pswap_idx_start_lt_done :
-    Program.blockIdx pswap "start" < Program.blockIdx pswap "done" := by decide
-
-@[grind .] private theorem pswap_done_isSome :
-    (Program.blockAt pswap "done").isSome := by decide
-
 /-- `swap` clobbers `rax` and `rbx`. -/
 private abbrev swapMod : Modifies := ⟨[.rax, .rbx]⟩
 

@@ -10,6 +10,7 @@ off that decomposition, and `cfg_cases` splits a control-flow obligation into
 one goal per block.
 -/
 public import Kraken.Specs
+public meta import Lean.Elab.Tactic
 
 @[expose] public section
 
@@ -379,6 +380,31 @@ def Program.blockAt (p : Program) (l : Label) : Option Program.Block :=
 def Program.blockIdx (p : Program) (l : Label) : Nat :=
   (Program.labels p).idxOf l
 
+theorem Program.labels_eq_view (p : Program) :
+    Program.labels p = (Program.view p).2.map (·.1) := by
+  induction p with
+  | nil => rfl
+  | cons d p ih => cases d <;> simp [Program.labels, Program.view, ih]
+
+theorem Program.isSome_blockAtAux (bs : List (Label × Program)) (l : Label) :
+    (Program.blockAtAux bs l).isSome = (bs.map (·.1)).contains l := by
+  induction bs with
+  | nil => rfl
+  | cons b bs ih =>
+    obtain ⟨l', b⟩ := b
+    by_cases h : l' = l
+    · simp [Program.blockAtAux, h]
+    · simp only [Program.blockAtAux, h, if_false, ih, List.map_cons, List.contains_cons]
+      simp [Ne.symm h]
+
+theorem Program.isSome_blockAt (p : Program) (l : Label) :
+    (Program.blockAt p l).isSome = ((Program.view p).2.map (·.1)).contains l :=
+  Program.isSome_blockAtAux _ l
+
+theorem Program.blockIdx_eq_view (p : Program) (l : Label) :
+    Program.blockIdx p l = ((Program.view p).2.map (·.1)).idxOf l := by
+  rw [Program.blockIdx, Program.labels_eq_view]
+
 /-- What the block map found: the label's position in the view, its body
 there, and the following label. -/
 theorem Program.blockAtAux_spec : ∀ {bs : List (Label × Program)} {l : Label}
@@ -543,19 +569,69 @@ theorem triple_of_dead {Prog V E' : Type} [Assertion E'] [WP Prog V (MachineData
     (h : ∀ s, ¬ pre s) : ⦃ pre ⦄ x ⦃ Q; E ⦄ :=
   ⟨fun s hs => (h s hs).elim⟩
 
+open Lean Meta Elab Tactic in
+/-- The directives of a closed text, in order, read off by reduction. -/
+private meta partial def cfgDirectives (e : Expr) (acc : Array Expr := #[]) :
+    MetaM (Array Expr) := do
+  let e ← whnfD e
+  match_expr e with
+  | List.nil _ => return acc
+  | List.cons _ hd tl => cfgDirectives tl (acc.push hd)
+  | _ => throwError "cfg_view: cannot compute the directives of the text"
+
+open Lean Meta Elab Tactic in
+/-- For the block-map equation `h : Program.blockAt p l = _` of a closed text
+`p`, add `n : (Program.view p).2 = bs`, where `bs` lists the labeled blocks of
+`p` with their directives. For the text `[.label "a", i₁, .label "b", i₂]`,
+`bs` is `[("a", [i₁]), ("b", [i₂])]`. The kernel checks the equation. -/
+elab "cfg_view " h:term " as " n:ident : tactic => withMainContext do
+  let ty ← instantiateMVars (← inferType (← elabTerm h none))
+  let_expr Eq _ lhs _ := ty
+    | throwError "cfg_view: expected `Program.blockAt p l = _`"
+  let_expr Program.blockAt p _ := lhs
+    | throwError "cfg_view: expected `Program.blockAt p l = _`"
+  let dirTy := mkConst ``Directive
+  let mut blocks : Array (Expr × Array Expr) := #[]
+  for d in ← cfgDirectives p do
+    match_expr ← whnfD d with
+    | Directive.label l =>
+      let .lit (.strVal s) ← whnfD l
+        | throwError "cfg_view: the label {l} is not a string literal"
+      blocks := blocks.push (mkStrLit s, #[])
+    | _ =>
+      let some (l, body) := blocks.back?
+        | throwError "cfg_view: the text does not start with a label"
+      blocks := blocks.pop.push (l, body.push d)
+  let pairs ← blocks.mapM fun (l, body) => do
+    mkAppM ``Prod.mk #[l, ← mkListLit dirTy body.toList]
+  let bs ← mkListLit (← mkAppM ``Prod #[mkConst ``Label, mkConst ``Program]) pairs.toList
+  let stmt ← mkEq (← mkAppM ``Prod.snd #[mkApp (mkConst ``Program.view) p]) bs
+  let pf ← mkAuxTheorem stmt (← mkEqRefl bs)
+  let (_, g) ← (← getMainGoal).note n.getId pf stmt
+  replaceMainGoal [g]
+
 /-- Split the control-flow obligations into one goal per block: compute the
 block map on the program's text, case on the label it matches, and substitute
 the block it names. A block whose table entry is `False` is dead code, and its goal closes
-without stepping. The bracket lists the program's definitional unfoldings. -/
+without stepping. The bracket lists the program's definitional unfoldings. A jump exit asks
+whether its target is mapped and at which position through the list of labels,
+`["start", ".loop", …]`; once vcgen supplies the target, `grind` evaluates the question with
+the `StateWP` normalization rules. -/
 macro "cfg_cases" "[" ids:Lean.Parser.Tactic.simpLemma,* "]" : tactic =>
   `(tactic|
     (intro l blk hblk n
-     simp only [$ids,*, Program.blockAt, Program.blockAtAux, Program.view,
-       List.cons_append, List.nil_append, List.head?_cons, List.head?_nil] at hblk
+     cfg_view hblk as hview
+     have hlabels := congrArg (List.map (·.1)) hview
+     simp only [List.map_cons, List.map_nil] at hlabels
+     rw [Program.blockAt, hview] at hblk
+     clear hview
+     simp only [$ids,*, Program.blockAtAux, List.head?_cons, List.head?_nil, Option.map_some,
+       Option.map_none] at hblk
      repeat' split at hblk
      all_goals subst_vars
      all_goals simp only [Option.some.injEq, reduceCtorEq] at hblk
      all_goals subst hblk
-     all_goals dsimp only
+     all_goals simp only [Program.EdgeLt, Program.isSome_blockAt, Program.blockIdx_eq_view,
+       hlabels]
+     all_goals clear hlabels
      all_goals try (intro _ _; exact triple_of_dead fun _ h => h.1)))
-

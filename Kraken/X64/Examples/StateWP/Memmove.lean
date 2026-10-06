@@ -80,14 +80,6 @@ private theorem Reg64s.set_low_W8 (r : Reg64s) (g : Reg64) (v : BitVec 8) :
 @[grind =] private theorem Reg64s.set_al (r : Reg64s) (v : BitVec 8) :
     r.set (.low .rax .W8) v = { r with rax := { toBitVec := (r.get64 .rax).replaceLow v } } := rfl
 
-@[grind .] private theorem mm_fwd_lt : Program.blockIdx memmove "memmove" < Program.blockIdx memmove "fwd" := by decide
-@[grind .] private theorem mm_bwd_lt : Program.blockIdx memmove "bwd" < Program.blockIdx memmove "bdone" := by decide
-@[grind .] private theorem mm_fwd_lt' : Program.blockIdx memmove "fwd" < Program.blockIdx memmove "fdone" := by decide
-@[grind .] private theorem mm_bwd_some : (Program.blockAt memmove "bwd").isSome := by decide
-@[grind .] private theorem mm_bdone_some : (Program.blockAt memmove "bdone").isSome := by decide
-@[grind .] private theorem mm_fwd_some : (Program.blockAt memmove "fwd").isSome := by decide
-@[grind .] private theorem mm_fdone_some : (Program.blockAt memmove "fdone").isSome := by decide
-
 /-- The registers `memmove` does not touch. -/
 private abbrev MMKeep (s t : MachineData) : Prop :=
   t.regs.get64 .rbx = s.regs.get64 .rbx ∧ t.regs.get64 .rcx = s.regs.get64 .rcx
@@ -152,11 +144,6 @@ theorem memmove_spec [LinkedProgram] (bs : List UInt8) (R₁ R₂ : DataMem → 
   all_goals kvcgen64 with finish
 
 /-! ## The caller -/
-
-@[grind .] private theorem start_lt_done :
-    Program.blockIdx memmoveProg "start" < Program.blockIdx memmoveProg "done" := by decide
-
-@[grind .] private theorem done_isSome : (Program.blockAt memmoveProg "done").isSome := by decide
 
 /-- The caller's table: `start` holds the arguments, `done` the moved bytes. The blocks of the
 callee are entered only by the call. -/
