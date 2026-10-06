@@ -39,15 +39,15 @@ private theorem dropWhile_eq_drop_of {α} {p : α → Bool} {l : List α} {j : N
     cases j with
     | zero =>
       have hx := hhead x rfl
-      rw [List.dropWhile_cons, if_neg (by simp [hx]), List.drop_zero]
+      rw [List.dropWhile_cons, ite_eq_right (by simp [hx]), List.drop_zero]
     | succ m =>
       have hx := hprior 0 (Nat.succ_pos m) x rfl
-      rw [List.dropWhile_cons, if_pos (by simp [hx]), List.drop_succ_cons]
+      rw [List.dropWhile_cons, ite_eq_left (by simp [hx]), List.drop_succ_cons]
       exact ih (fun k hk c hc => hprior (k+1) (by omega) c (by simpa using hc))
         (fun c hc => hhead c (by simpa using hc))
 
 theorem directivesFromAddress_addrOf_first (e : Kraken.Executable Directive) (j n : Nat)
-    (hjn : j ≤ n) (hn : n ≤ e.2.length) (hj : e.addrOf j = e.addrOf n)
+    (hj : e.addrOf j = e.addrOf n)
     (hfresh : ∀ k, k < j → e.addrOf k ≠ e.addrOf n) :
     e.directivesFromAddress (e.addrOf n) = e.2.drop j := by
   show ((Kraken.Executable.withAddresses (e.1, e.2)).dropWhile
@@ -206,7 +206,7 @@ theorem exists_cut (e : Kraken.Executable Directive) [Assembled e] {n : Nat} (hn
       ∧ ∀ m, j ≤ m → m < n → ∃ d, e.2[m]? = some (d, 0) := by
   obtain ⟨j, hjn, hj, hmin⟩ :=
     Nat.exists_least_le (P := fun k => e.addrOf k = e.addrOf n) rfl
-  exact ⟨j, hjn, directivesFromAddress_addrOf_first e j n hjn hn hj hmin,
+  exact ⟨j, hjn, directivesFromAddress_addrOf_first e j n hj hmin,
     fun m hjm hmn => zero_between_of_addrOf_eq e hjm hmn hn hj⟩
 
 end Kraken.Executable
