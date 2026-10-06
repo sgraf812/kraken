@@ -6,15 +6,15 @@ of one directive with a small footprint. A register write carries the
 schematic post to the updated registers. A memory instruction owns the slot's
 bytes, and its pure conjunct is the post entailment: the schematic post holds
 of the slot as the instruction leaves it, at the registers and flags the
-instruction produces. `SepWP.cons_spec` sequences the specs, and the frame
+instruction produces. `Program.FrameWP.cons_spec` sequences the specs, and the frame
 inference of Kraken/SepFrameProc.lean threads the post entailment into the
 tail.
 
-Every proof runs the same route: `SepWP.sep_intro` opens the triple under an
+Every proof runs the same route: `Program.FrameWP.sep_intro` opens the triple under an
 ambient frame, the `Mem.*_sep` lemmas of Kraken/SeparationMem.lean step the
 machine memory under that frame, and the run ends at the directive's end.
 -/
-public import Kraken.SepWP
+public import Kraken.X64.WP.Frame
 public import Kraken.X64.Registers
 public import Kraken.X64.Parser
 public import Kraken.Specs
@@ -24,14 +24,14 @@ public import Kraken.Specs
 open Std.WP
 open Lean.Order
 open Kraken.X64.Parser
-open scoped SepWP
+open scoped Program.FrameWP
 
 /-- Rotate the middle assertion out: `P ∗ (Q ∗ R) = Q ∗ (P ∗ R)`. -/
 theorem MProp.sep_left_comm {w : Nat} (P Q R : MProp w) :
     P ∗ (Q ∗ R) = Q ∗ (P ∗ R) := by
   rw [← MProp.sep_assoc, MProp.sep_comm P Q, MProp.sep_assoc]
 
-namespace SepWP
+namespace Program.FrameWP
 
 variable [LinkedProgram] {Q : Unit → Reg64s → RegZmms → StatusFlags → MProp 64}
   {E : Int64 → Reg64s → RegZmms → StatusFlags → MProp 64}
@@ -365,4 +365,4 @@ slot at the stack pointer and reads it. Both move the stack pointer by eight. -/
   rw [MProp.sep_comm] at hown
   exact (MProp.le_def _ _).mp (MProp.sep_mono_right F hpost) _ hown
 
-end SepWP
+end Program.FrameWP

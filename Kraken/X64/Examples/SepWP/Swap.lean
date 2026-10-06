@@ -11,7 +11,7 @@ open Kraken.X64.Parser
 open Kraken
 open Std.WP
 open Lean.Order
-open scoped SepWP
+open scoped Program.FrameWP
 
 set_option experimental.vcgen true
 
@@ -39,6 +39,6 @@ theorem swap_correct [layout : _root_.Layout] [Kraken.Executable.Assembled (layo
           s'.1.regs.get Reg.rax = d.regs.get Reg.rbx ∧
           s'.1.regs.get Reg.rbx = d.regs.get Reg.rax)
       (d, Kraken.Layout.start Directive) := by
-  apply eventually_straightlineStep_of_sep_wp (footprint := MProp.emp)
+  apply Program.FrameWP.straightline_of_wp (footprint := MProp.emp)
     (frame := MProp.mk fun _ => True) (by rw [MProp.emp_sep, MProp.get_mk]; trivial)
   kvcgen64 [swap] with finish

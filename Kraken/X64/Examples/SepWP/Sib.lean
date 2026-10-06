@@ -11,7 +11,7 @@ open Kraken.X64.Parser
 open Kraken
 open Std.WP
 open Lean.Order
-open scoped SepWP
+open scoped Program.FrameWP
 
 set_option experimental.vcgen true
 
@@ -42,5 +42,5 @@ theorem sib_example_correct [layout : _root_.Layout] [Kraken.Executable.Assemble
     Eventually (straightlineStep (layout sib_example))
       (fun s' => s'.1.regs.rax = 42)
       (s₀, Kraken.Layout.start Directive) := by
-  apply eventually_straightlineStep_of_sep_wp (UInt64.get_AtM_sep h_mem)
+  apply Program.FrameWP.straightline_of_wp (UInt64.get_AtM_sep h_mem)
   kvcgen64 [sib_example] with finish

@@ -4,7 +4,7 @@ module
 `alu_mem_example` in the separation wp: the baseline's four-instruction
 program, with the slot at `136(%rdx)` owned as a `UInt64`. The triple fixes
 the register and owns the slot with the stored value. Read back through
-`eventually_straightlineStep_of_sep_wp`, it is the baseline statement
+`Program.FrameWP.straightline_of_wp`, it is the baseline statement
 `alu_mem_example_correct`, over the same program and any layout.
 -/
 public import Kraken.SepFrameProc
@@ -13,7 +13,7 @@ import Kraken.X64.Examples.Examples
 
 open Std.WP
 open Lean.Order
-open scoped SepWP
+open scoped Program.FrameWP
 
 set_option experimental.vcgen true
 
@@ -35,7 +35,7 @@ theorem alu_mem_example_correct [layout : Layout] [Kraken.Executable.Assembled (
     Eventually (straightlineStep (layout alu_mem_example))
       (fun s' => s'.1.regs.rcx = 142)
       (s₀, layout.start) := by
-  apply eventually_straightlineStep_of_sep_wp (UInt64.get_AtM_sep h_mem)
+  apply Program.FrameWP.straightline_of_wp (UInt64.get_AtM_sep h_mem)
   kvcgen64 with finish
 
 /-! ## A block of register writes

@@ -7,7 +7,7 @@ Root module. The baseline instruction semantics is `Operation.interp` in
 Kraken/X64/Semantics.lean, in continuation-passing style over `Effects`.
 Kraken/X64/WP/Basic.lean is the run of a program fragment in the baseline's
 burst. Kraken/X64/WP/Instance.lean interprets a program by its run at predicates over
-machine states, and Kraken/SepWP.lean at separation-logic assertions over the
+machine states, and Kraken/X64/WP/Frame.lean at separation-logic assertions over the
 memory, with the instruction specs of Kraken/SepSpecs.lean and the frame
 inference of Kraken/SepFrameProc.lean. Kraken/StateCfg.lean links the runs of
 basic blocks into the run of a program with jumps. Both wps are discharged by
@@ -26,7 +26,7 @@ public import Kraken.KVCGen
 public import Kraken.X64.WP.Instance
 public import Kraken.StateCfg
 public import Kraken.MProp
-public import Kraken.SepWP
+public import Kraken.X64.WP.Frame
 public import Kraken.SepCancel
 public import Kraken.SepSpecs
 public import Kraken.SepFrameProc

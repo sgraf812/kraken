@@ -7,13 +7,13 @@ separation algebra of Kraken/MProp.lean:
 `Reg64s → RegZmms → StatusFlags → MProp 64`, and `Int64 →` that for the exit
 channel.
 
-`SepWP.instWP` interprets a `Program` over the run `Program.wp` of
+`Program.FrameWP.instWP` interprets a `Program` over the run `Program.wp` of
 Kraken/X64/WP/Basic.lean, at the separation assertion language with the frame rule
 internalized on both channels: a triple `⦃P⦄ p ⦃Q; E⦄` holds when the run
 validates it under every memory frame, held across the fall-through and
-across every exit. `SepWP.sep_intro` is the one door in, and `SepWP.frames`
+across every exit. `Program.FrameWP.sep_intro` is the one door in, and `Program.FrameWP.frames`
 says every program frames every memory assertion, which is what the frame
-inference of `vcgen` consumes. `eventually_straightlineStep_of_sep_wp` reads the wp back
+inference of `vcgen` consumes. `Program.FrameWP.straightline_of_wp` reads the wp back
 as the `Eventually` judgment of the laid-out program.
 -/
 public import Kraken.MProp
@@ -30,7 +30,7 @@ The frame is a pure memory assertion. It acts on an assertion of the program
 logic pointwise through the state-passing layers, and `FrameOp` derives its
 companion on the exit channel through one more layer. -/
 
-namespace SepWP
+namespace Program.FrameWP
 
 /-- Frame a memory resource onto an assertion: `∗` under the register, vector
 and flag layers. -/
@@ -159,7 +159,7 @@ discharges per spec application. -/
     WP.Frames frameOp d F :=
   ⟨(frames [d] F).op_wp_le_wp_op⟩
 
-end SepWP
+end Program.FrameWP
 
 /-! ## Reading the wp back as the baseline judgment
 
@@ -171,8 +171,8 @@ final state at every pc, then the run from `s` at the layout's start
 eventually ends in `post`. The entailment is asked in every linked program. The laid-out program is a
 valid executable. -/
 
-open SepWP in
-theorem eventually_straightlineStep_of_sep_wp [layout : Layout] {p : Program}
+open Program.FrameWP in
+theorem Program.FrameWP.straightline_of_wp [layout : Layout] {p : Program}
     [Kraken.Executable.Assembled (layout p)] {s : MachineData}
     {post : MachineState → Prop} {footprint frame : MProp 64}
     (hmem : (footprint ∗ frame).get s.dmem)

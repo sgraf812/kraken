@@ -7,8 +7,8 @@ the spec's precondition with its logical variables live.
 `Kraken.Tactic.solveSepSplit` at `MProp.sepOps` cancels the spec's footprint
 out of the goal precondition, assigning the logical variables by matching,
 the remainder to the frame, and proves the split by one AC equation.
-`SepWP.split_of_eq` turns that equation into the split VC's proof, and
-`SepWP.frames_directive` is the frame-rule side goal.
+`Program.FrameWP.split_of_eq` turns that equation into the split VC's proof, and
+`Program.FrameWP.frames_directive` is the frame-rule side goal.
 
 Every instruction spec is a triple of one directive, so the procedure is
 keyed on `Directive`: that is where `vcgen` applies a spec with a footprint.
@@ -23,9 +23,9 @@ public section
 open Lean Meta Sym Sym.Internal Elab Tactic VCGen
 open Std.WP
 open Lean.Order
-open scoped SepWP
+open scoped Program.FrameWP
 
-namespace SepWP
+namespace Program.FrameWP
 
 /-- The split VC of a frame `R` and a footprint `fp`: the precondition is
 `fp ∗ R` by AC, and the spec runs at `fp`. -/
@@ -111,13 +111,13 @@ meta def sepFrameSplit (i : FrameInferenceInfo) (goal : FrameGoal) :
     #[leArgs[0]!, leArgs[1]!, specPre])
   match pure? with
   | none =>
-    let prf ← mkAppNS (← mkConstS ``SepWP.split_of_eq)
+    let prf ← mkAppNS (← mkConstS ``Program.FrameWP.split_of_eq)
       #[i.pre, fp, R, W, ss[0]!, ss[1]!, ss[2]!, hc, goal.specProof]
     return { splitVCProof := prf, subgoals := sideGoals }
   | some φ =>
     let φ ← shareCommon (← instantiateMVarsS φ)
     let (hφ, sub) ← pushWand mprop R i.le φ
-    let prf ← mkAppNS (← mkConstS ``SepWP.split_of_eq_ofProp)
+    let prf ← mkAppNS (← mkConstS ``Program.FrameWP.split_of_eq_ofProp)
       #[i.pre, fp, R, W, ss[0]!, ss[1]!, ss[2]!, φ, hc, hφ, goal.specProof]
     return { splitVCProof := prf, subgoals := sub :: sideGoals }
 where
@@ -130,14 +130,14 @@ where
       | let h ← mkFreshExprSyntheticOpaqueMVar φ; return (h, h.mvarId!)
     let args := rhs.getAppArgs
     unless rhs.isAppOfArity ``Lean.Order.PreservesSup.upperAdjoint 7
-        && args[2]!.isAppOfArity ``SepWP.frameOp 1 do
+        && args[2]!.isAppOfArity ``Program.FrameWP.frameOp 1 do
       let h ← mkFreshExprSyntheticOpaqueMVar φ; return (h, h.mvarId!)
     let X := args[3]!
     let isEmp := R.isAppOf ``MProp.emp
     let heq ← if isEmp then
-        mkAppNS (← mkConstS ``SepWP.upperAdjoint_frameOp_emp) #[X, args[4]!, args[5]!, args[6]!]
+        mkAppNS (← mkConstS ``Program.FrameWP.upperAdjoint_frameOp_emp) #[X, args[4]!, args[5]!, args[6]!]
       else
-        mkAppNS (← mkConstS ``SepWP.upperAdjoint_frameOp_pointwise) #[R, X, args[4]!, args[5]!, args[6]!]
+        mkAppNS (← mkConstS ``Program.FrameWP.upperAdjoint_frameOp_pointwise) #[R, X, args[4]!, args[5]!, args[6]!]
     let some (_, _, rhs') := (← instantiateMVarsS (← Sym.inferType heq)).eq?
       | throwError "sep frameproc: not an equation{indentExpr heq}"
     let rhs' ← shareCommon rhs'
@@ -152,15 +152,15 @@ where
 meta def sepFrameProc : FrameInferenceProc := fun i =>
   return .commit i.unframedApp.excessArgs (sepFrameSplit i)
 
-/-- Active under `open scoped SepWP`, together with the instance. -/
+/-- Active under `open scoped Program.FrameWP`, together with the instance. -/
 @[scoped frameproc] meta def sepFP : FrameProc where
   prog := ``Directive
-  opHead := ``SepWP.frameOp
-  mkOpAppM := fun _ => pure (mkConst ``SepWP.frameOp)
+  opHead := ``Program.FrameWP.frameOp
+  mkOpAppM := fun _ => pure (mkConst ``Program.FrameWP.frameOp)
   mkResourceTy := fun _ => pure (mkApp (mkConst ``MProp) (mkNatLit 64))
   proc := sepFrameProc
 
-end SepWP
+end Program.FrameWP
 
 /-! ## Smoke tests
 
