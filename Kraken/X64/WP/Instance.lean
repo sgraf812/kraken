@@ -9,6 +9,18 @@ public import Std.Tactic.Do
 open Std.WP
 open Lean.Order
 
+public theorem Int64.add_sub_self_left (a b : Int64) : a + (b - a) = b := by
+  apply Int64.toBitVec_inj.mp
+  simp only [Int64.toBitVec_add, Int64.toBitVec_sub]
+  rw [BitVec.add_comm, BitVec.sub_add_cancel]
+
+@[expose] public def MachineData.retAddr (t : MachineData) : Option Int64 :=
+  (Mem.loadInt t.dmem (t.regs.get64 .rsp) 8).map (fun i => Int64.ofBitVec (BitVec.ofInt 64 i))
+
+@[grind =] public theorem MachineData.retAddr_eq (t : MachineData) :
+    t.retAddr = (Mem.loadInt t.dmem (t.regs.get64 .rsp) 8).map
+      (fun i => Int64.ofBitVec (BitVec.ofInt 64 i)) := rfl
+
 namespace Program.WP
 
 public scoped instance instWP [LinkedProgram] : WP Program Unit (MachineData → Prop) (Int64 → MachineData → Prop) where
@@ -48,8 +60,8 @@ variable [LinkedProgram] {Q : Unit → MachineData → Prop} {E : Int64 → Mach
   exact hQ _ (Or.inl ⟨rfl, hpre⟩)
 
 @[spec] public theorem mov_store_reg_spec (b : Reg64) (d : Int64) (rs : Reg64) :
-    ⦃ fun s => ((Mem.loadInt s.dmem (s.regs.get64 b + BitVec.ofInt 64 d.toInt) 8).isSome = true)
-        ⊓ Q () { s with
+    ⦃ fun s => (Mem.loadInt s.dmem (s.regs.get64 b + BitVec.ofInt 64 d.toInt) 8).isSome = true
+        ∧ Q () { s with
             dmem := Mem.storeInt s.dmem (s.regs.get64 b + BitVec.ofInt 64 d.toInt) 8
               (s.regs.get64 rs).toInt } ⦄
       Directive.instr (.regular .W64 .W64
@@ -57,7 +69,7 @@ variable [LinkedProgram] {Q : Unit → MachineData → Prop} {E : Int64 → Mach
             (.regOrMem (.reg (.low rs .W64)))))
     ⦃ Q ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
-  obtain ⟨hmapped, hpre⟩ := (meet_prop_eq_and _ _) ▸ hpre
+  obtain ⟨hmapped, hpre⟩ := hpre
   obtain ⟨i, hload⟩ := Option.isSome_iff_exists.mp hmapped
   intro k hs
   obtain ⟨z, hz⟩ := LinkedProgram.cell_of_prefix hs.1
@@ -68,9 +80,8 @@ variable [LinkedProgram] {Q : Unit → MachineData → Prop} {E : Int64 → Mach
   exact hQ _ (Or.inl ⟨rfl, hpre⟩)
 
 @[spec] public theorem add_reg_mem_spec (rd b : Reg64) (d : Int64) :
-    ⦃ fun s => ((Mem.loadInt s.dmem (s.regs.get64 b + BitVec.ofInt 64 d.toInt) 8).isSome = true)
-        ⊓ ∀ i, Mem.loadInt s.dmem (s.regs.get64 b + BitVec.ofInt 64 d.toInt) 8 = some i →
-          let a := BitVec.ofInt 64 i
+    ⦃ fun s => (Mem.loadInt s.dmem (s.regs.get64 b + BitVec.ofInt 64 d.toInt) 8).isSome = true ∧
+          let a := BitVec.ofInt 64 ((Mem.loadInt s.dmem (s.regs.get64 b + BitVec.ofInt 64 d.toInt) 8).getD 0)
           let bv := s.regs.get64 rd
           let v := a + bv
           Q () { s with
@@ -84,7 +95,7 @@ variable [LinkedProgram] {Q : Unit → MachineData → Prop} {E : Int64 → Mach
             (.regOrMem (.mem ⟨some (.reg b), none, .int64 d⟩))))
     ⦃ Q ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
-  obtain ⟨hmapped, hpre⟩ := (meet_prop_eq_and _ _) ▸ hpre
+  obtain ⟨hmapped, hpre⟩ := hpre
   obtain ⟨i, hload⟩ := Option.isSome_iff_exists.mp hmapped
   intro k hs
   obtain ⟨z, hz⟩ := LinkedProgram.cell_of_prefix hs.1
@@ -93,7 +104,7 @@ variable [LinkedProgram] {Q : Unit → MachineData → Prop} {E : Int64 → Mach
     RegOrMem.interp, MachineData.load, MachineData.set, MachineData.setReg,
     Reg64s.get_low_W64, Reg64s.set_low_W64, AddrExpr.zeroExtend_interp_base_disp,
     hload, Effects.All]
-  exact hQ _ (Or.inl ⟨rfl, (hpre i hload)⟩)
+  exact hQ _ (Or.inl ⟨rfl, by rwa [hload, Option.getD_some] at hpre⟩)
 
 local macro "run_step" : tactic =>
   `(tactic| simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
@@ -252,14 +263,14 @@ local macro "run_step" : tactic =>
   exact hQ _ (Or.inl ⟨rfl, (hpre af)⟩)
 
 @[spec] public theorem mov_load_byte_spec (r b : Reg64) (d : Int64) :
-    ⦃ fun s => ((Mem.loadInt s.dmem (s.regs.get64 b + BitVec.ofInt 64 d.toInt) 1).isSome = true)
-        ⊓ ∀ i, Mem.loadInt s.dmem (s.regs.get64 b + BitVec.ofInt 64 d.toInt) 1 = some i →
-          Q () { s with regs := s.regs.set (.low r .W8) (BitVec.ofInt 8 i) } ⦄
+    ⦃ fun s => (Mem.loadInt s.dmem (s.regs.get64 b + BitVec.ofInt 64 d.toInt) 1).isSome = true
+        ∧ Q () { s with regs := s.regs.set (.low r .W8)
+                              (BitVec.ofInt 8 ((Mem.loadInt s.dmem (s.regs.get64 b + BitVec.ofInt 64 d.toInt) 1).getD 0)) } ⦄
       Directive.instr (.regular .W64 .W8
           (.mov (.reg (.low r .W8)) (.regOrMem (.mem ⟨some (.reg b), none, .int64 d⟩))))
     ⦃ Q ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
-  obtain ⟨hmapped, hpre⟩ := (meet_prop_eq_and _ _) ▸ hpre
+  obtain ⟨hmapped, hpre⟩ := hpre
   obtain ⟨i, hload⟩ := Option.isSome_iff_exists.mp hmapped
   intro k hs
   obtain ⟨z, hz⟩ := LinkedProgram.cell_of_prefix hs.1
@@ -267,18 +278,18 @@ local macro "run_step" : tactic =>
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
     RegOrMem.interp, MachineData.load, MachineData.set, MachineData.setReg,
     AddrExpr.zeroExtend_interp_base_disp, Width.bytes, hload, Effects.All]
-  exact hQ _ (Or.inl ⟨rfl, hpre i hload⟩)
+  exact hQ _ (Or.inl ⟨rfl, by rwa [hload, Option.getD_some] at hpre⟩)
 
 @[spec] public theorem mov_store_byte_spec (b : Reg64) (d : Int64) (r : Reg64) :
-    ⦃ fun s => ((Mem.loadInt s.dmem (s.regs.get64 b + BitVec.ofInt 64 d.toInt) 1).isSome = true)
-        ⊓ Q () { s with
+    ⦃ fun s => (Mem.loadInt s.dmem (s.regs.get64 b + BitVec.ofInt 64 d.toInt) 1).isSome = true
+        ∧ Q () { s with
             dmem := Mem.storeInt s.dmem (s.regs.get64 b + BitVec.ofInt 64 d.toInt) 1
               (s.regs.get (.low r .W8)).toInt } ⦄
       Directive.instr (.regular .W64 .W8
           (.mov (.mem ⟨some (.reg b), none, .int64 d⟩) (.regOrMem (.reg (.low r .W8)))))
     ⦃ Q ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
-  obtain ⟨hmapped, hpre⟩ := (meet_prop_eq_and _ _) ▸ hpre
+  obtain ⟨hmapped, hpre⟩ := hpre
   obtain ⟨i, hload⟩ := Option.isSome_iff_exists.mp hmapped
   intro k hs
   obtain ⟨z, hz⟩ := LinkedProgram.cell_of_prefix hs.1
@@ -324,11 +335,6 @@ local macro "run_step" : tactic =>
   run_step
   exact hQ _ (Or.inl ⟨rfl, hpre⟩)
 
-public theorem _root_.Int64.add_sub_self_left (a b : Int64) : a + (b - a) = b := by
-  apply Int64.toBitVec_inj.mp
-  simp only [Int64.toBitVec_add, Int64.toBitVec_sub]
-  rw [BitVec.add_comm, BitVec.sub_add_cancel]
-
 @[spec] public theorem jmp_label_spec (asz osz : Width) (l : Label) :
     ⦃ fun s => E (label l) s ⦄
       Directive.instr (.regular asz osz (.jmp (.rel (.sub (.label l) .after_current_instruction))))
@@ -342,36 +348,29 @@ public theorem _root_.Int64.add_sub_self_left (a b : Int64) : a + (b - a) = b :=
   exact hE _ _ (Or.inr hpre)
 
 @[spec] public theorem jcc_spec (asz osz : Width) (cc : CondCode) (l : Label) :
-    ⦃ fun s => (cc.interp s.status = true → E (label l) s) ⊓ (cc.interp s.status = false → Q () s) ⦄
+    ⦃ fun s => (cc.interp s.status = true → E (label l) s) ∧ (cc.interp s.status = false → Q () s) ⦄
       Directive.instr (.regular asz osz (.jcc cc l))
     ⦃ Q; E ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
-  obtain ⟨hjmp, hfall⟩ := (meet_prop_eq_and _ _) ▸ hpre
+  obtain ⟨hjmp, hfall⟩ := hpre
   intro k hs
   obtain ⟨z, hz⟩ := LinkedProgram.cell_of_prefix hs.1
   refine LinkedProgram.eventually_cell hz fun R next jmp hQ hE => ?_
   run_step
   cases hc : CondCode.interp cc s.status <;>
-    simp only [hc, Bool.false_eq_true, ite_true, ite_false]
+    simp only [Bool.false_eq_true, ite_true, ite_false]
   · exact hQ _ (Or.inl ⟨rfl, (hfall hc)⟩)
   · exact hE _ _ (Or.inr (hjmp hc))
 
-@[expose] public def _root_.MachineData.retAddr (t : MachineData) : Option Int64 :=
-  (Mem.loadInt t.dmem (t.regs.get64 .rsp) 8).map (fun i => Int64.ofBitVec (BitVec.ofInt 64 i))
-
-@[grind =] public theorem _root_.MachineData.retAddr_eq (t : MachineData) :
-    t.retAddr = (Mem.loadInt t.dmem (t.regs.get64 .rsp) 8).map
-      (fun i => Int64.ofBitVec (BitVec.ofInt 64 i)) := rfl
-
 @[spec] public theorem ret_spec (asz osz : Width) :
-    ⦃ fun s => (s.retAddr.isSome = true)
-        ⊓ (∀ ra, s.retAddr = some ra →
-            E ra { s with regs := s.regs.set64 .rsp (s.regs.get64 .rsp + 8#64) }) ⦄
+    ⦃ fun s => s.retAddr.isSome = true
+        ∧ E (s.retAddr.getD 0) { s with regs := s.regs.set64 .rsp (s.regs.get64 .rsp + 8#64) } ⦄
       Directive.instr (.regular asz osz .ret)
     ⦃ Q; E ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
-  obtain ⟨hmapped, hexit⟩ := (meet_prop_eq_and _ _) ▸ hpre
+  obtain ⟨hmapped, hexit⟩ := hpre
   obtain ⟨ra, hra⟩ := Option.isSome_iff_exists.mp hmapped
+  rw [hra, Option.getD_some] at hexit
   obtain ⟨i, hi, hval⟩ : ∃ i, Mem.loadInt s.dmem (s.regs.get64 .rsp) 8 = some i
       ∧ Int64.ofBitVec (BitVec.ofInt 64 i) = ra := by
     unfold MachineData.retAddr at hra
@@ -383,7 +382,7 @@ public theorem _root_.Int64.add_sub_self_left (a b : Int64) : a + (b - a) = b :=
   refine LinkedProgram.eventually_cell hz fun R next jmp _ hE => ?_
   simp only [Directive.interp, Instr.interp, Operation.interp, MachineData.load, hi,
     Effects.All, hval]
-  exact hE _ _ (Or.inr (hexit ra hra))
+  exact hE _ _ (Or.inr hexit)
 
 end Program.WP
 

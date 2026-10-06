@@ -58,9 +58,10 @@ private theorem pswap_body_spec [LinkedProgram] (R : DataMem → Prop) (s : Mach
   subst ht
   simp only [MachineData.pushRa]
   kvcgen64
-  · grind
-  · refine ⟨by grind, by grind, fun r _ => ?_⟩
-    cases r <;> simp_all
+  all_goals first
+    | grind
+    | intro r _
+      cases r <;> simp_all
 
 theorem pswap_correct [Kraken.Executable.Assembled (layout pswap)]
     (d : MachineData) (R : DataMem → Prop)
