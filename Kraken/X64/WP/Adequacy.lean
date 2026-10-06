@@ -1,6 +1,6 @@
 module
 
-public import Kraken.ProgramRun
+public import Kraken.X64.WP
 
 @[expose] public section
 
@@ -344,9 +344,9 @@ theorem Program.linkedAt_layout [layout : Layout] {p : Program}
         rw [← heq, List.getElem?_eq_getElem (by omega), ← hkdz, List.getElem_take]
       exact absurd (hv.labels_unique k i l _ _ hcell hlay) (by omega)
 
-theorem Program.straightline_of_run [layout : Layout] {p : Program}
+theorem Program.straightline_of_wp [layout : Layout] {p : Program}
     [Kraken.Executable.Assembled (layout p)] {Q : MachineData → Prop} {E : Int64 → MachineData → Prop} {s : MachineData}
-    {post : MachineState → Prop} (h : @Program.run ⟨layout p⟩ p Q E s)
+    {post : MachineState → Prop} (h : @Program.wp ⟨layout p⟩ p Q E s)
     (hQ : ∀ s', Q s' → ∀ pc, post (s', pc)) (hE : ∀ a s', ¬ E a s') :
     Eventually (straightlineStep (layout p)) post (s, layout.start) := by
   have := LinkedProgram.eventually_straightlineStep (e := layout p) (post := post) ?_

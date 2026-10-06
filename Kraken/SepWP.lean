@@ -7,8 +7,8 @@ separation algebra of Kraken/MProp.lean:
 `Reg64s → RegZmms → StatusFlags → MProp 64`, and `Int64 →` that for the exit
 channel.
 
-`SepWP.instWP` interprets a `Program` over the run `Program.run` of
-Kraken/ProgramRun.lean, at the separation assertion language with the frame rule
+`SepWP.instWP` interprets a `Program` over the run `Program.wp` of
+Kraken/X64/WP.lean, at the separation assertion language with the frame rule
 internalized on both channels: a triple `⦃P⦄ p ⦃Q; E⦄` holds when the run
 validates it under every memory frame, held across the fall-through and
 across every exit. `SepWP.sep_intro` is the one door in, and `SepWP.frames`
@@ -17,7 +17,7 @@ inference of `vcgen` consumes. `eventually_straightlineStep_of_sep_wp` reads the
 as the `Eventually` judgment of the laid-out program.
 -/
 public import Kraken.MProp
-public import Kraken.ProgramRunSound
+public import Kraken.X64.WP.Adequacy
 
 @[expose] public section
 
@@ -53,7 +53,7 @@ curried out of `MachineData`. -/
     WP Program Unit (Reg64s → RegZmms → StatusFlags → MProp 64)
       (Int64 → Reg64s → RegZmms → StatusFlags → MProp 64) where
   trans q := ⟨fun Q E regs zmms flags => MProp.mk fun mem =>
-    Program.run q (fun s' => (Q () s'.regs s'.zmms s'.status).get s'.dmem)
+    Program.wp q (fun s' => (Q () s'.regs s'.zmms s'.status).get s'.dmem)
       (fun a s' => (E a s'.regs s'.zmms s'.status).get s'.dmem)
       ⟨regs, zmms, flags, mem⟩⟩
   trans_monotone q := by
@@ -61,7 +61,7 @@ curried out of `MachineData`. -/
     refine (MProp.le_def _ _).mpr fun mem h => ?_
     dsimp only at h ⊢
     rw [MProp.get_mk] at h ⊢
-    exact Program.run_mono
+    exact Program.wp_mono
       (fun s' => (MProp.le_def _ _).mp (hQ () s'.regs s'.zmms s'.status) s'.dmem)
       (fun a s' => (MProp.le_def _ _).mp (hE a s'.regs s'.zmms s'.status) s'.dmem) h
 
@@ -71,7 +71,7 @@ theorem get_base_apply [LinkedProgram] (q : Program)
     (E : Int64 → Reg64s → RegZmms → StatusFlags → MProp 64)
     (regs : Reg64s) (zmms : RegZmms) (flags : StatusFlags) (mem : Mem 64) :
     ((base.trans q).apply Q E regs zmms flags).get mem ↔
-      Program.run q (fun s' => (Q () s'.regs s'.zmms s'.status).get s'.dmem)
+      Program.wp q (fun s' => (Q () s'.regs s'.zmms s'.status).get s'.dmem)
         (fun a s' => (E a s'.regs s'.zmms s'.status).get s'.dmem) ⟨regs, zmms, flags, mem⟩ :=
   Iff.of_eq (congrArg (· mem) (MProp.get_mk _))
 
@@ -90,7 +90,7 @@ theorem sep_intro [LinkedProgram] {q : Program}
     {E : Int64 → Reg64s → RegZmms → StatusFlags → MProp 64}
     (h : ∀ (F : MProp 64) (s : MachineData),
       (F ∗ P s.regs s.zmms s.status).get s.dmem →
-      Program.run q (fun s' => (F ∗ Q () s'.regs s'.zmms s'.status).get s'.dmem)
+      Program.wp q (fun s' => (F ∗ Q () s'.regs s'.zmms s'.status).get s'.dmem)
         (fun a s' => (F ∗ E a s'.regs s'.zmms s'.status).get s'.dmem) s) :
     ⦃ P ⦄ q ⦃ Q; E ⦄ := by
   refine ⟨WP.le_wp_of_withFrameClosure_eq (base := base) rfl ?_⟩
@@ -105,7 +105,7 @@ theorem sep_elim [LinkedProgram] {q : Program} {F : MProp 64}
     {Q : Unit → Reg64s → RegZmms → StatusFlags → MProp 64}
     {E : Int64 → Reg64s → RegZmms → StatusFlags → MProp 64} {s : MachineData}
     (h : (F ∗ WP.wp (self := instWP) q Q E s.regs s.zmms s.status).get s.dmem) :
-    Program.run q (fun s' => (F ∗ Q () s'.regs s'.zmms s'.status).get s'.dmem)
+    Program.wp q (fun s' => (F ∗ Q () s'.regs s'.zmms s'.status).get s'.dmem)
       (fun a s' => (F ∗ E a s'.regs s'.zmms s'.status).get s'.dmem) s := by
   have hle := (PredTrans.le_frameClosure_iff frameOp (base.trans q) (Q := Q) (E := E)
     (pre := WP.wp (self := instWP) q Q E)).mp PartialOrder.rel_refl F
@@ -150,8 +150,8 @@ where `vcgen` sequences them. -/
     ⦃ WP.wp d (fun _ => WP.wp p Q E) E ⦄ (d :: p) ⦃ Q; E ⦄ := by
   refine sep_intro fun F s hpre => ?_
   have h1 := sep_elim (q := [d]) (Q := fun _ => WP.wp p Q E) hpre
-  exact Program.run_cons
-    (Program.run_mono (fun s' hs' => sep_elim (q := p) hs') (fun _ _ h => h) h1)
+  exact Program.wp_cons
+    (Program.wp_mono (fun s' hs' => sep_elim (q := p) hs') (fun _ _ h => h) h1)
 
 /-- The frame fact of one directive: what the frame inference of `vcgen`
 discharges per spec application. -/
@@ -182,7 +182,7 @@ theorem eventually_straightlineStep_of_sep_wp [layout : Layout] {p : Program}
     Eventually (straightlineStep (layout p)) post (s, layout.start) := by
   letI : LinkedProgram := ⟨layout p⟩
   rw [MProp.sep_comm] at hmem
-  refine Program.straightline_of_run (sep_elim ((MProp.le_def _ _).mp
+  refine Program.straightline_of_wp (sep_elim ((MProp.le_def _ _).mp
     (MProp.sep_mono_right _ (@ht this)) _ hmem)) (fun s' hq pc => ?_) (fun a s' he => ?_)
   · have h := (MProp.le_def _ _).mp (MProp.sep_wand_elim _ _) _ hq
     rw [MProp.get_mk] at h

@@ -49,16 +49,16 @@ def Program.LinkedAt [LinkedProgram] (p : Program) (k : Nat) : Prop :=
   p <+: (LinkedProgram.exe.2.map (·.1)).drop k ∧
   ∀ i l, p[i]? = some (Directive.label l) → label l = LinkedProgram.exe.addrOf (k + i)
 
-def Program.run [LinkedProgram] (p : Program) (Q : MachineData → Prop)
+def Program.wp [LinkedProgram] (p : Program) (Q : MachineData → Prop)
     (E : Int64 → MachineData → Prop) (s : MachineData) : Prop :=
   ∀ k, p.LinkedAt k →
     Eventually LinkedProgram.step
       (fun st => (st.2 = LinkedProgram.exe.addrOf (k + p.length) ∧ Q st.1) ∨ E st.2 st.1)
       (s, LinkedProgram.exe.addrOf k)
 
-theorem Program.run_mono [LinkedProgram] {p : Program} {Q₁ Q₂ : MachineData → Prop}
+theorem Program.wp_mono [LinkedProgram] {p : Program} {Q₁ Q₂ : MachineData → Prop}
     {E₁ E₂ : Int64 → MachineData → Prop} (hQ : ∀ s, Q₁ s → Q₂ s) (hE : ∀ a s, E₁ a s → E₂ a s)
-    {s : MachineData} (h : Program.run p Q₁ E₁ s) : Program.run p Q₂ E₂ s :=
+    {s : MachineData} (h : Program.wp p Q₁ E₁ s) : Program.wp p Q₂ E₂ s :=
   fun k hk => eventually_trans _ _ _ _ (h k hk) fun _ hb => Eventually.done _ <|
     hb.imp (fun ⟨ha, hq⟩ => ⟨ha, hQ _ hq⟩) (hE _ _)
 
@@ -91,9 +91,9 @@ theorem Program.LinkedAt.drop [LinkedProgram] {p : Program} {k : Nat} (h : p.Lin
   · rw [List.drop_eq_nil_of_le (show p.length ≤ m by omega)]
     exact ⟨List.nil_prefix, fun _ _ h => by simp at h⟩
 
-theorem Program.run_cons [LinkedProgram] {d : Directive} {p : Program} {Q : MachineData → Prop}
+theorem Program.wp_cons [LinkedProgram] {d : Directive} {p : Program} {Q : MachineData → Prop}
     {E : Int64 → MachineData → Prop} {s : MachineData}
-    (h : Program.run [d] (fun s' => Program.run p Q E s') E s) : Program.run (d :: p) Q E s := by
+    (h : Program.wp [d] (fun s' => Program.wp p Q E s') E s) : Program.wp (d :: p) Q E s := by
   intro k hk
   obtain ⟨hd, hp⟩ := Program.LinkedAt.append (a := [d]) hk
   refine eventually_trans _ _ _ _ (h k hd) ?_

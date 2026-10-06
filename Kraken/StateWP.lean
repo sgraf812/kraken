@@ -4,7 +4,7 @@ module
 The weakest precondition over whole machine states. An assertion is a
 predicate on `MachineData`, data memory included, and `Int64 →` that for the
 exit channel. `StateWP.instWP` interprets a `Program` by its run
-`Program.run`: `wp p Q E s` holds when every burst that runs `p` from `s`
+`Program.wp`: `wp p Q E s` holds when every burst that runs `p` from `s`
 falls through with `Q ()` or exits with `E`. The instance is scoped, so a file
 opts in with `open scoped StateWP`.
 
@@ -13,7 +13,7 @@ leaves. A memory access asks for the slot to be mapped. `vcgen` sequences
 them by `StateWP.cons_spec`, and `eventually_straightlineStep_of_wp` reads the
 wp of a laid-out program back as the `Eventually` judgment.
 -/
-public import Kraken.ProgramRunSound
+public import Kraken.X64.WP.Adequacy
 public import Kraken.X64.Registers
 public import Kraken.KVCGen
 public import Std.WP
@@ -28,12 +28,12 @@ namespace StateWP
 
 /-- Programs interpreted by their run, at predicates over machine states. -/
 scoped instance instWP [LinkedProgram] : WP Program Unit (MachineData → Prop) (Int64 → MachineData → Prop) where
-  trans q := ⟨fun Q E s => Program.run q (Q ()) E s⟩
-  trans_monotone _ := fun _ _ _ _ hE hQ _ h => Program.run_mono (hQ ()) hE h
+  trans q := ⟨fun Q E s => Program.wp q (Q ()) E s⟩
+  trans_monotone _ := fun _ _ _ _ hE hQ _ h => Program.wp_mono (hQ ()) hE h
 
 theorem wp_apply_iff [LinkedProgram] (q : Program) (Q : Unit → MachineData → Prop)
     (E : Int64 → MachineData → Prop) (s : MachineData) :
-    WP.wp q Q E s ↔ Program.run q (Q ()) E s := Iff.rfl
+    WP.wp q Q E s ↔ Program.wp q (Q ()) E s := Iff.rfl
 
 /-- Triples of one directive: the interpretation of the singleton program. -/
 scoped instance [LinkedProgram] : WP Directive Unit (MachineData → Prop) (Int64 → MachineData → Prop) where
@@ -57,7 +57,7 @@ variable [LinkedProgram] {Q : Unit → MachineData → Prop} {E : Int64 → Mach
 the post. -/
 @[spec] theorem cons_spec (d : Directive) (p : Program) :
     ⦃ WP.wp d (fun _ => WP.wp p Q E) E ⦄ (d :: p) ⦃ Q; E ⦄ :=
-  ⟨fun _ h => Program.run_cons h⟩
+  ⟨fun _ h => Program.wp_cons h⟩
 
 /-- Load an immediate into a 64-bit register. -/
 @[spec] theorem mov_reg_imm_spec (asz : Width) (r : Reg64) (i : Int64) :
@@ -449,6 +449,6 @@ theorem eventually_straightlineStep_of_wp [layout : Layout] {p : Program}
     [Kraken.Executable.Assembled (layout p)] {s : MachineData} {post : MachineState → Prop}
     (h : ∀ [LinkedProgram], ⊤ ⊑ WP.wp p (fun _ s' => ∀ pc, post (s', pc)) ⊥ s) :
     Eventually (straightlineStep (layout p)) post (s, layout.start) :=
-  Program.straightline_of_run (Q := fun s' => ∀ pc, post (s', pc))
+  Program.straightline_of_wp (Q := fun s' => ∀ pc, post (s', pc))
     (E := (⊥ : Int64 → MachineData → Prop)) (of_top_le_prop (@h ⟨layout p⟩)) (fun _ hq => hq)
     (fun a s' hE => (bot_le (α := Int64 → MachineData → Prop) fun _ _ => False) a s' hE)
