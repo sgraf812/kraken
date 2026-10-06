@@ -149,7 +149,7 @@ theorem memmove_spec [LinkedProgram] (bs : List UInt8) (R₁ R₂ : DataMem → 
   refine StateWP.cfg (p := memmove) (mm_table ?_ bs R₂ s ra) (fun _ t => (t.regs.get64 .rdx).toNat)
     (fun _ => False) _ ?_
   cfg_cases [memmove]
-  all_goals kvcgen64 [BitVec.and_self] with finish
+  all_goals kvcgen64 with finish
 
 /-! ## The caller -/
 
