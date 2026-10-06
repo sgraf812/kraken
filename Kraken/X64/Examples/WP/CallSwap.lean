@@ -54,14 +54,7 @@ private theorem pswap_body_spec [LinkedProgram] (R : DataMem → Prop) (s : Mach
       ∧ (s'.regs.get64 .rax = s.regs.get64 .rbx ∧ s'.regs.get64 .rbx = s.regs.get64 .rax
         ∧ s'.dmem =⋆ Mem.Blocks [(s.regs.get64 .rsp - 8#64, 8)] ⋆ R)
       ∧ swapMod.Agree s s' ⦄ := by
-  refine ⟨fun t ⟨ht, hpre⟩ => ?_⟩
-  subst ht
-  simp only [MachineData.pushRa]
-  kvcgen64
-  all_goals first
-    | grind
-    | intro r _
-      cases r <;> simp_all
+  kvcgen64 with finish
 
 theorem pswap_correct [Kraken.Executable.Assembled (layout pswap)]
     (d : MachineData) (R : DataMem → Prop)
