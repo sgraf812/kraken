@@ -68,18 +68,6 @@ abbrev mmMod : Modifies := ⟨[.rax, .rsi, .rdi, .rdx]⟩
 
 /-! ## The callee -/
 
-private theorem Reg64s.set_low_W8 (r : Reg64s) (g : Reg64) (v : BitVec 8) :
-    r.set (.low g .W8) v = r.set64 g ((r.get64 g).replaceLow v) := rfl
-
-@[grind =] private theorem Reg64s.get_set_low_W8 (r : Reg64s) (g : Reg64) (v : BitVec 8) :
-    (r.set (.low g .W8) v).get (.low g .W8) = v := by
-  simp only [Reg64s.set_low_W8, Reg64s.get, Reg64s.get64_set64, reduceIte, Reg.base, Reg.offset,
-    Width.bits, BitVec.replaceLow, BitVec.take, BitVec.drop]
-  bv_decide
-
-@[grind =] private theorem Reg64s.set_al (r : Reg64s) (v : BitVec 8) :
-    r.set (.low .rax .W8) v = { r with rax := { toBitVec := (r.get64 .rax).replaceLow v } } := rfl
-
 /-- The registers `memmove` does not touch. -/
 private abbrev MMKeep (s t : MachineData) : Prop :=
   t.regs.get64 .rbx = s.regs.get64 .rbx ∧ t.regs.get64 .rcx = s.regs.get64 .rcx

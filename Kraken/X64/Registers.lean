@@ -39,6 +39,59 @@ public section
 @[simp, grind =] theorem Reg64s.set_low_W64 (s : Reg64s) (r : Reg64) (v : BitVec 64) :
     Reg64s.set s (.low r .W64) v = s.set64 r v := rfl
 
+/-! ## A write to a part of a register as a 64-bit write -/
+
+theorem Reg64s.set_low_W32 (s : Reg64s) (r : Reg64) (v : BitVec 32) :
+    Reg64s.set s (.low r .W32) v = s.set64 r (v.zeroExtend 64) := rfl
+
+theorem Reg64s.set_low_W16 (s : Reg64s) (r : Reg64) (v : BitVec 16) :
+    Reg64s.set s (.low r .W16) v = s.set64 r ((s.get64 r).replaceLow v) := rfl
+
+theorem Reg64s.set_low_W8 (s : Reg64s) (r : Reg64) (v : BitVec 8) :
+    Reg64s.set s (.low r .W8) v = s.set64 r ((s.get64 r).replaceLow v) := rfl
+
+theorem Reg64s.set_ah (s : Reg64s) (v : BitVec 8) :
+    Reg64s.set s .ah v = s.set64 .rax ((s.get64 .rax).replaceLow (BitVec.append v (s.get (.low .rax .W8)))) := rfl
+
+theorem Reg64s.set_bh (s : Reg64s) (v : BitVec 8) :
+    Reg64s.set s .bh v = s.set64 .rbx ((s.get64 .rbx).replaceLow (BitVec.append v (s.get (.low .rbx .W8)))) := rfl
+
+theorem Reg64s.set_ch (s : Reg64s) (v : BitVec 8) :
+    Reg64s.set s .ch v = s.set64 .rcx ((s.get64 .rcx).replaceLow (BitVec.append v (s.get (.low .rcx .W8)))) := rfl
+
+theorem Reg64s.set_dh (s : Reg64s) (v : BitVec 8) :
+    Reg64s.set s .dh v = s.set64 .rdx ((s.get64 .rdx).replaceLow (BitVec.append v (s.get (.low .rdx .W8)))) := rfl
+
+theorem Reg64s.get_low_W32 (s : Reg64s) (r : Reg64) :
+    s.get (.low r .W32) = (s.get64 r).take 32 := by
+  simp [Reg64s.get, Reg.base, Reg.offset, BitVec.take, BitVec.drop]
+
+theorem Reg64s.get_low_W16 (s : Reg64s) (r : Reg64) :
+    s.get (.low r .W16) = (s.get64 r).take 16 := by
+  simp [Reg64s.get, Reg.base, Reg.offset, BitVec.take, BitVec.drop]
+
+theorem Reg64s.get_low_W8 (s : Reg64s) (r : Reg64) :
+    s.get (.low r .W8) = (s.get64 r).take 8 := by
+  simp [Reg64s.get, Reg.base, Reg.offset, BitVec.take, BitVec.drop]
+
+private theorem BitVec.take_replaceLow {w n : Nat} (x : BitVec w) (v : BitVec n) (h : n ≤ w) :
+    (x.replaceLow v).take n = v := by
+  apply BitVec.eq_of_getLsbD_eq
+  intro i hi
+  simp [BitVec.replaceLow, BitVec.take, BitVec.getLsbD_append, hi, show i < w by omega]
+
+theorem BitVec.take_replaceLow_8 (x : BitVec 64) (v : BitVec 8) : (x.replaceLow v).take 8 = v :=
+  BitVec.take_replaceLow x v (by decide)
+
+theorem BitVec.take_replaceLow_16 (x : BitVec 64) (v : BitVec 16) : (x.replaceLow v).take 16 = v :=
+  BitVec.take_replaceLow x v (by decide)
+
+theorem BitVec.take_zeroExtend_32 (v : BitVec 32) : (v.zeroExtend 64).take 32 = v := by
+  apply BitVec.eq_of_getLsbD_eq
+  intro i hi
+  simp [BitVec.take, hi]
+  omega
+
 /-! ## A write to a named register as a structure update
 
 `vcgen` rewrites the register state it threads with these equations, so a

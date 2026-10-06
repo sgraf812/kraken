@@ -2,7 +2,7 @@ module
 
 /-
 `kvcgen64 [defs] with step` is `vcgen` with the machine state folded as it
-goes. A write to a named register rebuilds the register file as a literal,
+goes. A write to a named register or to a part of one rebuilds the register file as a literal,
 and a read of a named register from a literal is the field. The projections
 of the machine record, the `UInt64` round trip and reassociation present
 adjacent literals to `evalGround`, so a chain of ground arithmetic and its
@@ -44,6 +44,21 @@ macro_rules
         Reg64s.set64_r13,
         Reg64s.set64_r14,
         Reg64s.set64_r15,
+        Reg64s.set_low_W64,
+        Reg64s.set_low_W32,
+        Reg64s.set_low_W16,
+        Reg64s.set_low_W8,
+        Reg64s.set_ah,
+        Reg64s.set_bh,
+        Reg64s.set_ch,
+        Reg64s.set_dh,
+        Reg64s.get_low_W64,
+        Reg64s.get_low_W32,
+        Reg64s.get_low_W16,
+        Reg64s.get_low_W8,
+        BitVec.take_replaceLow_8,
+        BitVec.take_replaceLow_16,
+        BitVec.take_zeroExtend_32,
         Reg64s.get64_rax,
         Reg64s.get64_rbx,
         Reg64s.get64_rcx,
