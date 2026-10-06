@@ -31,14 +31,14 @@ public import Kraken.SepCancel
 public import Kraken.SepSpecs
 public import Kraken.SepFrameProc
 import Kraken.X64.Examples.Examples
-import Kraken.X64.Examples.SepWP.AluMem
-import Kraken.X64.Examples.SepWP.DynamicStack
-import Kraken.X64.Examples.SepWP.Move2RegsToHeap
-import Kraken.X64.Examples.SepWP.PushPop
-import Kraken.X64.Examples.SepWP.Sib
-import Kraken.X64.Examples.SepWP.Swap
-import Kraken.X64.Examples.StateWP.AluMem
-import Kraken.X64.Examples.StateWP.Basic
-import Kraken.X64.Examples.StateWP.P3
-import Kraken.X64.Examples.StateWP.CallSwap
-import Kraken.X64.Examples.StateWP.Memmove
+import Kraken.X64.Examples.FrameWP.AluMem
+import Kraken.X64.Examples.FrameWP.DynamicStack
+import Kraken.X64.Examples.FrameWP.Move2RegsToHeap
+import Kraken.X64.Examples.FrameWP.PushPop
+import Kraken.X64.Examples.FrameWP.Sib
+import Kraken.X64.Examples.FrameWP.Swap
+import Kraken.X64.Examples.WP.AluMem
+import Kraken.X64.Examples.WP.Basic
+import Kraken.X64.Examples.WP.P3
+import Kraken.X64.Examples.WP.CallSwap
+import Kraken.X64.Examples.WP.Memmove
