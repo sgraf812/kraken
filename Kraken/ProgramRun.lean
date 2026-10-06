@@ -37,8 +37,6 @@ class LinkedProgram where
 
 instance [LinkedProgram] : Labels := Executable.labels LinkedProgram.exe
 
-instance [LinkedProgram] : Labels := Executable.labels LinkedProgram.exe
-
 def LinkedProgram.step [LinkedProgram] (st : MachineState) (P : MachineState → Prop) : Prop :=
   ∃ j d z, LinkedProgram.exe.2[j]? = some (d, z) ∧ st.2 = LinkedProgram.exe.addrOf j ∧
     ∀ (R : MachineState → Prop) (next : MachineData → Effects)
