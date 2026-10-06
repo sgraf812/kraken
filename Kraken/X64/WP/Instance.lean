@@ -81,7 +81,7 @@ variable [LinkedProgram] {Q : Unit → MachineData → Prop} {E : Int64 → Mach
 
 @[spec] public theorem add_reg_mem_spec (rd b : Reg64) (d : Int64) :
     ⦃ fun s => (Mem.loadInt s.dmem (s.regs.get64 b + BitVec.ofInt 64 d.toInt) 8).isSome = true ∧
-          let a := BitVec.ofInt 64 ((Mem.loadInt s.dmem (s.regs.get64 b + BitVec.ofInt 64 d.toInt) 8).getD 0)
+          let a := BitVec.ofInt 64 (Mem.loadInt s.dmem (s.regs.get64 b + BitVec.ofInt 64 d.toInt) 8).get!
           let bv := s.regs.get64 rd
           let v := a + bv
           Q () { s with
@@ -104,7 +104,7 @@ variable [LinkedProgram] {Q : Unit → MachineData → Prop} {E : Int64 → Mach
     RegOrMem.interp, MachineData.load, MachineData.set, MachineData.setReg,
     Reg64s.get_low_W64, Reg64s.set_low_W64, AddrExpr.zeroExtend_interp_base_disp,
     hload, Effects.All]
-  exact hQ _ (Or.inl ⟨rfl, by rwa [hload, Option.getD_some] at hpre⟩)
+  exact hQ _ (Or.inl ⟨rfl, by rwa [hload, Option.get!_some] at hpre⟩)
 
 local macro "run_step" : tactic =>
   `(tactic| simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
@@ -265,7 +265,7 @@ local macro "run_step" : tactic =>
 @[spec] public theorem mov_load_byte_spec (r b : Reg64) (d : Int64) :
     ⦃ fun s => (Mem.loadInt s.dmem (s.regs.get64 b + BitVec.ofInt 64 d.toInt) 1).isSome = true
         ∧ Q () { s with regs := s.regs.set (.low r .W8)
-                              (BitVec.ofInt 8 ((Mem.loadInt s.dmem (s.regs.get64 b + BitVec.ofInt 64 d.toInt) 1).getD 0)) } ⦄
+                              (BitVec.ofInt 8 (Mem.loadInt s.dmem (s.regs.get64 b + BitVec.ofInt 64 d.toInt) 1).get!) } ⦄
       Directive.instr (.regular .W64 .W8
           (.mov (.reg (.low r .W8)) (.regOrMem (.mem ⟨some (.reg b), none, .int64 d⟩))))
     ⦃ Q ⦄ := by
@@ -278,7 +278,7 @@ local macro "run_step" : tactic =>
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
     RegOrMem.interp, MachineData.load, MachineData.set, MachineData.setReg,
     AddrExpr.zeroExtend_interp_base_disp, Width.bytes, hload, Effects.All]
-  exact hQ _ (Or.inl ⟨rfl, by rwa [hload, Option.getD_some] at hpre⟩)
+  exact hQ _ (Or.inl ⟨rfl, by rwa [hload, Option.get!_some] at hpre⟩)
 
 @[spec] public theorem mov_store_byte_spec (b : Reg64) (d : Int64) (r : Reg64) :
     ⦃ fun s => (Mem.loadInt s.dmem (s.regs.get64 b + BitVec.ofInt 64 d.toInt) 1).isSome = true
@@ -364,13 +364,13 @@ local macro "run_step" : tactic =>
 
 @[spec] public theorem ret_spec (asz osz : Width) :
     ⦃ fun s => s.retAddr.isSome = true
-        ∧ E (s.retAddr.getD 0) { s with regs := s.regs.set64 .rsp (s.regs.get64 .rsp + 8#64) } ⦄
+        ∧ E s.retAddr.get! { s with regs := s.regs.set64 .rsp (s.regs.get64 .rsp + 8#64) } ⦄
       Directive.instr (.regular asz osz .ret)
     ⦃ Q; E ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
   obtain ⟨hmapped, hexit⟩ := hpre
   obtain ⟨ra, hra⟩ := Option.isSome_iff_exists.mp hmapped
-  rw [hra, Option.getD_some] at hexit
+  rw [hra, Option.get!_some] at hexit
   obtain ⟨i, hi, hval⟩ : ∃ i, Mem.loadInt s.dmem (s.regs.get64 .rsp) 8 = some i
       ∧ Int64.ofBitVec (BitVec.ofInt 64 i) = ra := by
     unfold MachineData.retAddr at hra
