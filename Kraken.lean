@@ -5,7 +5,7 @@ Kraken - x86_64 Assembly Interpreter
 
 Root module. The baseline instruction semantics is `Operation.interp` in
 Kraken/X64/Semantics.lean, in continuation-passing style over `Effects`.
-Kraken/X64/WP.lean is the run of a program fragment in the baseline's
+Kraken/X64/WP/Basic.lean is the run of a program fragment in the baseline's
 burst. Kraken/StateWP.lean interprets a program by its run at predicates over
 machine states, and Kraken/SepWP.lean at separation-logic assertions over the
 memory, with the instruction specs of Kraken/SepSpecs.lean and the frame
@@ -22,7 +22,6 @@ public import Kraken.Specs
 public import Kraken.Tactics
 public import Kraken.X64.Registers
 public import Kraken.X64.WP
-public import Kraken.X64.WP.Adequacy
 public import Kraken.KVCGen
 public import Kraken.StateWP
 public import Kraken.StateCfg

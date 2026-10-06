@@ -8,7 +8,7 @@ separation algebra of Kraken/MProp.lean:
 channel.
 
 `SepWP.instWP` interprets a `Program` over the run `Program.wp` of
-Kraken/X64/WP.lean, at the separation assertion language with the frame rule
+Kraken/X64/WP/Basic.lean, at the separation assertion language with the frame rule
 internalized on both channels: a triple `⦃P⦄ p ⦃Q; E⦄` holds when the run
 validates it under every memory frame, held across the fall-through and
 across every exit. `SepWP.sep_intro` is the one door in, and `SepWP.frames`
@@ -17,7 +17,7 @@ inference of `vcgen` consumes. `eventually_straightlineStep_of_sep_wp` reads the
 as the `Eventually` judgment of the laid-out program.
 -/
 public import Kraken.MProp
-public import Kraken.X64.WP.Adequacy
+public import Kraken.X64.WP
 
 @[expose] public section
 

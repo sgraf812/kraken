@@ -1,6 +1,6 @@
 module
 
-public import Kraken.X64.WP
+public import Kraken.X64.WP.Basic
 
 @[expose] public section
 

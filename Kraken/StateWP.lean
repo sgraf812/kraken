@@ -13,7 +13,7 @@ leaves. A memory access asks for the slot to be mapped. `vcgen` sequences
 them by `StateWP.cons_spec`, and `eventually_straightlineStep_of_wp` reads the
 wp of a laid-out program back as the `Eventually` judgment.
 -/
-public import Kraken.X64.WP.Adequacy
+public import Kraken.X64.WP
 public import Kraken.X64.Registers
 public import Kraken.KVCGen
 public import Std.WP
