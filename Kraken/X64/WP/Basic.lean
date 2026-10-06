@@ -2,42 +2,36 @@ module
 
 public import Kraken.X64.OmniSemantics
 
-@[expose] public section
+@[grind hom] public theorem Int64.toBitVec_ofNat_grind (a : Nat) :
+    (Int64.ofNat a).toBitVec = OfNat.ofNat a := by
+  rw [Int64.toBitVec_ofNat']; rfl
 
 namespace Kraken.Executable
 
-def sizeBefore (e : Kraken.Executable Directive) (n : Nat) : Nat := ((e.2.take n).map (·.2)).sum
+@[expose] public def sizeBefore (e : Kraken.Executable Directive) (n : Nat) : Nat := ((e.2.take n).map (·.2)).sum
 
-def addrOf (e : Kraken.Executable Directive) (n : Nat) : Int64 := e.1 + .ofNat (e.sizeBefore n)
+@[expose] public def addrOf (e : Kraken.Executable Directive) (n : Nat) : Int64 := e.1 + .ofNat (e.sizeBefore n)
 
-@[simp] theorem addrOf_zero (e : Kraken.Executable Directive) : e.addrOf 0 = e.1 := by
-  simp [addrOf, sizeBefore]
+@[simp] public theorem addrOf_zero (e : Kraken.Executable Directive) : e.addrOf 0 = e.1 := by
+  grind [sizeBefore, addrOf]
 
-theorem int64_ofNat_add (a b : Nat) :
-    Int64.ofNat (a + b) = Int64.ofNat a + Int64.ofNat b := by
-  apply Int64.toBitVec_inj.mp
-  simp
-
-theorem sizeBefore_succ (e : Kraken.Executable Directive) {n : Nat} {d : Directive} {z : Nat}
+public theorem sizeBefore_succ (e : Kraken.Executable Directive) {n : Nat} {d : Directive} {z : Nat}
     (hd : e.2[n]? = some (d, z)) :
     e.sizeBefore (n + 1) = e.sizeBefore n + z := by
-  unfold sizeBefore
-  rw [List.take_add_one, hd]
-  simp
+  grind [sizeBefore, List.take_add_one]
 
-theorem addrOf_succ (e : Kraken.Executable Directive) {n : Nat} {d : Directive} {z : Nat}
+public theorem addrOf_succ (e : Kraken.Executable Directive) {n : Nat} {d : Directive} {z : Nat}
     (hd : e.2[n]? = some (d, z)) : e.addrOf (n + 1) = e.addrOf n + .ofNat z := by
-  unfold addrOf
-  rw [sizeBefore_succ e hd, int64_ofNat_add, Int64.add_assoc]
+  grind [addrOf, sizeBefore, List.take_add_one]
 
 end Kraken.Executable
 
-class LinkedProgram where
+public class LinkedProgram where
   exe : Executable
 
-instance [LinkedProgram] : Labels := Executable.labels LinkedProgram.exe
+public instance [LinkedProgram] : Labels := Executable.labels LinkedProgram.exe
 
-def LinkedProgram.step [LinkedProgram] (st : MachineState) (P : MachineState → Prop) : Prop :=
+@[expose] public def LinkedProgram.step [LinkedProgram] (st : MachineState) (P : MachineState → Prop) : Prop :=
   ∃ j d z, LinkedProgram.exe.2[j]? = some (d, z) ∧ st.2 = LinkedProgram.exe.addrOf j ∧
     ∀ (R : MachineState → Prop) (next : MachineData → Effects)
       (jmp : Int64 → MachineData → Effects),
@@ -45,33 +39,31 @@ def LinkedProgram.step [LinkedProgram] (st : MachineState) (P : MachineState →
       (∀ a s', P (s', a) → (jmp a s').All R) →
       (d.interp st.1 ⟨LinkedProgram.exe.addrOf j, LinkedProgram.exe.addrOf (j + 1)⟩ next jmp).All R
 
-def Program.LinkedAt [LinkedProgram] (p : Program) (k : Nat) : Prop :=
+@[expose] public def Program.LinkedAt [LinkedProgram] (p : Program) (k : Nat) : Prop :=
   p <+: (LinkedProgram.exe.2.map (·.1)).drop k ∧
   ∀ i l, p[i]? = some (Directive.label l) → label l = LinkedProgram.exe.addrOf (k + i)
 
-def Program.wp [LinkedProgram] (p : Program) (Q : MachineData → Prop)
+@[expose] public def Program.wp [LinkedProgram] (p : Program) (Q : MachineData → Prop)
     (E : Int64 → MachineData → Prop) (s : MachineData) : Prop :=
   ∀ k, p.LinkedAt k →
     Eventually LinkedProgram.step
       (fun st => (st.2 = LinkedProgram.exe.addrOf (k + p.length) ∧ Q st.1) ∨ E st.2 st.1)
       (s, LinkedProgram.exe.addrOf k)
 
-theorem Program.wp_mono [LinkedProgram] {p : Program} {Q₁ Q₂ : MachineData → Prop}
+public theorem Program.wp_mono [LinkedProgram] {p : Program} {Q₁ Q₂ : MachineData → Prop}
     {E₁ E₂ : Int64 → MachineData → Prop} (hQ : ∀ s, Q₁ s → Q₂ s) (hE : ∀ a s, E₁ a s → E₂ a s)
     {s : MachineData} (h : Program.wp p Q₁ E₁ s) : Program.wp p Q₂ E₂ s :=
   fun k hk => eventually_trans _ _ _ _ (h k hk) fun _ hb => Eventually.done _ <|
     hb.imp (fun ⟨ha, hq⟩ => ⟨ha, hQ _ hq⟩) (hE _ _)
 
-theorem List.cons_prefix_drop {α : Type} {d : α} {q L : List α} {k : Nat}
+public theorem List.cons_prefix_drop {α : Type} {d : α} {q L : List α} {k : Nat}
     (h : (d :: q) <+: L.drop k) : L[k]? = some d ∧ q <+: L.drop (k + 1) := by
-  obtain ⟨t, ht⟩ := h
-  have hk : L.drop k = d :: (q ++ t) := ht.symm
-  refine ⟨?_, t, ?_⟩
-  · simpa [List.head?_drop] using congrArg List.head? hk
-  · rw [← List.drop_drop, hk]
-    rfl
+  have hk : k < L.length := by
+    have := h.length_le; grind
+  rw [List.drop_eq_getElem_cons hk, List.cons_prefix_iff] at h
+  grind
 
-theorem Program.LinkedAt.append [LinkedProgram] {a b : Program} {k : Nat}
+public theorem Program.LinkedAt.append [LinkedProgram] {a b : Program} {k : Nat}
     (h : Program.LinkedAt (a ++ b) k) : a.LinkedAt k ∧ b.LinkedAt (k + a.length) := by
   obtain ⟨⟨t, ht⟩, hlab⟩ := h
   refine ⟨⟨⟨b ++ t, by rw [← ht, List.append_assoc]⟩, fun i l hi => hlab i l ?_⟩,
@@ -82,7 +74,7 @@ theorem Program.LinkedAt.append [LinkedProgram] {a b : Program} {k : Nat}
   · rw [hlab (a.length + i) l (by rw [List.getElem?_append_right (by omega)]; simpa using hi),
       Nat.add_assoc]
 
-theorem Program.LinkedAt.drop [LinkedProgram] {p : Program} {k : Nat} (h : p.LinkedAt k) (m : Nat) :
+public theorem Program.LinkedAt.drop [LinkedProgram] {p : Program} {k : Nat} (h : p.LinkedAt k) (m : Nat) :
     Program.LinkedAt (p.drop m) (k + m) := by
   by_cases hm : m ≤ p.length
   · have h' := (Program.LinkedAt.append (a := p.take m) (b := p.drop m)
@@ -91,7 +83,7 @@ theorem Program.LinkedAt.drop [LinkedProgram] {p : Program} {k : Nat} (h : p.Lin
   · rw [List.drop_eq_nil_of_le (show p.length ≤ m by omega)]
     exact ⟨List.nil_prefix, fun _ _ h => by simp at h⟩
 
-theorem Program.wp_cons [LinkedProgram] {d : Directive} {p : Program} {Q : MachineData → Prop}
+public theorem Program.wp_cons [LinkedProgram] {d : Directive} {p : Program} {Q : MachineData → Prop}
     {E : Int64 → MachineData → Prop} {s : MachineData}
     (h : Program.wp [d] (fun s' => Program.wp p Q E s') E s) : Program.wp (d :: p) Q E s := by
   intro k hk
@@ -106,7 +98,7 @@ theorem Program.wp_cons [LinkedProgram] {d : Directive} {p : Program} {Q : Machi
     · exact Or.inr hE
   · exact Eventually.done _ (Or.inr hE)
 
-theorem LinkedProgram.cell_of_prefix [LinkedProgram] {d : Directive} {p : Program} {k : Nat}
+public theorem LinkedProgram.cell_of_prefix [LinkedProgram] {d : Directive} {p : Program} {k : Nat}
     (h : (d :: p) <+: (LinkedProgram.exe.2.map (·.1)).drop k) : ∃ z, LinkedProgram.exe.2[k]? = some (d, z) := by
   have hd := (List.cons_prefix_drop h).1
   rw [List.getElem?_map] at hd
@@ -118,7 +110,7 @@ theorem LinkedProgram.cell_of_prefix [LinkedProgram] {d : Directive} {p : Progra
     cases hd
     exact ⟨z, rfl⟩
 
-theorem LinkedProgram.eventually_cell [LinkedProgram] {k : Nat} {d : Directive} {z : Nat}
+public theorem LinkedProgram.eventually_cell [LinkedProgram] {k : Nat} {d : Directive} {z : Nat}
     (hd : LinkedProgram.exe.2[k]? = some (d, z)) {B : MachineState → Prop} {s : MachineData}
     (h : ∀ (R : MachineState → Prop) (next : MachineData → Effects)
       (jmp : Int64 → MachineData → Effects),
