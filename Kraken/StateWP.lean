@@ -31,10 +31,6 @@ scoped instance instWP [LinkedProgram] : WP Program Unit (MachineData → Prop) 
   trans q := ⟨fun Q E s => Program.wp q (Q ()) E s⟩
   trans_monotone _ := fun _ _ _ _ hE hQ _ h => Program.wp_mono (hQ ()) hE h
 
-theorem wp_apply_iff [LinkedProgram] (q : Program) (Q : Unit → MachineData → Prop)
-    (E : Int64 → MachineData → Prop) (s : MachineData) :
-    WP.wp q Q E s ↔ Program.wp q (Q ()) E s := Iff.rfl
-
 /-- Triples of one directive: the interpretation of the singleton program. -/
 scoped instance [LinkedProgram] : WP Directive Unit (MachineData → Prop) (Int64 → MachineData → Prop) where
   trans d := WP.trans (self := instWP) [d]
