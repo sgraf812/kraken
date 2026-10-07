@@ -4,7 +4,7 @@ module
 `alu_mem_example` in the separation wp: the baseline's four-instruction
 program, with the slot at `136(%rdx)` owned as a `UInt64`. The triple fixes
 the register and owns the slot with the stored value. Read back through
-`Program.FrameWP.step1_of_wp`, it is the baseline statement
+`Program.FrameWP.straightline_of_wp`, it is the baseline statement
 `alu_mem_example_correct`, over the same program and any layout.
 -/
 public import Kraken.SepFrameProc

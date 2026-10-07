@@ -13,7 +13,7 @@ internalized on both channels: a triple `⦃P⦄ p ⦃Q; E⦄` holds when the ru
 validates it under every memory frame, held across the fall-through and
 across every exit. `Program.FrameWP.sep_intro` is the one door in, and `Program.FrameWP.frames`
 says every program frames every memory assertion, which is what the frame
-inference of `vcgen` consumes. `Program.FrameWP.step1_of_wp` reads the wp back
+inference of `vcgen` consumes. `Program.FrameWP.straightline_of_wp` reads the wp back
 as the `Eventually` judgment of the laid-out program.
 -/
 public import Kraken.MProp
@@ -167,8 +167,9 @@ The wp of a program with no exits is a run of the laid-out program. Take a
 state `s` whose memory satisfies `footprint` next to `frame`. If `footprint`
 entails the wp of the program at `s`'s registers, vector registers and flags,
 for the postcondition that gives `frame` back and asks `post` of the whole
-final state at every pc, then the run from `s` at the start of `p` in the laid-out host program
-eventually ends in `post`. -/
+final state at every pc, then the run from `s` at the layout's start
+eventually ends in `post`. The entailment is asked in every linked program. The laid-out program is a
+valid executable. -/
 
 open Program.FrameWP in
 theorem Program.FrameWP.step1_of_wp [Host] [layout : Layout] [Layout.Valid] {p : Program}

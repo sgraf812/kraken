@@ -136,7 +136,7 @@ attribute [scoped grind norm] List.idxOf_cons List.contains_cons
 
 variable [layout : Layout] [Host] [Layout.Valid]
 
-/-- A callee's body triple, in the host program, is its call spec. -/
+/-- A callee's body triple, linked in the program, is its call spec. -/
 theorem callSpec_of_triple {P body rest : Program} {k : Nat} (hP : P.IsInfixAt Host.prog k)
     {f : Label} {Pre : MachineData → Prop} {Post : MachineData → MachineData → Prop}
     {m : Modifies} (hat : Program.fromLabel P f = Directive.label f :: (body ++ rest))

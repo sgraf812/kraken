@@ -113,7 +113,7 @@ private abbrev mm_table (P : Prop) (bs : List UInt8) (R₂ : DataMem → Prop)
   | "fdone", t => P ∧ MMFwd bs R₂ s ra t ∧ t.regs.get64 .rdx = 0
   | _, _ => False
 
-/-- The contract of `memmove`, in every host program. -/
+/-- The contract of `memmove`, in every linked program. -/
 theorem memmove_spec [Host] [Layout] [Layout.Valid] (bs : List UInt8) (R₁ R₂ : DataMem → Prop)
     (s : MachineData) (ra : Int64) :
     ⦃ fun t => t = s.pushRa ra
