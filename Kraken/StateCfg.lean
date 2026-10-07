@@ -281,10 +281,10 @@ theorem cfg {p p' : Program} {l₀ : Label}
     simp [Program.view, Program.blockAtAux]
   have hfl : Program.fromLabel p l₀ = p := by
     have hnot : Program.fromLabel p' l₀ = [] := Classical.byContradiction fun hne => by
-      have hmem := Program.mem_labels_of_cell (Program.fromLabel_mem hne)
+      have hmem := Program.mem_labels.mpr (Program.fromLabel_mem hne)
       have hnd' := hnd
       rw [hp] at hnd'
-      simp only [Program.labels] at hnd'
+      simp only [Program.labels_nil, Program.labels_cons_label, Program.labels_cons_instr, Program.labels_cons_byteArray] at hnd'
       exact (List.nodup_cons.mp hnd').1 hmem
     rw [hp]
     simp [hnot]

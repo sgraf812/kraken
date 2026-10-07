@@ -81,34 +81,35 @@ from one spec table `T` and one variant `var`: one triple per block, where an
 exit to a textually later block is free and only a back edge must decrease
 the variant. -/
 
+/-- The label that a directive introduces, if it is a label. -/
+def Directive.label? : Directive → Option Label
+  | .label l => some l
+  | _ => none
+
 /-- The labels of the text, in order. -/
-def Program.labels : Program → List Label
-  | [] => []
-  | .label l :: p => l :: Program.labels p
-  | _ :: p => Program.labels p
+def Program.labels (p : Program) : List Label := p.filterMap Directive.label?
+
+@[simp] theorem Program.labels_nil : Program.labels [] = [] := rfl
+
+@[simp] theorem Program.labels_cons_label (l : Label) (p : Program) :
+    Program.labels (.label l :: p) = l :: Program.labels p := rfl
+
+@[simp] theorem Program.labels_cons_instr (i : Instr) (p : Program) :
+    Program.labels (.instr i :: p) = Program.labels p := rfl
+
+@[simp] theorem Program.labels_cons_byteArray (a : ByteArray) (p : Program) :
+    Program.labels (.byteArray a :: p) = Program.labels p := rfl
 
 theorem Program.labels_append (a b : Program) :
-    Program.labels (a ++ b) = Program.labels a ++ Program.labels b := by
-  induction a with
-  | nil => rfl
-  | cons d t ih =>
-    cases d with
-    | label l => simp only [List.cons_append, Program.labels, ih]
-    | instr i => exact ih
-    | byteArray a' => exact ih
+    Program.labels (a ++ b) = Program.labels a ++ Program.labels b :=
+  List.filterMap_append
 
-theorem Program.mem_labels_of_cell {t : Program} {l : Label}
-    (h : Directive.label l ∈ t) : l ∈ Program.labels t := by
-  induction t with
-  | nil => cases h
-  | cons d t ih =>
-    rcases List.mem_cons.mp h with heq | hmem
-    · rw [← heq]
-      exact List.mem_cons_self
-    · cases d with
-      | label l' => exact List.mem_cons_of_mem _ (ih hmem)
-      | instr i => exact ih hmem
-      | byteArray a => exact ih hmem
+theorem Program.mem_labels {p : Program} {l : Label} : l ∈ Program.labels p ↔ Directive.label l ∈ p := by
+  rw [Program.labels, List.mem_filterMap]
+  constructor
+  · rintro ⟨d, hd, hl⟩
+    cases d <;> simp_all [Directive.label?]
+  · exact fun h => ⟨_, h, rfl⟩
 
 /-- A nonempty scope suffix starts with its own label cell. -/
 theorem Program.fromLabel_head :
@@ -138,7 +139,7 @@ theorem Program.fromLabel_ne_nil_of_mem {p : Program} {l : Label}
       split
       · exact List.cons_ne_nil _ _
       · rename_i hc
-        simp only [Program.labels, List.mem_cons] at h
+        simp only [Program.labels_nil, Program.labels_cons_label, Program.labels_cons_instr, Program.labels_cons_byteArray, List.mem_cons] at h
         rcases h with rfl | h
         · by_cases hnil : Program.fromLabel p l = []
           · exact absurd ⟨hnil, rfl⟩ hc
@@ -238,7 +239,7 @@ theorem Program.labels_view (p : Program) :
   | nil => rfl
   | cons d p ih =>
     cases d with
-    | label l => simp only [Program.labels, Program.view, List.map_cons, ih]
+    | label l => simp only [Program.labels_nil, Program.labels_cons_label, Program.labels_cons_instr, Program.labels_cons_byteArray, Program.view, List.map_cons, ih]
     | instr i => exact ih
     | byteArray a => exact ih
 
@@ -255,7 +256,7 @@ theorem Program.fromLabel_view {p : Program} (hnd : (Program.labels p).Nodup) :
     cases d with
     | label l' =>
       simp only [Program.view] at hi
-      simp only [Program.labels] at hnd
+      simp only [Program.labels_nil, Program.labels_cons_label, Program.labels_cons_instr, Program.labels_cons_byteArray] at hnd
       have hnd' := (List.nodup_cons.mp hnd).2
       cases i with
       | zero =>
@@ -264,7 +265,7 @@ theorem Program.fromLabel_view {p : Program} (hnd : (Program.labels p).Nodup) :
         have hnil : Program.fromLabel p l' = [] := by
           by_cases hne : Program.fromLabel p l' = []
           · exact hne
-          · exact absurd (Program.mem_labels_of_cell (Program.fromLabel_mem hne))
+          · exact absurd (Program.mem_labels.mpr (Program.fromLabel_mem hne))
               (List.nodup_cons.mp hnd).1
         rw [Program.fromLabel_cons, if_pos ⟨hnil, rfl⟩]
         simp only [Program.view, List.drop_zero, List.flatMap_cons, Program.blockCells,

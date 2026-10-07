@@ -191,28 +191,9 @@ public theorem Program.eq_of_getElem?_label {P : Program} (hnd : (Program.labels
   induction P generalizing i j with
   | nil => simp at hi
   | cons d P ih =>
-    have hlab : ∀ {m : Nat}, P[m]? = some (Directive.label l) → l ∈ Program.labels P := fun h =>
-      Program.mem_labels_of_cell (List.mem_of_getElem? h)
-    cases i with
-    | zero =>
-      cases j with
-      | zero => rfl
-      | succ j =>
-        simp only [List.getElem?_cons_zero, Option.some.injEq] at hi
-        subst hi
-        simp only [Program.labels, List.nodup_cons] at hnd
-        exact absurd (hlab (by simpa using hj)) hnd.1
-    | succ i =>
-      cases j with
-      | zero =>
-        simp only [List.getElem?_cons_zero, Option.some.injEq] at hj
-        subst hj
-        simp only [Program.labels, List.nodup_cons] at hnd
-        exact absurd (hlab (by simpa using hi)) hnd.1
-      | succ j =>
-        have hnd' : (Program.labels P).Nodup := by
-          cases d <;> simp_all [Program.labels]
-        simpa using ih hnd' (by simpa using hi) (by simpa using hj)
+    cases i <;> cases j <;> cases d <;>
+      grind [Program.labels_cons_label, Program.labels_cons_instr, Program.labels_cons_byteArray,
+        Program.mem_labels, List.mem_of_getElem?]
 
 section
 variable [Host] [layout : Layout] [hv : Layout.Valid]
