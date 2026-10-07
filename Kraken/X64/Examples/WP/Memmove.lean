@@ -113,8 +113,8 @@ private abbrev mm_table (P : Prop) (bs : List UInt8) (R₂ : DataMem → Prop)
   | "fdone", t => P ∧ MMFwd bs R₂ s ra t ∧ t.regs.get64 .rdx = 0
   | _, _ => False
 
-/-- The contract of `memmove`, in every linked program. -/
-theorem memmove_spec [LinkedProgram] (bs : List UInt8) (R₁ R₂ : DataMem → Prop)
+/-- The contract of `memmove`, in every host program. -/
+theorem memmove_spec [Host] [Layout] [Layout.Valid] (bs : List UInt8) (R₁ R₂ : DataMem → Prop)
     (s : MachineData) (ra : Int64) :
     ⦃ fun t => t = s.pushRa ra
       ∧ (bs.length = (s.regs.get64 .rdx).toNat
@@ -142,19 +142,18 @@ private abbrev mp_table (d : MachineData) (bs : List UInt8) (R₂ : DataMem → 
       ⋆ Mem.Bytes (d.regs.get64 .rdi) bs ⋆ R₂
   | _, _ => False
 
-theorem memmove_correct [layout : Layout] [Kraken.Executable.Assembled (layout memmoveProg)]
+theorem memmove_correct [Host] [layout : Layout] [Layout.Valid] (hp : memmoveProg <:+: Host.prog)
     (d : MachineData) (bs : List UInt8) (R₁ R₂ : DataMem → Prop)
     (hn : bs.length = (d.regs.get64 .rdx).toNat)
     (hsrc : (d.regs.get64 .rsi).toNat + bs.length < 2 ^ 64)
     (hdst : (d.regs.get64 .rdi).toNat + bs.length < 2 ^ 64)
     (h₁ : d.dmem =⋆ Mem.Bytes (d.regs.get64 .rsi) bs ⋆ Mem.Blocks [(d.regs.get64 .rsp - 8#64, 8)] ⋆ R₁)
     (h₂ : d.dmem =⋆ Mem.Blocks [(d.regs.get64 .rsp - 8#64, 8), (d.regs.get64 .rdi, bs.length)] ⋆ R₂) :
-    Eventually (straightlineStep (layout memmoveProg))
+    Eventually (step1 (layout Host.prog))
       (fun st => st.1.dmem =⋆ Mem.Blocks [(d.regs.get64 .rsp - 8#64, 8)]
         ⋆ Mem.Bytes (d.regs.get64 .rdi) bs ⋆ R₂)
-      (d, layout.start) := by
-  apply Program.WP.straightline_of_wp
-  intro _
+      (d, startAddr hp) := by
+  apply Program.WP.step1_of_wp hp
   refine Program.WP.cfg_wp (l₀ := "start") (mp_table d bs R₂) (fun _ _ => 0) _ ⊥ ?_ d rfl
   cfg_cases [memmoveProg, memmove]
   · intro k hlink

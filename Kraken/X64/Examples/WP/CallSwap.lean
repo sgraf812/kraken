@@ -47,7 +47,7 @@ private abbrev pswap_table (d : MachineData) (R : DataMem → Prop) : Label → 
 variable [layout : Layout]
 
 omit layout in
-private theorem pswap_body_spec [LinkedProgram] (R : DataMem → Prop) (s : MachineData) (ra : Int64) :
+private theorem pswap_body_spec [Host] [Layout] [Layout.Valid] (R : DataMem → Prop) (s : MachineData) (ra : Int64) :
     ⦃ fun t => t = s.pushRa ra ∧ s.dmem =⋆ Mem.Blocks [(s.regs.get64 .rsp - 8#64, 8)] ⋆ R ⦄
       pswap.body
     ⦃ (fun _ _ => False); fun a s' => a = ra
@@ -56,16 +56,15 @@ private theorem pswap_body_spec [LinkedProgram] (R : DataMem → Prop) (s : Mach
       ∧ swapMod.Agree s s' ⦄ := by
   kvcgen64 with finish
 
-theorem pswap_correct [Kraken.Executable.Assembled (layout pswap)]
+theorem pswap_correct [Host] [Layout.Valid] (hp : pswap <:+: Host.prog)
     (d : MachineData) (R : DataMem → Prop)
     (hmem : d.dmem =⋆ Mem.Blocks [(d.regs.get64 .rsp - 8#64, 8)] ⋆ R) :
-    Eventually (straightlineStep (layout pswap))
+    Eventually (step1 (layout Host.prog))
       (fun s => s.1.regs.get64 .rax = d.regs.get64 .rax
         ∧ s.1.regs.get64 .rbx = d.regs.get64 .rbx
         ∧ s.1.regs.get64 .rsp = d.regs.get64 .rsp)
-      (d, layout.start) := by
-  apply Program.WP.straightline_of_wp
-  intro _
+      (d, startAddr hp) := by
+  apply Program.WP.step1_of_wp hp
   refine Program.WP.cfg_wp (l₀ := "start") (pswap_table d R) (fun _ _ => 0) _ ⊥ ?_ d ⟨rfl, hmem⟩
   cfg_cases [pswap]
   · intro k hlink

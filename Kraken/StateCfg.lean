@@ -120,7 +120,7 @@ grind_pattern Modifies.Agree.reg => m.Agree s s', s'.regs.get64 r
 open Program.WP in
 /-- Calling `f` from a state that satisfies `Pre` returns with `Post`, and keeps the registers
 outside `m`. -/
-abbrev CallSpec [LinkedProgram] (f : Label) (Pre : MachineData → Prop)
+abbrev CallSpec [Host] [Layout] [Layout.Valid] (f : Label) (Pre : MachineData → Prop)
     (Post : MachineData → MachineData → Prop) (m : Modifies) : Prop :=
   ∀ asz osz (Q : Unit → MachineData → Prop) (E : Int64 → MachineData → Prop),
     ⦃ fun s => ((Mem.loadInt s.dmem (s.regs.get64 .rsp - 8#64) 8).isSome = true) ⊓ Pre s
@@ -134,11 +134,10 @@ namespace Program.WP
 `["start", ".loop", …]`. With `Program.WP` open, `grind`'s normalizer answers by evaluation. -/
 attribute [scoped grind norm] List.idxOf_cons List.contains_cons
 
-variable [layout : Layout] [prog : LinkedProgram]
+variable [layout : Layout] [Host] [Layout.Valid]
 
-omit layout in
-/-- A callee's body triple, linked in the program, is its call spec. -/
-theorem callSpec_of_triple {P body rest : Program} {k : Nat} (hP : P.LinkedAt k)
+/-- A callee's body triple, in the host program, is its call spec. -/
+theorem callSpec_of_triple {P body rest : Program} {k : Nat} (hP : P.IsInfixAt Host.prog k)
     {f : Label} {Pre : MachineData → Prop} {Post : MachineData → MachineData → Prop}
     {m : Modifies} (hat : Program.fromLabel P f = Directive.label f :: (body ++ rest))
     (hbody : ∀ s ra, ⦃ fun t => t = s.pushRa ra ∧ Pre s ⦄ (Directive.label f :: body)
@@ -148,20 +147,19 @@ theorem callSpec_of_triple {P body rest : Program} {k : Nat} (hP : P.LinkedAt k)
   have hl := Program.drop_fromLabel P f ▸ hP.drop (P.length - (Program.fromLabel P f).length)
   generalize k + (P.length - (Program.fromLabel P f).length) = j at hl
   rw [hat] at hl
-  obtain ⟨hbody', -⟩ := Program.LinkedAt.append (a := Directive.label f :: body) hl
+  obtain ⟨hbody', -⟩ := List.IsInfixAt.append (a := Directive.label f :: body) hl
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
   simp only [meet_prop_eq_and] at hpre
   obtain ⟨⟨hmapped, hpre⟩, hcont⟩ := hpre
   obtain ⟨i, hload⟩ := Option.isSome_iff_exists.mp hmapped
   intro k' hs
-  obtain ⟨z, hz⟩ := LinkedProgram.cell_of_prefix hs.1
-  refine Eventually.step _
-    (fun st => st = (s.pushRa (LinkedProgram.exe.addrOf (k' + 1)), LinkedProgram.exe.addrOf j))
-    ⟨k', _, z, hz, rfl, fun R next jmp _ hj => ?_⟩ ?_
+  refine eventually_trans _
+    (fun st => st = (s.pushRa ((layout Host.prog).addrOf (k' + 1)), (layout Host.prog).addrOf j)) _ _
+    (Host.eventually_directive hs ?_) ?_
   · simp only [Directive.interp, Instr.interp, Operation.interp, RelRegOrMem.interp,
       ConstExpr.interp, MachineData.store, hload, Effects.All]
-    rw [Int64.ofBitVec_toBitVec, Int64.add_sub_self_left, hl.2 0 f rfl, Nat.add_zero]
-    exact hj _ _ rfl
+    rw [Int64.ofBitVec_toBitVec, Int64.add_sub_self_left, Host.label_eq (i := 0) hl rfl, Nat.add_zero]
+    rfl
   · rintro _ rfl
     refine eventually_trans _ _ _ _ ((hbody s _).1 _ ⟨rfl, hpre⟩ j hbody') ?_
     rintro ⟨t, a⟩ (⟨_, h⟩ | ⟨ha, hpost, hagree⟩)
@@ -170,7 +168,6 @@ theorem callSpec_of_triple {P body rest : Program} {k : Nat} (hP : P.LinkedAt k)
 
 /-! ## The control-flow rule -/
 
-omit layout in
 /-- The control-flow rule: one table `T`, one variant `var`, one triple per block of
 `Program.blockAt`. Each block is entered with its table entry and the variant snapshotted as
 `n`. It falls into the next block with the entry there and the variant not increased, or, as the
@@ -179,7 +176,7 @@ last block, falls through the end of `p` with `Qend`. A jump either reaches a bl
 theorem cfg {p p' : Program} {l₀ : Label}
     (T : Label → MachineData → Prop) (var : Label → MachineData → Nat)
     (Qend : MachineData → Prop) (Ext : Int64 → MachineData → Prop)
-    (hblocks : ∀ l blk, Program.blockAt p l = some blk → ∀ n : Nat, ∀ k, p.LinkedAt k →
+    (hblocks : ∀ l blk, Program.blockAt p l = some blk → ∀ n : Nat, ∀ k, p.IsInfixAt Host.prog k →
       ⦃ fun s => T l s ∧ var l s = n ⦄
         blk.body
       ⦃ (match blk.next with
@@ -191,7 +188,7 @@ theorem cfg {p p' : Program} {l₀ : Label}
     ⦃ fun s => T l₀ s ⦄ p ⦃ fun _ s => Qend s; Ext ⦄ := by
   refine ⟨fun s hT k hlink => ?_⟩
   let B := fun st : MachineState =>
-    (st.2 = LinkedProgram.exe.addrOf (k + p.length) ∧ Qend st.1) ∨ Ext st.2 st.1
+    (st.2 = (layout Host.prog).addrOf (k + p.length) ∧ Qend st.1) ∨ Ext st.2 st.1
   have hK : ∀ l, Program.blockIdx p l ≤ (Program.view p).2.length := Program.blockIdx_le p
   have hcellOf : ∀ l, Program.fromLabel p l ≠ [] →
       p[p.length - (Program.fromLabel p l).length]? = some (Directive.label l) := by
@@ -201,8 +198,8 @@ theorem cfg {p p' : Program} {l₀ : Label}
     conv at hdrop => rhs; rw [hfl]
     simpa [List.head?_drop] using congrArg List.head? hdrop
   have key : ∀ x : Label × MachineData, (Program.blockAt p x.1).isSome → T x.1 x.2 →
-      Eventually LinkedProgram.step B
-        (x.2, LinkedProgram.exe.addrOf (k + (p.length - (Program.fromLabel p x.1).length))) := by
+      Eventually Host.step B
+        (x.2, (layout Host.prog).addrOf (k + (p.length - (Program.fromLabel p x.1).length))) := by
     intro x
     induction x using (measure (Program.cfgMeasure p var)).wf.induction with
     | _ x ih =>
@@ -221,11 +218,10 @@ theorem cfg {p p' : Program} {l₀ : Label}
       have hl := hdrop ▸ hlink.drop (p.length - (Program.fromLabel p l).length)
       generalize hi : p.length - (Program.fromLabel p l).length = i at hdrop hl
       rw [htext] at hl
-      obtain ⟨hlab, hrest⟩ := Program.LinkedAt.append (a := [Directive.label l]) hl
-      obtain ⟨hbody, -⟩ := Program.LinkedAt.append hrest
-      obtain ⟨z, hz⟩ := LinkedProgram.cell_of_prefix hlab.1
-      refine Eventually.step _ (fun st => st = (s, LinkedProgram.exe.addrOf (k + i + 1)))
-        ⟨k + i, _, z, hz, rfl, fun R next jmp hn _ => by simp only [Directive.interp]; exact hn _ rfl⟩ ?_
+      obtain ⟨hlab, hrest⟩ := List.IsInfixAt.append (a := [Directive.label l]) hl
+      obtain ⟨hbody, -⟩ := List.IsInfixAt.append hrest
+      refine eventually_trans _ (fun st => st = (s, (layout Host.prog).addrOf (k + i + 1))) _ _
+        (Host.eventually_directive hlab (by simp only [Directive.interp, Effects.All])) ?_
       rintro _ rfl
       refine eventually_trans _ _ _ _ ((hblocks l blk hblk (var l s) k hlink).1 s ⟨hT, rfl⟩
         (k + i + 1) hbody) ?_
@@ -237,7 +233,7 @@ theorem cfg {p p' : Program} {l₀ : Label}
           rw [hn] at hq hlen
           refine Eventually.done _ (Or.inl ⟨?_, hq⟩)
           simp only [Option.elim, List.length_nil] at hlen
-          show LinkedProgram.exe.addrOf (k + i + 1 + blk.body.length) = _
+          show (layout Host.prog).addrOf (k + i + 1 + blk.body.length) = _
           rw [show k + i + 1 + blk.body.length = k + p.length by omega]
         | some l' =>
           rw [hn] at hq hlen
@@ -262,7 +258,7 @@ theorem cfg {p p' : Program} {l₀ : Label}
             obtain ⟨blk', hblk'⟩ := Option.isSome_iff_exists.mp hsome'
             rw [Program.fromLabel_block hnd hblk']
             exact List.cons_ne_nil _ _
-          rw [hlink.2 _ l' (hcellOf l' hne)]
+          rw [Host.label_eq hlink (hcellOf l' hne)]
           refine ih (l', s') ?_ hsome' hT'
           have hK' := hK l'
           show Program.cfgMeasure p var (l', s') < Program.cfgMeasure p var (l, s)
@@ -295,12 +291,11 @@ theorem cfg {p p' : Program} {l₀ : Label}
   have := key (l₀, s) h0 hT
   rwa [hfl, Nat.sub_self, Nat.add_zero] at this
 
-omit layout in
 /-- `cfg` at one state, in the goal form of `vcgen`. -/
 theorem cfg_wp {p p' : Program} {l₀ : Label}
     (T : Label → MachineData → Prop) (var : Label → MachineData → Nat)
     (Qend : MachineData → Prop) (Ext : Int64 → MachineData → Prop)
-    (hblocks : ∀ l blk, Program.blockAt p l = some blk → ∀ n : Nat, ∀ k, p.LinkedAt k →
+    (hblocks : ∀ l blk, Program.blockAt p l = some blk → ∀ n : Nat, ∀ k, p.IsInfixAt Host.prog k →
       ⦃ fun s => T l s ∧ var l s = n ⦄
         blk.body
       ⦃ (match blk.next with

@@ -50,13 +50,12 @@ private abbrev p3_table (d : MachineData) : Label → MachineData → Prop
 
 /-- The baseline's `p3_correct`, for a start state with `rax = 0` and a valid
 layout. -/
-theorem p3_correct [layout : Layout] [Kraken.Executable.Assembled (layout p3)]
+theorem p3_correct [Host] [layout : Layout] [Layout.Valid] (hp : p3 <:+: Host.prog)
     (d : MachineData) (h_bounds : p3_spec d < 2 ^ 64) (h_rax : d.regs.rax = 0) :
-    Eventually (straightlineStep (layout p3))
-      (fun s => s.1.regs.rdx.toNat = p3_spec d ∧ s.1.regs.rax = 0) (d, layout.start) := by
+    Eventually (step1 (layout Host.prog))
+      (fun s => s.1.regs.rdx.toNat = p3_spec d ∧ s.1.regs.rax = 0) (d, startAddr hp) := by
   simp only [p3_spec] at h_bounds ⊢
-  apply Program.WP.straightline_of_wp
-  intro _
+  apply Program.WP.step1_of_wp hp
   refine Program.WP.cfg_wp (p3_table d) (fun _ s => s.regs.rbx.toNat) _ ⊥ ?_ d rfl
   cfg_cases [p3]
   all_goals kvcgen64 with finish
