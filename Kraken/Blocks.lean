@@ -81,36 +81,6 @@ from one spec table `T` and one variant `var`: one triple per block, where an
 exit to a textually later block is free and only a back edge must decrease
 the variant. -/
 
-/-- The label that a directive introduces, if it is a label. -/
-def Directive.label? : Directive → Option Label
-  | .label l => some l
-  | _ => none
-
-/-- The labels of the text, in order. -/
-def Program.labels (p : Program) : List Label := p.filterMap Directive.label?
-
-@[simp] theorem Program.labels_nil : Program.labels [] = [] := rfl
-
-@[simp] theorem Program.labels_cons_label (l : Label) (p : Program) :
-    Program.labels (.label l :: p) = l :: Program.labels p := rfl
-
-@[simp] theorem Program.labels_cons_instr (i : Instr) (p : Program) :
-    Program.labels (.instr i :: p) = Program.labels p := rfl
-
-@[simp] theorem Program.labels_cons_byteArray (a : ByteArray) (p : Program) :
-    Program.labels (.byteArray a :: p) = Program.labels p := rfl
-
-theorem Program.labels_append (a b : Program) :
-    Program.labels (a ++ b) = Program.labels a ++ Program.labels b :=
-  List.filterMap_append
-
-theorem Program.mem_labels {p : Program} {l : Label} : l ∈ Program.labels p ↔ Directive.label l ∈ p := by
-  rw [Program.labels, List.mem_filterMap]
-  constructor
-  · rintro ⟨d, hd, hl⟩
-    cases d <;> simp_all [Directive.label?]
-  · exact fun h => ⟨_, h, rfl⟩
-
 /-- A nonempty scope suffix starts with its own label cell. -/
 theorem Program.fromLabel_head :
     ∀ (p : Program) {l : Label}, Program.fromLabel p l ≠ [] →

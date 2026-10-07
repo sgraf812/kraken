@@ -2,7 +2,6 @@ module
 
 public import Kraken.X64.OmniSemantics
 public import Kraken.Data.List.Infix
-public import Kraken.Blocks
 
 @[grind hom] public theorem Int64.toBitVec_ofNat_grind (a : Nat) :
     (Int64.ofNat a).toBitVec = OfNat.ofNat a := by

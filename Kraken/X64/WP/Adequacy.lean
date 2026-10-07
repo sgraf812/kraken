@@ -186,15 +186,6 @@ public theorem Layout.apply_getElem? [layout : Layout] (p : Program) (i : Nat) :
 public theorem Layout.length_apply [layout : Layout] (p : Program) : (layout p).2.length = p.length := by
   simp [Kraken.Layout.apply]
 
-public theorem Program.eq_of_getElem?_label {P : Program} (hnd : (Program.labels P).Nodup) {i j : Nat}
-    {l : Label} (hi : P[i]? = some (.label l)) (hj : P[j]? = some (.label l)) : i = j := by
-  induction P generalizing i j with
-  | nil => simp at hi
-  | cons d P ih =>
-    cases i <;> cases j <;> cases d <;>
-      grind [Program.labels_cons_label, Program.labels_cons_instr, Program.labels_cons_byteArray,
-        Program.mem_labels, List.mem_of_getElem?]
-
 section
 variable [Host] [layout : Layout] [hv : Layout.Valid]
 
