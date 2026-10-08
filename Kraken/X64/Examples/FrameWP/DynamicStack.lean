@@ -47,11 +47,11 @@ theorem dynamic_stack_correct [Host] [Layout] [Layout.Valid] (stack : List UInt8
 `dynamic_stack_correct` read back as the judgment of the baseline example
 `dynamic_stack_example_correct`, over the same program text. -/
 
-theorem dynamic_stack_example_correct [Host] [layout : _root_.Layout] [Layout.Valid] (hp : dynamic_stack <:+: Host.prog) (s₀ : MachineData)
+theorem dynamic_stack_example_correct [Host] [layout : _root_.Layout] [Layout.Valid] (hp : dynamic_stack.IsInfix Host.prog) (s₀ : MachineData)
     (stack : List UInt8) (lstack : stack.length = 1024) (R : Mem 64 → Prop)
     (h : s₀.regs.r9.toNat + s₀.regs.r15.toNat < 125)
     (h_mem : s₀.dmem =⋆ Eq (stack.At (s₀.regs.rsp.toBitVec - 1024)) ⋆ R) :
-    Eventually (step1 (layout Host.prog))
+    Eventually (step1 Host.exe)
       (fun s' => s'.1.regs.rax = 42 ∧ s'.1.regs.rbx = 99 ∧ s'.1.regs.rsp = s₀.regs.rsp)
       (s₀, startAddr hp) := by
   apply Program.FrameWP.step1_of_wp hp (List.get_AtM_sep h_mem)

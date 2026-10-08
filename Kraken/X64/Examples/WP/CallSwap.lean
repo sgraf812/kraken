@@ -56,10 +56,10 @@ private theorem pswap_body_spec [Host] [Layout] [Layout.Valid] (R : DataMem → 
       ∧ swapMod.Agree s s' ⦄ := by
   kvcgen64 with finish
 
-theorem pswap_correct [Host] [Layout.Valid] (hp : pswap <:+: Host.prog)
+theorem pswap_correct [Host] [Layout.Valid] (hp : pswap.IsInfix Host.prog)
     (d : MachineData) (R : DataMem → Prop)
     (hmem : d.dmem =⋆ Mem.Blocks [(d.regs.get64 .rsp - 8#64, 8)] ⋆ R) :
-    Eventually (step1 (layout Host.prog))
+    Eventually (step1 Host.exe)
       (fun s => s.1.regs.get64 .rax = d.regs.get64 .rax
         ∧ s.1.regs.get64 .rbx = d.regs.get64 .rbx
         ∧ s.1.regs.get64 .rsp = d.regs.get64 .rsp)

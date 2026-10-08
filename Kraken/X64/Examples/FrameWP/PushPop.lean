@@ -34,10 +34,10 @@ theorem p6_spec [Host] [Layout] [Layout.Valid] (stack : List UInt8) (h_len : sta
 `p6_spec` read back as the judgment of the baseline example `p6_correct`,
 over the same program text. -/
 
-theorem p6_correct [Host] [layout : _root_.Layout] [Layout.Valid] (hp : p6 <:+: Host.prog) (s₀ : MachineData)
+theorem p6_correct [Host] [layout : _root_.Layout] [Layout.Valid] (hp : p6.IsInfix Host.prog) (s₀ : MachineData)
     (stack : List UInt8) (h_len : stack.length = 8) (R : DataMem → Prop)
     (h_mem : s₀.dmem =⋆ Eq (stack.At (s₀.regs.rsp.toBitVec - 8#64)) ⋆ R) :
-    Eventually (step1 (layout Host.prog))
+    Eventually (step1 Host.exe)
       (fun s' => s'.1.regs.rax = s₀.regs.rax ∧ s'.1.regs.rsp = s₀.regs.rsp)
       (s₀, startAddr hp) := by
   apply Program.FrameWP.step1_of_wp hp (List.get_AtM_sep h_mem)

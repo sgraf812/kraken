@@ -154,8 +154,8 @@ theorem callSpec_of_triple {P body rest : Program} {k : Nat} (hP : P.IsInfixAt H
   obtain ⟨i, hload⟩ := Option.isSome_iff_exists.mp hmapped
   intro k' hs
   refine eventually_trans _
-    (fun st => st = (s.pushRa ((layout Host.prog).addrOf (k' + 1)), (layout Host.prog).addrOf j)) _ _
-    (Host.eventually_directive hs ?_) ?_
+    (fun st => st = (s.pushRa (Host.addrOf (k' + 1)), Host.addrOf j)) _ _
+    (Host.eventually_of_interp hs ?_) ?_
   · simp only [Directive.interp, Instr.interp, Operation.interp, RelRegOrMem.interp,
       ConstExpr.interp, MachineData.store, hload, Effects.All]
     rw [Int64.ofBitVec_toBitVec, Int64.add_sub_self_left, Host.label_eq (i := 0) hl rfl, Nat.add_zero]
@@ -188,7 +188,7 @@ theorem cfg {p p' : Program} {l₀ : Label}
     ⦃ fun s => T l₀ s ⦄ p ⦃ fun _ s => Qend s; Ext ⦄ := by
   refine ⟨fun s hT k hlink => ?_⟩
   let B := fun st : MachineState =>
-    (st.2 = (layout Host.prog).addrOf (k + p.length) ∧ Qend st.1) ∨ Ext st.2 st.1
+    (st.2 = Host.addrOf (k + p.length) ∧ Qend st.1) ∨ Ext st.2 st.1
   have hK : ∀ l, Program.blockIdx p l ≤ (Program.view p).2.length := Program.blockIdx_le p
   have hcellOf : ∀ l, Program.fromLabel p l ≠ [] →
       p[p.length - (Program.fromLabel p l).length]? = some (Directive.label l) := by
@@ -198,8 +198,8 @@ theorem cfg {p p' : Program} {l₀ : Label}
     conv at hdrop => rhs; rw [hfl]
     simpa [List.head?_drop] using congrArg List.head? hdrop
   have key : ∀ x : Label × MachineData, (Program.blockAt p x.1).isSome → T x.1 x.2 →
-      Eventually Host.step B
-        (x.2, (layout Host.prog).addrOf (k + (p.length - (Program.fromLabel p x.1).length))) := by
+      Eventually Host.exe.step' B
+        (x.2, Host.addrOf (k + (p.length - (Program.fromLabel p x.1).length))) := by
     intro x
     induction x using (measure (Program.cfgMeasure p var)).wf.induction with
     | _ x ih =>
@@ -220,8 +220,8 @@ theorem cfg {p p' : Program} {l₀ : Label}
       rw [htext] at hl
       obtain ⟨hlab, hrest⟩ := List.IsInfixAt.append (a := [Directive.label l]) hl
       obtain ⟨hbody, -⟩ := List.IsInfixAt.append hrest
-      refine eventually_trans _ (fun st => st = (s, (layout Host.prog).addrOf (k + i + 1))) _ _
-        (Host.eventually_directive hlab (by simp only [Directive.interp, Effects.All])) ?_
+      refine eventually_trans _ (fun st => st = (s, Host.addrOf (k + i + 1))) _ _
+        (Host.eventually_of_interp hlab (by simp only [Directive.interp, Effects.All])) ?_
       rintro _ rfl
       refine eventually_trans _ _ _ _ ((hblocks l blk hblk (var l s) k hlink).1 s ⟨hT, rfl⟩
         (k + i + 1) hbody) ?_
@@ -233,7 +233,7 @@ theorem cfg {p p' : Program} {l₀ : Label}
           rw [hn] at hq hlen
           refine Eventually.done _ (Or.inl ⟨?_, hq⟩)
           simp only [Option.elim, List.length_nil] at hlen
-          show (layout Host.prog).addrOf (k + i + 1 + blk.body.length) = _
+          show Host.addrOf (k + i + 1 + blk.body.length) = _
           rw [show k + i + 1 + blk.body.length = k + p.length by omega]
         | some l' =>
           rw [hn] at hq hlen
@@ -284,7 +284,7 @@ theorem cfg {p p' : Program} {l₀ : Label}
       have hmem := Program.mem_labels.mpr (Program.fromLabel_mem hne)
       have hnd' := hnd
       rw [hp] at hnd'
-      simp only [Program.labels_nil, Program.labels_cons_label, Program.labels_cons_instr, Program.labels_cons_byteArray] at hnd'
+      simp only [Program.labels_cons_label] at hnd'
       exact (List.nodup_cons.mp hnd').1 hmem
     rw [hp]
     simp [hnot]

@@ -36,10 +36,10 @@ theorem sib_correct [Host] [Layout] [Layout.Valid] (v : UInt64) :
 `sib_correct` read back as the judgment of the baseline example
 `sib_example_correct`, over the same program text. -/
 
-theorem sib_example_correct [Host] [layout : _root_.Layout] [Layout.Valid] (hp : sib_example <:+: Host.prog) (s₀ : MachineData)
+theorem sib_example_correct [Host] [layout : _root_.Layout] [Layout.Valid] (hp : sib_example.IsInfix Host.prog) (s₀ : MachineData)
     (v : UInt64) (R : DataMem → Prop)
     (h_mem : s₀.dmem =⋆ Eq (v.At (s₀.regs.rdi.toBitVec + BitVec.ofInt 64 (s₀.regs.r15.toBitVec.toInt * 8))) ⋆ R) :
-    Eventually (step1 (layout Host.prog))
+    Eventually (step1 Host.exe)
       (fun s' => s'.1.regs.rax = 42)
       (s₀, startAddr hp) := by
   apply Program.FrameWP.step1_of_wp hp (UInt64.get_AtM_sep h_mem)

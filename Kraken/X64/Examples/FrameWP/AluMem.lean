@@ -29,10 +29,10 @@ namespace Sep
   kvcgen64 [alu_mem_example] with finish
 
 /-- The statement of the baseline's `alu_mem_example_correct`. -/
-theorem alu_mem_example_correct [Host] [layout : Layout] [Layout.Valid] (hp : alu_mem_example <:+: Host.prog) (s₀ : MachineData)
+theorem alu_mem_example_correct [Host] [layout : Layout] [Layout.Valid] (hp : alu_mem_example.IsInfix Host.prog) (s₀ : MachineData)
     (v : UInt64) (R : DataMem → Prop)
     (h_mem : s₀.dmem =⋆ Eq (v.At (s₀.regs.rdx.toBitVec + 136#64)) ⋆ R) :
-    Eventually (step1 (layout Host.prog))
+    Eventually (step1 Host.exe)
       (fun s' => s'.1.regs.rcx = 142)
       (s₀, startAddr hp) := by
   apply Program.FrameWP.step1_of_wp hp (UInt64.get_AtM_sep h_mem)

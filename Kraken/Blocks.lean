@@ -109,7 +109,7 @@ theorem Program.fromLabel_ne_nil_of_mem {p : Program} {l : Label}
       split
       · exact List.cons_ne_nil _ _
       · rename_i hc
-        simp only [Program.labels_nil, Program.labels_cons_label, Program.labels_cons_instr, Program.labels_cons_byteArray, List.mem_cons] at h
+        simp only [Program.labels_cons_label, List.mem_cons] at h
         rcases h with rfl | h
         · by_cases hnil : Program.fromLabel p l = []
           · exact absurd ⟨hnil, rfl⟩ hc
@@ -209,7 +209,7 @@ theorem Program.labels_view (p : Program) :
   | nil => rfl
   | cons d p ih =>
     cases d with
-    | label l => simp only [Program.labels_nil, Program.labels_cons_label, Program.labels_cons_instr, Program.labels_cons_byteArray, Program.view, List.map_cons, ih]
+    | label l => simp only [Program.labels_cons_label, Program.view, List.map_cons, ih]
     | instr i => exact ih
     | byteArray a => exact ih
 
@@ -226,7 +226,7 @@ theorem Program.fromLabel_view {p : Program} (hnd : (Program.labels p).Nodup) :
     cases d with
     | label l' =>
       simp only [Program.view] at hi
-      simp only [Program.labels_nil, Program.labels_cons_label, Program.labels_cons_instr, Program.labels_cons_byteArray] at hnd
+      simp only [Program.labels_cons_label] at hnd
       have hnd' := (List.nodup_cons.mp hnd).2
       cases i with
       | zero =>

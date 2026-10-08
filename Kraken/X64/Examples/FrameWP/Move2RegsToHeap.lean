@@ -40,11 +40,11 @@ theorem move_2_regs_to_heap_spec [Host] [Layout] [Layout.Valid] (v1 v2 : UInt64)
 `move_2_regs_to_heap_spec` read back as the judgment of the baseline example
 `move_2_regs_to_heap_correct`, over the same program text. -/
 
-theorem move_2_regs_to_heap_correct [Host] [layout : _root_.Layout] [Layout.Valid] (hp : move_2_regs_to_heap <:+: Host.prog) (s₀ : MachineData)
+theorem move_2_regs_to_heap_correct [Host] [layout : _root_.Layout] [Layout.Valid] (hp : move_2_regs_to_heap.IsInfix Host.prog) (s₀ : MachineData)
   (v1 v2 : UInt64)
   (R : DataMem → Prop)
   (h_mem : s₀.dmem =⋆ Eq (v1.At s₀.regs.rdi.toBitVec) ⋆ Eq (v2.At (s₀.regs.rdi.toBitVec + 8#64)) ⋆ R)
-  : Eventually (step1 (layout Host.prog))
+  : Eventually (step1 Host.exe)
       (fun s' =>
         s'.1.regs.r12 = s₀.regs.rax ∧
         s'.1.regs.r13 = s₀.regs.rcx ∧

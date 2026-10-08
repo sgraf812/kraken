@@ -172,19 +172,19 @@ eventually ends in `post`. The entailment is asked in every linked program. The 
 valid executable. -/
 
 open Program.FrameWP in
-theorem Program.FrameWP.step1_of_wp [Host] [layout : Layout] [Layout.Valid] {p : Program}
-    (hp : p <:+: Host.prog) {s : MachineData}
-    {post : MachineState → Prop} {footprint frame : MProp 64}
+theorem Program.FrameWP.step1_of_wp [Host] [Layout] [Layout.Valid] {p : Program}
+    (hp : p.IsInfix Host.prog) {s : MachineData}
+    {post : @Post MachineState} {footprint frame : MProp 64}
     (hmem : (footprint ∗ frame).get s.dmem)
     (ht : footprint ⊑ WP.wp p
       (fun _ r z f => frame -∗ MProp.mk fun m => ∀ pc, post (⟨r, z, f, m⟩, pc))
       ⊥ s.regs s.zmms s.status) :
-    Eventually (step1 (layout Host.prog)) post (s, startAddr hp) := by
+    Eventually (step1 Host.exe) post (s, startAddr hp) := by
   rw [MProp.sep_comm] at hmem
   refine Program.step1_of_wp hp (sep_elim ((MProp.le_def _ _).mp
-    (MProp.sep_mono_right _ ht) _ hmem)) (fun s' hq pc => ?_) (fun a s' he => ?_)
+    (MProp.sep_mono_right _ ht) _ hmem)) (fun s' hq => ?_) (fun a s' he => ?_)
   · have h := (MProp.le_def _ _).mp (MProp.sep_wand_elim _ _) _ hq
     rw [MProp.get_mk] at h
-    exact h pc
+    exact h _
   · exact (MProp.of_get_sep he
       ((bot_le (fun _ _ _ _ => (⌜False⌝ : MProp 64))) a s'.regs s'.zmms s'.status)).elim

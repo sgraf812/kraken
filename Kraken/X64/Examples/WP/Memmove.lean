@@ -142,14 +142,14 @@ private abbrev mp_table (d : MachineData) (bs : List UInt8) (R₂ : DataMem → 
       ⋆ Mem.Bytes (d.regs.get64 .rdi) bs ⋆ R₂
   | _, _ => False
 
-theorem memmove_correct [Host] [layout : Layout] [Layout.Valid] (hp : memmoveProg <:+: Host.prog)
+theorem memmove_correct [Host] [layout : Layout] [Layout.Valid] (hp : memmoveProg.IsInfix Host.prog)
     (d : MachineData) (bs : List UInt8) (R₁ R₂ : DataMem → Prop)
     (hn : bs.length = (d.regs.get64 .rdx).toNat)
     (hsrc : (d.regs.get64 .rsi).toNat + bs.length < 2 ^ 64)
     (hdst : (d.regs.get64 .rdi).toNat + bs.length < 2 ^ 64)
     (h₁ : d.dmem =⋆ Mem.Bytes (d.regs.get64 .rsi) bs ⋆ Mem.Blocks [(d.regs.get64 .rsp - 8#64, 8)] ⋆ R₁)
     (h₂ : d.dmem =⋆ Mem.Blocks [(d.regs.get64 .rsp - 8#64, 8), (d.regs.get64 .rdi, bs.length)] ⋆ R₂) :
-    Eventually (step1 (layout Host.prog))
+    Eventually (step1 Host.exe)
       (fun st => st.1.dmem =⋆ Mem.Blocks [(d.regs.get64 .rsp - 8#64, 8)]
         ⋆ Mem.Bytes (d.regs.get64 .rdi) bs ⋆ R₂)
       (d, startAddr hp) := by

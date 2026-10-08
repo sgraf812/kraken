@@ -53,7 +53,7 @@ variable [Host] [Layout] [Layout.Valid] {Q : Unit → MachineData → Prop} {E :
     ⦃ Q ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
   intro k hs
-  refine Host.eventually_directive hs ?_
+  refine Host.eventually_of_interp hs ?_
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
     MachineData.set, MachineData.setReg, Reg64s.set_low_W64, Effects.All]
   exact Or.inl ⟨rfl, hpre⟩
@@ -71,7 +71,7 @@ variable [Host] [Layout] [Layout.Valid] {Q : Unit → MachineData → Prop} {E :
   obtain ⟨hmapped, hpre⟩ := hpre
   obtain ⟨i, hload⟩ := Option.isSome_iff_exists.mp hmapped
   intro k hs
-  refine Host.eventually_directive hs ?_
+  refine Host.eventually_of_interp hs ?_
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
     RegOrMem.interp, MachineData.set, MachineData.store, Reg64s.get_low_W64,
     AddrExpr.zeroExtend_interp_base_disp, hload, Effects.All]
@@ -96,7 +96,7 @@ variable [Host] [Layout] [Layout.Valid] {Q : Unit → MachineData → Prop} {E :
   obtain ⟨hmapped, hpre⟩ := hpre
   obtain ⟨i, hload⟩ := Option.isSome_iff_exists.mp hmapped
   intro k hs
-  refine Host.eventually_directive hs ?_
+  refine Host.eventually_of_interp hs ?_
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
     RegOrMem.interp, MachineData.load, MachineData.set, MachineData.setReg,
     Reg64s.get_low_W64, Reg64s.set_low_W64, AddrExpr.zeroExtend_interp_base_disp,
@@ -111,7 +111,7 @@ local macro "run_step" : tactic =>
 @[spec] public theorem label_spec (l : Label) : ⦃ fun s => Q () s ⦄ Directive.label l ⦃ Q ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
   intro k hs
-  refine Host.eventually_directive hs ?_
+  refine Host.eventually_of_interp hs ?_
   run_step
   exact Or.inl ⟨rfl, hpre⟩
 
@@ -119,7 +119,7 @@ local macro "run_step" : tactic =>
     ⦃ fun s => Q () s ⦄ Directive.instr (.regular asz osz (.nop n)) ⦃ Q ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
   intro k hs
-  refine Host.eventually_directive hs ?_
+  refine Host.eventually_of_interp hs ?_
   run_step
   exact Or.inl ⟨rfl, hpre⟩
 
@@ -138,7 +138,7 @@ local macro "run_step" : tactic =>
     ⦃ Q ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
   intro k hs
-  refine Host.eventually_directive hs ?_
+  refine Host.eventually_of_interp hs ?_
   run_step
   exact Or.inl ⟨rfl, hpre⟩
 
@@ -152,7 +152,7 @@ local macro "run_step" : tactic =>
     ⦃ Q ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
   intro k hs
-  refine Host.eventually_directive hs ?_
+  refine Host.eventually_of_interp hs ?_
   run_step
   exact Or.inl ⟨rfl, hpre⟩
 
@@ -171,7 +171,7 @@ local macro "run_step" : tactic =>
     ⦃ Q ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
   intro k hs
-  refine Host.eventually_directive hs ?_
+  refine Host.eventually_of_interp hs ?_
   run_step
   exact Or.inl ⟨rfl, hpre⟩
 
@@ -192,7 +192,7 @@ local macro "run_step" : tactic =>
     ⦃ Q ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
   intro k hs
-  refine Host.eventually_directive hs ?_
+  refine Host.eventually_of_interp hs ?_
   run_step
   exact Or.inl ⟨rfl, hpre⟩
 
@@ -212,7 +212,7 @@ local macro "run_step" : tactic =>
     ⦃ Q ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
   intro k hs
-  refine Host.eventually_directive hs ?_
+  refine Host.eventually_of_interp hs ?_
   run_step
   exact Or.inl ⟨rfl, hpre⟩
 
@@ -231,7 +231,7 @@ local macro "run_step" : tactic =>
     ⦃ Q ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
   intro k hs
-  refine Host.eventually_directive hs ?_
+  refine Host.eventually_of_interp hs ?_
   run_step
   exact Or.inl ⟨rfl, hpre⟩
 
@@ -245,7 +245,7 @@ local macro "run_step" : tactic =>
     ⦃ Q ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
   intro k hs
-  refine Host.eventually_directive hs ?_
+  refine Host.eventually_of_interp hs ?_
   run_step
   intro af
   exact Or.inl ⟨rfl, (hpre af)⟩
@@ -261,7 +261,7 @@ local macro "run_step" : tactic =>
   obtain ⟨hmapped, hpre⟩ := hpre
   obtain ⟨i, hload⟩ := Option.isSome_iff_exists.mp hmapped
   intro k hs
-  refine Host.eventually_directive hs ?_
+  refine Host.eventually_of_interp hs ?_
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
     RegOrMem.interp, MachineData.load, MachineData.set, MachineData.setReg,
     AddrExpr.zeroExtend_interp_base_disp, Width.bytes, hload, Effects.All]
@@ -279,7 +279,7 @@ local macro "run_step" : tactic =>
   obtain ⟨hmapped, hpre⟩ := hpre
   obtain ⟨i, hload⟩ := Option.isSome_iff_exists.mp hmapped
   intro k hs
-  refine Host.eventually_directive hs ?_
+  refine Host.eventually_of_interp hs ?_
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
     RegOrMem.interp, MachineData.set, MachineData.store,
     AddrExpr.zeroExtend_interp_base_disp, Width.bytes, hload, Effects.All]
@@ -296,7 +296,7 @@ local macro "run_step" : tactic =>
     ⦃ Q ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
   intro k hs
-  refine Host.eventually_directive hs ?_
+  refine Host.eventually_of_interp hs ?_
   run_step
   intro af
   exact Or.inl ⟨rfl, (hpre af)⟩
@@ -315,7 +315,7 @@ local macro "run_step" : tactic =>
     ⦃ Q ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
   intro k hs
-  refine Host.eventually_directive hs ?_
+  refine Host.eventually_of_interp hs ?_
   run_step
   exact Or.inl ⟨rfl, hpre⟩
 
@@ -325,7 +325,7 @@ local macro "run_step" : tactic =>
     ⦃ Q; E ⦄ := by
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
   intro k hs
-  refine Host.eventually_directive hs ?_
+  refine Host.eventually_of_interp hs ?_
   run_step
   rw [Int64.ofBitVec_toBitVec, Int64.add_sub_self_left]
   exact Or.inr hpre
@@ -337,7 +337,7 @@ local macro "run_step" : tactic =>
   refine triple_directive.mpr ⟨fun s hpre => ?_⟩
   obtain ⟨hjmp, hfall⟩ := hpre
   intro k hs
-  refine Host.eventually_directive hs ?_
+  refine Host.eventually_of_interp hs ?_
   run_step
   cases hc : CondCode.interp cc s.status <;>
     simp only [Bool.false_eq_true, ite_true, ite_false]
@@ -360,7 +360,7 @@ local macro "run_step" : tactic =>
     | none => rw [hl] at hra; exact absurd hra (by simp)
     | some i => exact ⟨i, rfl, by rw [hl] at hra; simpa using hra⟩
   intro k hs
-  refine Host.eventually_directive hs ?_
+  refine Host.eventually_of_interp hs ?_
   simp only [Directive.interp, Instr.interp, Operation.interp, MachineData.load, hi,
     Effects.All, hval]
   exact Or.inr hexit
@@ -369,18 +369,18 @@ end Program.WP
 
 namespace Program.WP
 
-public theorem step1_of_wp [Host] [layout : Layout] [Layout.Valid] {p : Program} {s : MachineData}
-    {post : MachineState → Prop} (hp : p <:+: Host.prog)
+public theorem step1_of_wp [Host] [Layout] [Layout.Valid] {p : Program} {s : MachineData}
+    {post : @Post MachineState} (hp : p.IsInfix Host.prog)
     (h : ⊤ ⊑ WP.wp p (fun _ s' => ∀ pc, post (s', pc)) ⊥ s) :
-    Eventually (step1 (layout Host.prog)) post (s, startAddr hp) :=
+    Eventually (step1 Host.exe) post (s, startAddr hp) :=
   Program.step1_of_wp (Q := fun s' => ∀ pc, post (s', pc))
-    (E := (⊥ : Int64 → MachineData → Prop)) hp (of_top_le_prop h) (fun _ hq => hq)
+    (E := (⊥ : Int64 → MachineData → Prop)) hp (of_top_le_prop h) (fun _ hq => hq _)
     (fun a s' hE => ((bot_le (α := Int64 → MachineData → Prop) fun _ _ => False) a s' hE).elim)
 
-public theorem step1_of_triple [Host] [layout : Layout] [Layout.Valid] {p : Program}
-    {P : MachineData → Prop} {s : MachineData} {post : MachineState → Prop} (hp : p <:+: Host.prog)
+public theorem step1_of_triple [Host] [Layout] [Layout.Valid] {p : Program}
+    {P : MachineData → Prop} {s : MachineData} {post : @Post MachineState} (hp : p.IsInfix Host.prog)
     (h : ⦃ P ⦄ p ⦃ fun _ s' => ∀ pc, post (s', pc); ⊥ ⦄) (hs : P s) :
-    Eventually (step1 (layout Host.prog)) post (s, startAddr hp) :=
+    Eventually (step1 Host.exe) post (s, startAddr hp) :=
   step1_of_wp hp (fun _ => h.1 s hs)
 
 end Program.WP
