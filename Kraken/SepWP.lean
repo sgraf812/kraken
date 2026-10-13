@@ -207,8 +207,8 @@ def normalizeAtoms (e : Expr) : MetaM (Expr × Option Expr) := do
   thms ← thms.addConst ``eq_self_iff_true
   for n in [``UInt64.AtM, ``UInt32.AtM, ``UInt16.AtM, ``UInt8.AtM] do
     thms ← thms.addDeclToUnfold n
-  for n in [``Reg64s.get64_r10, ``Reg64s.get64_r11, ``Reg64s.get64_r12, ``Reg64s.get64_r13, ``Reg64s.get64_r14, ``Reg64s.get64_r15, ``Reg64s.get64_r8, ``Reg64s.get64_r9, ``Reg64s.get64_rax, ``Reg64s.get64_rbp, ``Reg64s.get64_rbx, ``Reg64s.get64_rcx, ``Reg64s.get64_rdi, ``Reg64s.get64_rdx, ``Reg64s.get64_rsi, ``Reg64s.get64_rsp] do
-    thms ← thms.addConst n (inv := true)
+  for n in [``Reg64s.toBitVec_r10, ``Reg64s.toBitVec_r11, ``Reg64s.toBitVec_r12, ``Reg64s.toBitVec_r13, ``Reg64s.toBitVec_r14, ``Reg64s.toBitVec_r15, ``Reg64s.toBitVec_r8, ``Reg64s.toBitVec_r9, ``Reg64s.toBitVec_rax, ``Reg64s.toBitVec_rbp, ``Reg64s.toBitVec_rbx, ``Reg64s.toBitVec_rcx, ``Reg64s.toBitVec_rdi, ``Reg64s.toBitVec_rdx, ``Reg64s.toBitVec_rsi, ``Reg64s.toBitVec_rsp] do
+    thms ← thms.addConst n
   let ctx ← Simp.mkContext {} (simpTheorems := #[thms])
   let (r, _) ← Meta.simp e ctx (simprocs := #[← Simp.getSimprocs])
   return (r.expr, r.proof?)

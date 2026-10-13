@@ -228,22 +228,22 @@ theorem BitVec.toNat_sub_cases {w} (a b : BitVec w) :
 
 /-! ## Reading a named register, one lemma per field -/
 
-@[simp, grind =_] theorem Reg64s.get64_rax (s : Reg64s) : s.get64 .rax = s.rax.toBitVec := rfl
-@[simp, grind =_] theorem Reg64s.get64_rbx (s : Reg64s) : s.get64 .rbx = s.rbx.toBitVec := rfl
-@[simp, grind =_] theorem Reg64s.get64_rcx (s : Reg64s) : s.get64 .rcx = s.rcx.toBitVec := rfl
-@[simp, grind =_] theorem Reg64s.get64_rdx (s : Reg64s) : s.get64 .rdx = s.rdx.toBitVec := rfl
-@[simp, grind =_] theorem Reg64s.get64_rsi (s : Reg64s) : s.get64 .rsi = s.rsi.toBitVec := rfl
-@[simp, grind =_] theorem Reg64s.get64_rdi (s : Reg64s) : s.get64 .rdi = s.rdi.toBitVec := rfl
-@[simp, grind =_] theorem Reg64s.get64_rsp (s : Reg64s) : s.get64 .rsp = s.rsp.toBitVec := rfl
-@[simp, grind =_] theorem Reg64s.get64_rbp (s : Reg64s) : s.get64 .rbp = s.rbp.toBitVec := rfl
-@[simp, grind =_] theorem Reg64s.get64_r8 (s : Reg64s) : s.get64 .r8 = s.r8.toBitVec := rfl
-@[simp, grind =_] theorem Reg64s.get64_r9 (s : Reg64s) : s.get64 .r9 = s.r9.toBitVec := rfl
-@[simp, grind =_] theorem Reg64s.get64_r10 (s : Reg64s) : s.get64 .r10 = s.r10.toBitVec := rfl
-@[simp, grind =_] theorem Reg64s.get64_r11 (s : Reg64s) : s.get64 .r11 = s.r11.toBitVec := rfl
-@[simp, grind =_] theorem Reg64s.get64_r12 (s : Reg64s) : s.get64 .r12 = s.r12.toBitVec := rfl
-@[simp, grind =_] theorem Reg64s.get64_r13 (s : Reg64s) : s.get64 .r13 = s.r13.toBitVec := rfl
-@[simp, grind =_] theorem Reg64s.get64_r14 (s : Reg64s) : s.get64 .r14 = s.r14.toBitVec := rfl
-@[simp, grind =_] theorem Reg64s.get64_r15 (s : Reg64s) : s.get64 .r15 = s.r15.toBitVec := rfl
+@[simp, grind =] theorem Reg64s.toBitVec_rax (s : Reg64s) : s.rax.toBitVec = s.get64 .rax := rfl
+@[simp, grind =] theorem Reg64s.toBitVec_rbx (s : Reg64s) : s.rbx.toBitVec = s.get64 .rbx := rfl
+@[simp, grind =] theorem Reg64s.toBitVec_rcx (s : Reg64s) : s.rcx.toBitVec = s.get64 .rcx := rfl
+@[simp, grind =] theorem Reg64s.toBitVec_rdx (s : Reg64s) : s.rdx.toBitVec = s.get64 .rdx := rfl
+@[simp, grind =] theorem Reg64s.toBitVec_rsi (s : Reg64s) : s.rsi.toBitVec = s.get64 .rsi := rfl
+@[simp, grind =] theorem Reg64s.toBitVec_rdi (s : Reg64s) : s.rdi.toBitVec = s.get64 .rdi := rfl
+@[simp, grind =] theorem Reg64s.toBitVec_rsp (s : Reg64s) : s.rsp.toBitVec = s.get64 .rsp := rfl
+@[simp, grind =] theorem Reg64s.toBitVec_rbp (s : Reg64s) : s.rbp.toBitVec = s.get64 .rbp := rfl
+@[simp, grind =] theorem Reg64s.toBitVec_r8 (s : Reg64s) : s.r8.toBitVec = s.get64 .r8 := rfl
+@[simp, grind =] theorem Reg64s.toBitVec_r9 (s : Reg64s) : s.r9.toBitVec = s.get64 .r9 := rfl
+@[simp, grind =] theorem Reg64s.toBitVec_r10 (s : Reg64s) : s.r10.toBitVec = s.get64 .r10 := rfl
+@[simp, grind =] theorem Reg64s.toBitVec_r11 (s : Reg64s) : s.r11.toBitVec = s.get64 .r11 := rfl
+@[simp, grind =] theorem Reg64s.toBitVec_r12 (s : Reg64s) : s.r12.toBitVec = s.get64 .r12 := rfl
+@[simp, grind =] theorem Reg64s.toBitVec_r13 (s : Reg64s) : s.r13.toBitVec = s.get64 .r13 := rfl
+@[simp, grind =] theorem Reg64s.toBitVec_r14 (s : Reg64s) : s.r14.toBitVec = s.get64 .r14 := rfl
+@[simp, grind =] theorem Reg64s.toBitVec_r15 (s : Reg64s) : s.r15.toBitVec = s.get64 .r15 := rfl
 
 /-! ## Register identity as a number
 
@@ -278,11 +278,11 @@ attribute [grind =] Width.bytes
 
 @[simp, grind =] theorem Reg64s.set64_get64 (s : Reg64s) (r : Reg64) :
     s.set64 r (s.get64 r) = s := by
-  cases r <;> simp [Reg64s.set64, Reg64s.get64]
+  cases r <;> simp only [Reg64s.set64, Reg64s.get64, UInt64.ofBitVec_toBitVec]
 
 @[simp, grind =] theorem Reg64s.get64_set64 (s : Reg64s) (r r' : Reg64) (v : BitVec 64) :
     (s.set64 r v).get64 r' = if r' = r then v else s.get64 r' := by
-  cases r <;> cases r' <;> simp [Reg64s.set64, Reg64s.get64]
+  cases r <;> cases r' <;> rfl
 
 @[simp, grind =] theorem Reg64s.get_low64 (s : Reg64s) (r : Reg64) :
     s.get (.low r .W64) = s.get64 r := by
