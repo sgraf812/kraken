@@ -102,6 +102,8 @@ private abbrev sbr_var : Label → MachineData → Nat
   | ".loop", s => (s.regs.get64 .rsi - s.regs.get64 .rdi).toNat
   | _, _ => 2 ^ 64
 
+attribute [local sym_simp] sbr_table sbr_var
+
 variable [layout : _root_.Layout] [Executable.ValidLayout (layout sbr_neg_odd_64_prog)]
 
 /-- The ambient code of the example: `sbr_neg_odd_64_prog`, laid out. -/
@@ -126,10 +128,10 @@ theorem sbr_neg_odd_64_correct (d : MachineData)
   have h_mask_aligned := ps_mask2_aligned
   apply MachineWP.cfg (sbr_table d ps_mask2 R) sbr_var
   cfg_cases [sbr_neg_odd_64_prog]
-  · vcgen with finish
-  · vcgen with finish
-  · vcgen with finish
-  · vcgen with finish
+  · vcgen with (cfg_exit; finish)
+  · vcgen with (cfg_exit; finish)
+  · vcgen with (cfg_exit; finish)
+  · vcgen with (cfg_exit; finish)
 
 /-- `sbr_neg_odd_64_correct`, read at the machine as the baseline judgment. -/
 theorem sbr_neg_odd_64_terminates_and_safe

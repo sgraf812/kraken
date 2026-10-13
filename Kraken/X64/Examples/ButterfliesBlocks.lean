@@ -62,8 +62,6 @@ loop:
 
 /-! ## The proof -/
 
-/- The `jl` exit reads the overflow flag, which compares signed values. -/
-attribute [local grind =] BitVec.signed_eq
 
 /-- The spec table: the machine at each label, for a run that started on `d`
 over arrays of `L` bytes. At `loop` it is the loop invariant: both pointers sit
@@ -85,6 +83,8 @@ private abbrev bf_var : Label → MachineData → Nat
   | "loop", s => (-s.regs.get64 .rdx).toNat
   | _, _ => 2 ^ 64
 
+attribute [local sym_simp] bf_table bf_var
+
 variable [layout : _root_.Layout] [Executable.ValidLayout (layout butterflies_float_prog)]
 
 /-- The ambient code of the example: `butterflies_float_prog`, laid out. -/
@@ -104,8 +104,8 @@ theorem butterflies_correct (d : MachineData) (len : Nat)
         Mem.Blocks [(d.regs.get64 .rdi, len * 4), (d.regs.get64 .rsi, len * 4)] ⋆ R ⦄ := by
   apply MachineWP.cfg (bf_table d (len * 4) R) bf_var
   cfg_cases [butterflies_float_prog]
-  · vcgen with finish
-  · vcgen with finish
+  · vcgen with (cfg_exit; finish)
+  · vcgen with (cfg_exit; finish)
 
 /-- `butterflies_correct`, read at the machine as the baseline judgment. -/
 theorem butterflies_float_terminates_and_safe

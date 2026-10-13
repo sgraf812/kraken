@@ -230,6 +230,8 @@ private abbrev sp_var : Label → MachineData → Nat
   | ".loop128", s => (s.regs.get64 .rcx).toNat - (s.regs.get64 .r8).toNat
   | _, _ => 0
 
+attribute [local sym_simp] sp_table sp_var
+
 variable [layout : _root_.Layout] [Executable.ValidLayout (layout scalarproduct_fma3_prog)]
 
 /-- The ambient code of the example: `scalarproduct_fma3_prog`, laid out. -/
@@ -245,16 +247,15 @@ theorem scalarproduct_fma3_correct (d : MachineData) (len : Nat)
     ⦃ fun s => s = d ⦄ scalarproduct_fma3_prog ⦃ fun _ s => s.dmem = d.dmem ⦄ := by
   apply MachineWP.cfg (sp_table d (len * 4)) sp_var
   cfg_cases [scalarproduct_fma3_prog]
-  all_goals simp only [sp_table, sp_var]
-  · vcgen simplifying_assumptions with finish
-  · vcgen simplifying_assumptions with finish
-  · vcgen simplifying_assumptions with finish
-  · vcgen simplifying_assumptions with finish
-  · vcgen simplifying_assumptions with finish
-  · vcgen simplifying_assumptions with finish
-  · vcgen simplifying_assumptions with finish
-  · vcgen simplifying_assumptions with finish
-  · vcgen simplifying_assumptions with finish
+  · vcgen simplifying_assumptions with (cfg_exit; finish)
+  · vcgen simplifying_assumptions with (cfg_exit; finish)
+  · vcgen simplifying_assumptions with (cfg_exit; finish)
+  · vcgen simplifying_assumptions with (cfg_exit; finish)
+  · vcgen simplifying_assumptions with (cfg_exit; finish)
+  · vcgen simplifying_assumptions with (cfg_exit; finish)
+  · vcgen simplifying_assumptions with (cfg_exit; finish)
+  · vcgen simplifying_assumptions with (cfg_exit; finish)
+  · vcgen simplifying_assumptions with (cfg_exit; finish)
 
 /-- `scalarproduct_fma3_correct`, read at the machine as the baseline judgment. -/
 theorem scalarproduct_fma3_terminates_and_safe

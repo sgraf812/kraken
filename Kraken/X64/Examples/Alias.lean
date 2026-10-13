@@ -34,6 +34,8 @@ private abbrev palias_table : Label → MachineData → Prop
   | "fin", s => s.regs.rdx.toNat = 2
   | _, _ => False
 
+attribute [local sym_simp] palias_table
+
 variable [layout : _root_.Layout] [Executable.ValidLayout (layout palias)]
 
 /-- The ambient code of the example: `palias`, laid out. -/
@@ -43,9 +45,9 @@ theorem palias_correct :
     ⦃ fun _ => True ⦄ palias ⦃ fun _ s => s.regs.rdx.toNat = 2 ⦄ := by
   apply MachineWP.cfg palias_table
   cfg_cases [palias]
-  · vcgen simplifying_assumptions with finish
-  · vcgen simplifying_assumptions with finish
-  · vcgen simplifying_assumptions with finish
+  · vcgen simplifying_assumptions with (cfg_exit; finish)
+  · vcgen simplifying_assumptions with (cfg_exit; finish)
+  · vcgen simplifying_assumptions with (cfg_exit; finish)
 
 /-- `palias_correct`, read at the machine as the baseline judgment. -/
 theorem palias_correct_run (d : MachineData) :

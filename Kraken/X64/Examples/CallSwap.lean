@@ -47,6 +47,8 @@ private abbrev pswap_table (d : MachineData) : Label → MachineData → Prop
       ∧ s.regs.get64 .rsp = d.regs.get64 .rsp
   | _, _ => False
 
+attribute [local sym_simp] pswap_table
+
 variable [layout : _root_.Layout] [Executable.ValidLayout (layout pswap)]
 
 /-- The ambient code of the example: `pswap`, laid out. -/
@@ -80,7 +82,7 @@ private theorem pswap_body_spec (ra : Int64) (s : MachineData) :
     ⦃ fun t => t = s.pushRa ra ∧ SwapPre s ⦄
       pswap.body
     ⦃ (fun _ _ => False); fun a s' => a = ra ∧ SwapPost s s' ⦄ := by
-  vcgen with finish
+  vcgen with (cfg_exit; finish)
 
 theorem pswap_correct (d : MachineData) (hslot : SwapPre d) :
     ⦃ fun s => s = d ⦄
@@ -92,9 +94,9 @@ theorem pswap_correct (d : MachineData) (hslot : SwapPre d) :
   have hpl := pswap_placed
   apply MachineWP.cfg (pswap_table d)
   cfg_cases [pswap]
-  · vcgen [hcall] simplifying_assumptions with finish
-  · vcgen simplifying_assumptions with finish
-  · vcgen simplifying_assumptions with finish
+  · vcgen [hcall] simplifying_assumptions with (cfg_exit; finish)
+  · vcgen simplifying_assumptions with (cfg_exit; finish)
+  · vcgen simplifying_assumptions with (cfg_exit; finish)
 
 /-- `pswap_correct`, read at the machine as the baseline judgment. -/
 theorem pswap_correct_run (d : MachineData) (hslot : SwapPre d) :

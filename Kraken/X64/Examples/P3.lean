@@ -68,6 +68,8 @@ private abbrev p3_table (d : MachineData) : Label → MachineData → Prop
   | "_end", s => s.regs.rdx.toNat = 2 ^ 2 ^ d.regs.rbx.toNat ∧ s.regs.rax = 0
   | _, _ => False
 
+attribute [local sym_simp] p3_table
+
 variable [layout : _root_.Layout] [Executable.ValidLayout (layout p3)]
 
 /-- The ambient code of the example: `p3`, laid out. -/
@@ -81,9 +83,9 @@ theorem p3_correct (d : MachineData) (h_bounds : p3_spec d < 2 ^ 64)
   simp only [p3_spec] at h_bounds ⊢
   apply MachineWP.cfg (p3_table d) (fun _ s => s.regs.rbx.toNat)
   cfg_cases [p3]
-  · vcgen with finish
-  · vcgen with finish
-  · vcgen with finish
+  · vcgen with (cfg_exit; finish)
+  · vcgen with (cfg_exit; finish)
+  · vcgen with (cfg_exit; finish)
 
 /-- `p3_correct`, read at the machine as the baseline judgment. -/
 theorem p3_correct_run (d : MachineData) (h_bounds : p3_spec d < 2 ^ 64)
