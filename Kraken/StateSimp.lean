@@ -63,7 +63,8 @@ to the one the chain so far carries, and `evalGround` collapses the pair, so a
 component's value stays a single literal plus the symbolic start. The index
 comparison turns a read-over-write condition into one `evalGround` decides,
 which `kfold` does with the `reduceCtorEq` simproc instead. -/
-def stateLemmaNames : Array Name := lemmaNames ++ #[``add_assoc_rev, ``Reg64.eq_eq_idx_eq]
+def stateLemmaNames : Array Name := lemmaNames ++ #[``add_assoc_rev, ``Reg64.eq_eq_idx_eq,
+  ``Reg64s.get_low32, ``BitVec.xor_self]
 
 end Kraken.Fold
 
