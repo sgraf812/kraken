@@ -2685,20 +2685,20 @@ private def Program.cfgMeasure (p : Program) (var : Label → MachineData → Na
     + ((Program.view p).2.length - Program.blockIdx p x.1)
 
 /-- The control-flow rule: one spec table `T`, one variant `var`, one triple
-per block of the map `Program.blockAt`. Each block is entered with its table
-entry and the variant snapshotted; it falls into the next block with the
-entry there and the variant not increased, and a jump exit lands on a mapped
-table entry along `Program.EdgeLt`. -/
+per block of the text, `Program.ForallBlocks` over `Program.view`. Each block
+is entered with its table entry and the variant snapshotted; it falls into the
+next block with the entry there and the variant not increased, and a jump exit
+lands on a mapped table entry along `Program.EdgeLt`. -/
 theorem MachineWP.cfg [CodeEnv] {p p' : Program} {P : MachineData → Prop}
     {Q : Unit → MachineData → Prop} {l₀ : Label}
     (T : Label → MachineData → Prop) (var : Label → MachineData → Nat := fun _ _ => 0)
-    (hblocks : ∀ l blk, Program.blockAt p l = some blk → ∀ n : Nat,
+    (hblocks : Program.ForallBlocks (fun l blk => ∀ n : Nat,
       ⦃ fun s => T l s ∧ var l s = n ⦄ blk.body
       ⦃ (match blk.next with
          | some l' => fun _ s => T l' s ∧ var l' s ≤ n
          | none => Q);
         Table.ofLabels (fun l' s => (Program.blockAt p l').isSome ∧ T l' s
-          ∧ Program.EdgeLt p var l n l' s) ⦄)
+          ∧ Program.EdgeLt p var l n l' s) ⦄) (Program.view p).2)
     (hp : p = Directive.label l₀ :: p' := by rfl)
     (hwf : Program.WF p := by decide)
     (hpl : Program.Placed p l₀ := by
@@ -2709,6 +2709,8 @@ theorem MachineWP.cfg [CodeEnv] {p p' : Program} {P : MachineData → Prop}
     ⦃ P ⦄ p ⦃ Q ⦄ := by
   subst hP
   have hnd := hwf.nodup
+  have hblocks := fun l blk (hb : Program.blockAt p l = some blk) =>
+    Program.ForallBlocks.blockAt hblocks hb
   refine Triple.intro fun s hT => ?_
   intro pc hplace
   have hK : ∀ l, Program.blockIdx p l ≤ (Program.view p).2.length :=
@@ -2792,18 +2794,20 @@ table entry, the run reaches `E`. The last block must not fall off the end. -/
 theorem MachineWP.cfg_reach_at [CodeEnv] {p p' : Program} {l₀ : Label}
     (T : Label → MachineData → Prop) (var : Label → MachineData → Nat)
     (E : Int64 → MachineData → Prop)
-    (hblocks : ∀ l blk, Program.blockAt p l = some blk → ∀ n : Nat,
+    (hblocks : Program.ForallBlocks (fun l blk => ∀ n : Nat,
       MachineWP.TripleAt ((_root_.Executable.labels cenv).label l)
         (fun s => T l s ∧ var l s = n) blk.body
         (match blk.next with
          | some l' => fun _ s => T l' s ∧ var l' s ≤ n
          | none => fun _ _ => False)
         (fun a s => Table.ofLabels (fun l' s => (Program.blockAt p l').isSome ∧ T l' s
-          ∧ Program.EdgeLt p var l n l' s) a s ∨ E a s))
+          ∧ Program.EdgeLt p var l n l' s) a s ∨ E a s)) (Program.view p).2)
     (hp : p = Directive.label l₀ :: p') (hwf : Program.WF p) (hpl : Program.PlacedIn p) :
     ∀ s, T l₀ s →
       Eventually cenv.instrStep (fun st => E st.2 st.1) (s, (_root_.Executable.labels cenv).label l₀) := by
   have hnd := hwf.nodup
+  have hblocks := fun l blk (hb : Program.blockAt p l = some blk) =>
+    Program.ForallBlocks.blockAt hblocks hb
   intro s hT
   have hK : ∀ l, Program.blockIdx p l ≤ (Program.view p).2.length :=
     Program.blockIdx_le p
@@ -2870,18 +2874,19 @@ table entry, the run reaches `E`. The last block must not fall off the end. -/
 theorem MachineWP.cfg_reach [CodeEnv] {p p' : Program} {l₀ : Label}
     (T : Label → MachineData → Prop) (var : Label → MachineData → Nat)
     (E : Int64 → MachineData → Prop)
-    (hblocks : ∀ l blk, Program.blockAt p l = some blk → ∀ n : Nat,
+    (hblocks : Program.ForallBlocks (fun l blk => ∀ n : Nat,
       ⦃ fun s => T l s ∧ var l s = n ⦄ blk.body
       ⦃ (match blk.next with
          | some l' => fun _ s => T l' s ∧ var l' s ≤ n
          | none => fun _ _ => False);
         fun a s => Table.ofLabels (fun l' s => (Program.blockAt p l').isSome ∧ T l' s
-          ∧ Program.EdgeLt p var l n l' s) a s ∨ E a s ⦄)
+          ∧ Program.EdgeLt p var l n l' s) a s ∨ E a s ⦄) (Program.view p).2)
     (hp : p = Directive.label l₀ :: p') (hwf : Program.WF p) (hpl : Program.PlacedIn p) :
     ∀ s, T l₀ s →
       Eventually cenv.instrStep (fun st => E st.2 st.1) (s, (_root_.Executable.labels cenv).label l₀) :=
   MachineWP.cfg_reach_at T var E
-    (fun l blk hb n => MachineWP.TripleAt.of_triple (hblocks l blk hb n)) hp hwf hpl
+    (Program.ForallBlocks.imp (fun _ _ h n => MachineWP.TripleAt.of_triple (h n)) hblocks)
+    hp hwf hpl
 
 open MachineWP in
 /-- A procedure's spec from its blocks. `T x ra t₀ l` is the table entry at
@@ -2897,14 +2902,14 @@ theorem Kraken.Executable.ProcSpec.of_cfg [CodeEnv] {p p' : Program} {l₀ : Lab
     (var : Label → MachineData → Nat := fun _ _ => 0)
     (Exit : α → Int64 → MachineData → Int64 → MachineData → Prop :=
       fun x ra t₀ a s => a = ra ∧ Post x ra t₀ s)
-    (hblocks : ∀ (x : α) (ra : Int64) (t₀ : MachineData) l blk,
-      Program.blockAt p l = some blk → ∀ n : Nat,
+    (hblocks : ∀ (x : α) (ra : Int64) (t₀ : MachineData),
+      Program.ForallBlocks (fun l blk => ∀ n : Nat,
       ⦃ fun s => T x ra t₀ l s ∧ var l s = n ⦄ blk.body
       ⦃ (match blk.next with
          | some l' => fun _ s => T x ra t₀ l' s ∧ var l' s ≤ n
          | none => fun _ _ => False);
         fun a s => Table.ofLabels (fun l' s => (Program.blockAt p l').isSome ∧ T x ra t₀ l' s
-          ∧ Program.EdgeLt p var l n l' s) a s ∨ Exit x ra t₀ a s ⦄)
+          ∧ Program.EdgeLt p var l n l' s) a s ∨ Exit x ra t₀ a s ⦄) (Program.view p).2)
     (hpre : ∀ x ra t, Pre x ra t → T x ra t l₀ t)
     (hexit : ∀ x ra t₀ a s, Exit x ra t₀ a s →
       Eventually cenv.instrStep (fun st => st.2 = ra ∧ Post x ra t₀ st.1) (s, a) := by
@@ -2933,15 +2938,15 @@ theorem Kraken.Executable.ProcSpec.of_cfg_at [CodeEnv] {p p' : Program} {l₀ : 
     (var : Label → MachineData → Nat := fun _ _ => 0)
     (Exit : α → Int64 → MachineData → Int64 → MachineData → Prop :=
       fun x ra t₀ a s => a = ra ∧ Post x ra t₀ s)
-    (hblocks : ∀ (x : α) (ra : Int64) (t₀ : MachineData) l blk,
-      Program.blockAt p l = some blk → ∀ n : Nat,
+    (hblocks : ∀ (x : α) (ra : Int64) (t₀ : MachineData),
+      Program.ForallBlocks (fun l blk => ∀ n : Nat,
       TripleAt ((_root_.Executable.labels cenv).label l)
         (fun s => T x ra t₀ l s ∧ var l s = n) blk.body
         (match blk.next with
          | some l' => fun _ s => T x ra t₀ l' s ∧ var l' s ≤ n
          | none => fun _ _ => False)
         (fun a s => Table.ofLabels (fun l' s => (Program.blockAt p l').isSome ∧ T x ra t₀ l' s
-          ∧ Program.EdgeLt p var l n l' s) a s ∨ Exit x ra t₀ a s))
+          ∧ Program.EdgeLt p var l n l' s) a s ∨ Exit x ra t₀ a s)) (Program.view p).2)
     (hpre : ∀ x ra t, Pre x ra t → T x ra t l₀ t)
     (hexit : ∀ x ra t₀ a s, Exit x ra t₀ a s →
       Eventually cenv.instrStep (fun st => st.2 = ra ∧ Post x ra t₀ st.1) (s, a) := by
@@ -2966,14 +2971,14 @@ theorem Kraken.Executable.ProcSpec.of_cfg_post [CodeEnv] {p p' : Program} {l₀ 
     (T : α → Int64 → MachineData → Label → MachineData → Prop)
     (Post' : α → Int64 → MachineData → MachineData → Prop)
     (var : Label → MachineData → Nat := fun _ _ => 0)
-    (hblocks : ∀ (x : α) (ra : Int64) (t₀ : MachineData) l blk,
-      Program.blockAt p l = some blk → ∀ n : Nat,
+    (hblocks : ∀ (x : α) (ra : Int64) (t₀ : MachineData),
+      Program.ForallBlocks (fun l blk => ∀ n : Nat,
       ⦃ fun s => T x ra t₀ l s ∧ var l s = n ⦄ blk.body
       ⦃ (match blk.next with
          | some l' => fun _ s => T x ra t₀ l' s ∧ var l' s ≤ n
          | none => fun _ _ => False);
         fun a s => Table.ofLabels (fun l' s => (Program.blockAt p l').isSome ∧ T x ra t₀ l' s
-          ∧ Program.EdgeLt p var l n l' s) a s ∨ (a = ra ∧ Post' x ra t₀ s) ⦄)
+          ∧ Program.EdgeLt p var l n l' s) a s ∨ (a = ra ∧ Post' x ra t₀ s) ⦄) (Program.view p).2)
     (hpre : ∀ x ra t, Pre x ra t → T x ra t l₀ t)
     (hpost : ∀ x ra t₀ s, Post' x ra t₀ s → Post x ra t₀ s)
     (hp : p = Directive.label l₀ :: p' := by rfl)
@@ -2994,14 +2999,14 @@ theorem Kraken.Executable.ProcSpecK.of_cfg [CodeEnv] {p p' : Program} {l₀ : La
     (var : Label → MachineData → Nat := fun _ _ => 0)
     (Exit : Int64 → (MachineData → Prop) → MachineData → Int64 → MachineData → Prop :=
       fun ra K _ a s => a = ra ∧ K s)
-    (hblocks : ∀ (ra : Int64) (K : MachineData → Prop) (t₀ : MachineData) l blk,
-      Program.blockAt p l = some blk → ∀ n : Nat,
+    (hblocks : ∀ (ra : Int64) (K : MachineData → Prop) (t₀ : MachineData),
+      Program.ForallBlocks (fun l blk => ∀ n : Nat,
       ⦃ fun s => T ra K t₀ l s ∧ var l s = n ⦄ blk.body
       ⦃ (match blk.next with
          | some l' => fun _ s => T ra K t₀ l' s ∧ var l' s ≤ n
          | none => fun _ _ => False);
         fun a s => Table.ofLabels (fun l' s => (Program.blockAt p l').isSome ∧ T ra K t₀ l' s
-          ∧ Program.EdgeLt p var l n l' s) a s ∨ Exit ra K t₀ a s ⦄)
+          ∧ Program.EdgeLt p var l n l' s) a s ∨ Exit ra K t₀ a s ⦄) (Program.view p).2)
     (hpre : ∀ ra K t, Spec ra K t → T ra K t l₀ t)
     (hexit : ∀ ra K t₀ a s, Exit ra K t₀ a s →
       Eventually cenv.instrStep (fun st => st.2 = ra ∧ K st.1) (s, a) := by
@@ -3026,24 +3031,29 @@ table `fun ra K t₀ l s => ∃ x, W ra K t₀ x ∧ T ra t₀ x l s`). -/
 theorem MachineWP.cfg_blocks_exists [CodeEnv] {β : Type} {p : Program}
     (T : β → Label → MachineData → Prop) (W : β → Prop) (var : Label → MachineData → Nat)
     (Exit : β → Int64 → MachineData → Prop) (Exit' : Int64 → MachineData → Prop)
-    (hblocks : ∀ x, W x → ∀ l blk, Program.blockAt p l = some blk → ∀ n : Nat,
+    (hblocks : ∀ x, W x → Program.ForallBlocks (fun l blk => ∀ n : Nat,
       ⦃ fun s => T x l s ∧ var l s = n ⦄ blk.body
       ⦃ (match blk.next with
          | some l' => fun _ s => T x l' s ∧ var l' s ≤ n
          | none => fun _ _ => False);
         fun a s => Table.ofLabels (fun l' s => (Program.blockAt p l').isSome ∧ T x l' s
-          ∧ Program.EdgeLt p var l n l' s) a s ∨ Exit x a s ⦄)
+          ∧ Program.EdgeLt p var l n l' s) a s ∨ Exit x a s ⦄) (Program.view p).2)
     (hexit : ∀ x, W x → ∀ a s, Exit x a s → Exit' a s) :
-    ∀ l blk, Program.blockAt p l = some blk → ∀ n : Nat,
+    Program.ForallBlocks (fun l blk => ∀ n : Nat,
       ⦃ fun s => (∃ x, W x ∧ T x l s) ∧ var l s = n ⦄ blk.body
       ⦃ (match blk.next with
          | some l' => fun _ s => (∃ x, W x ∧ T x l' s) ∧ var l' s ≤ n
          | none => fun _ _ => False);
         fun a s => Table.ofLabels (fun l' s => (Program.blockAt p l').isSome
-          ∧ (∃ x, W x ∧ T x l' s) ∧ Program.EdgeLt p var l n l' s) a s ∨ Exit' a s ⦄ := by
-  intro l blk hblk n
+          ∧ (∃ x, W x ∧ T x l' s) ∧ Program.EdgeLt p var l n l' s) a s ∨ Exit' a s ⦄) (Program.view p).2 := by
+  rw [Program.forallBlocks_iff]
+  intro i l b hi
+  have hall := fun x hw => Program.forallBlocks_iff.mp (hblocks x hw) i l b hi
+  generalize (⟨l, b, ((Program.view p).2[i + 1]?).map (·.1)⟩ : Program.Block) = blk
+    at hall ⊢
+  intro n
   refine Triple.intro fun s ⟨⟨x, hw, ht⟩, hv⟩ => ?_
-  have h := (hblocks x hw l blk hblk n).le_wp s ⟨ht, hv⟩
+  have h := (hall x hw n).le_wp s ⟨ht, hv⟩
   rw [MachineWP.wp_eq] at h ⊢
   refine Executable.wp_mono ?_ ?_ h
   · intro s' hq
@@ -3069,13 +3079,13 @@ theorem Kraken.Executable.ProcSpecK.of_cfg_exists [CodeEnv] {p p' : Program} {l�
     (W : Int64 → (MachineData → Prop) → MachineData → β → Prop)
     (var : Label → MachineData → Nat := fun _ _ => 0)
     (hblocks : ∀ (x : β) (ra : Int64) (K : MachineData → Prop) (t₀ : MachineData),
-      W ra K t₀ x → ∀ l blk, Program.blockAt p l = some blk → ∀ n : Nat,
+      W ra K t₀ x → Program.ForallBlocks (fun l blk => ∀ n : Nat,
       ⦃ fun s => T x ra t₀ l s ∧ var l s = n ⦄ blk.body
       ⦃ (match blk.next with
          | some l' => fun _ s => T x ra t₀ l' s ∧ var l' s ≤ n
          | none => fun _ _ => False);
         fun a s => Table.ofLabels (fun l' s => (Program.blockAt p l').isSome ∧ T x ra t₀ l' s
-          ∧ Program.EdgeLt p var l n l' s) a s ∨ (a = ra ∧ Post' x ra t₀ s) ⦄)
+          ∧ Program.EdgeLt p var l n l' s) a s ∨ (a = ra ∧ Post' x ra t₀ s) ⦄) (Program.view p).2)
     (hpre : ∀ ra K t, Spec ra K t → ∃ x, W ra K t x ∧ T x ra t l₀ t)
     (hpost : ∀ ra K t₀ x, W ra K t₀ x → ∀ s, Post' x ra t₀ s → K s)
     (hp : p = Directive.label l₀ :: p' := by rfl)

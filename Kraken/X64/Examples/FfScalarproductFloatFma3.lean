@@ -246,7 +246,7 @@ theorem scalarproduct_fma3_correct (d : MachineData) (len : Nat)
     (h_v2 : d.dmem =⋆ Mem.Blocks [(d.regs.get64 .rsi, len * 4)] ⋆ R₂) :
     ⦃ fun s => s = d ⦄ scalarproduct_fma3_prog ⦃ fun _ s => s.dmem = d.dmem ⦄ := by
   apply MachineWP.cfg (sp_table d (len * 4)) sp_var
-  cfg_cases [scalarproduct_fma3_prog]
+  cfg_cases
   · vcgen simplifying_assumptions with (cfg_exit; finish)
   · vcgen simplifying_assumptions with (cfg_exit; finish)
   · vcgen simplifying_assumptions with (cfg_exit; finish)

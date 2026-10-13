@@ -103,7 +103,7 @@ theorem butterflies_correct (d : MachineData) (len : Nat)
     ⦃ fun _ s => s.dmem =⋆
         Mem.Blocks [(d.regs.get64 .rdi, len * 4), (d.regs.get64 .rsi, len * 4)] ⋆ R ⦄ := by
   apply MachineWP.cfg (bf_table d (len * 4) R) bf_var
-  cfg_cases [butterflies_float_prog]
+  cfg_cases
   · vcgen with (cfg_exit; finish)
   · vcgen with (cfg_exit; finish)
 

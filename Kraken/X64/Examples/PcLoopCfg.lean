@@ -118,7 +118,7 @@ theorem count_spec (hpl : Program.PlacedIn count_body) : CountSpec := by
     (fun _ ra t₀ => count_table ra t₀) (var := fun _ s => (s.regs.get64 .rdi).toNat)
     (hblocks := ?_) (hpre := ?_)
   · intro _ ra t₀
-    cfg_cases [count_body]
+    cfg_cases
     · -- entry: `xor eax, eax`
       apply TripleAt.of_triple
       vcgen

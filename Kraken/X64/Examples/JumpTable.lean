@@ -162,7 +162,7 @@ theorem sel_spec (hpl : Program.PlacedIn sel_body) : SelSpec := by
   refine Kraken.Executable.ProcSpec.of_cfg (p := sel_body) (fun _ ra t₀ => sel_table ra t₀)
     (hblocks := ?_) (hpre := ?_)
   · intro _ ra t₀
-    cfg_cases [sel_body]
+    cfg_cases
     · -- dispatch. `grind` takes the `ja` to `.Ldefault` (`CondCode.interp_a_sub`
       -- reads the flags as `2 < x`); what is left is the jump through the table.
       vcgen

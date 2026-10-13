@@ -422,6 +422,64 @@ theorem Program.blockAtAux_spec : ∀ {bs : List (Label × Program)} {l : Label}
     · obtain ⟨hlab, i, hi, hn⟩ := ih h
       exact ⟨hlab, i + 1, hi, hn⟩
 
+/-- `P` holds at every block of the list `bs` of labeled bodies: at the
+entry `(l, b)` of `bs`, for the block with label `l`, body `b`, and the label
+of the entry after it. For `bs = [("a", b₀), ("b", b₁)]`,
+`Program.ForallBlocks P bs` unfolds to
+`P "a" ⟨"a", b₀, some "b"⟩ ∧ P "b" ⟨"b", b₁, none⟩ ∧ True`. -/
+def Program.ForallBlocks (P : Label → Program.Block → Prop) :
+    List (Label × Program) → Prop
+  | [] => True
+  | (l, b) :: bs => P l ⟨l, b, bs.head?.map (·.1)⟩ ∧ Program.ForallBlocks P bs
+
+theorem Program.forallBlocks_cons_cons (P : Label → Program.Block → Prop) (l l' : Label)
+    (b b' : Program) (bs : List (Label × Program)) :
+    Program.ForallBlocks P ((l, b) :: (l', b') :: bs)
+      = (P l ⟨l, b, some l'⟩ ∧ Program.ForallBlocks P ((l', b') :: bs)) := rfl
+
+theorem Program.forallBlocks_singleton (P : Label → Program.Block → Prop) (l : Label)
+    (b : Program) : Program.ForallBlocks P [(l, b)] = P l ⟨l, b, none⟩ := by
+  simp [Program.ForallBlocks]
+
+theorem Program.forallBlocks_iff {P : Label → Program.Block → Prop} :
+    ∀ {bs : List (Label × Program)}, Program.ForallBlocks P bs ↔
+      ∀ i l b, bs[i]? = some (l, b) → P l ⟨l, b, (bs[i + 1]?).map (·.1)⟩
+  | [] => by simp [Program.ForallBlocks]
+  | (l', b') :: bs => by
+    rw [Program.ForallBlocks, Program.forallBlocks_iff]
+    constructor
+    · rintro ⟨h0, hs⟩ i l b hi
+      cases i with
+      | zero =>
+        simp only [List.getElem?_cons_zero, Option.some.injEq, Prod.mk.injEq] at hi
+        obtain ⟨rfl, rfl⟩ := hi
+        cases bs <;> exact h0
+      | succ j => exact hs j l b hi
+    · intro h
+      refine ⟨?_, fun i l b hi => h (i + 1) l b hi⟩
+      have := h 0 l' b' rfl
+      cases bs <;> exact this
+
+theorem Program.ForallBlocks.imp {P Q : Label → Program.Block → Prop}
+    (h : ∀ l blk, P l blk → Q l blk) :
+    ∀ {bs : List (Label × Program)}, Program.ForallBlocks P bs → Program.ForallBlocks Q bs
+  | [], _ => trivial
+  | _ :: _, ⟨h0, hs⟩ => ⟨h _ _ h0, Program.ForallBlocks.imp h hs⟩
+
+theorem Program.ForallBlocks.blockAtAux {P : Label → Program.Block → Prop}
+    {bs : List (Label × Program)} (h : Program.ForallBlocks P bs) {l : Label}
+    {blk : Program.Block} (hb : Program.blockAtAux bs l = some blk) : P l blk := by
+  obtain ⟨hl, i, hi, hn⟩ := Program.blockAtAux_spec hb
+  obtain ⟨l', b, nx⟩ := blk
+  dsimp only at hl hi hn
+  subst hl hn
+  exact Program.forallBlocks_iff.mp h i l' b hi
+
+theorem Program.ForallBlocks.blockAt {P : Label → Program.Block → Prop} {p : Program}
+    (h : Program.ForallBlocks P (Program.view p).2) {l : Label} {blk : Program.Block}
+    (hb : Program.blockAt p l = some blk) : P l blk :=
+  h.blockAtAux hb
+
 /-- Under distinct labels the block map answers at every position of the
 view. -/
 theorem Program.blockAtAux_of_getElem : ∀ {bs : List (Label × Program)}
@@ -528,16 +586,18 @@ private partial def cfgDirectives (e : Expr) (acc : Array Expr := #[]) :
   | _ => throwError "cfg_view: cannot compute the directives of the text"
 
 open Lean Meta Elab Tactic in
-/-- For the block-map equation `h : Program.blockAt p l = _` of a closed text
+/-- For a goal `Program.ForallBlocks P (Program.view p).2` on a closed text
 `p`, add `n : (Program.view p).2 = bs`, where `bs` lists the labeled blocks of
 `p` with their directives. For the text `[.label "a", i₁, .label "b", i₂]`,
 `bs` is `[("a", [i₁]), ("b", [i₂])]`. The kernel checks the equation. -/
-elab "cfg_view " h:term " as " n:ident : tactic => withMainContext do
-  let ty ← instantiateMVars (← inferType (← elabTerm h none))
-  let_expr Eq _ lhs _ := ty
-    | throwError "cfg_view: expected `Program.blockAt p l = _`"
-  let_expr Program.blockAt p _ := lhs
-    | throwError "cfg_view: expected `Program.blockAt p l = _`"
+elab "cfg_view" " as " n:ident : tactic => withMainContext do
+  let ty ← instantiateMVars (← (← getMainGoal).getType)
+  let_expr Program.ForallBlocks _ bs := ty
+    | throwError "cfg_view: expected `Program.ForallBlocks P (Program.view p).2`"
+  let_expr Prod.snd _ _ v := bs
+    | throwError "cfg_view: expected `Program.ForallBlocks P (Program.view p).2`"
+  let_expr Program.view p := v
+    | throwError "cfg_view: expected `Program.ForallBlocks P (Program.view p).2`"
   let dirTy := mkConst ``Directive
   let mut blocks : Array (Expr × Array Expr) := #[]
   for d in ← cfgDirectives p do
@@ -558,27 +618,22 @@ elab "cfg_view " h:term " as " n:ident : tactic => withMainContext do
   let (_, g) ← (← getMainGoal).note n.getId pf stmt
   replaceMainGoal [g]
 
-/-- Split the control-flow obligations into one goal per block: compute the
-block map on the program's text, case on the label it matches, and substitute
-the block it names. The bracket lists the program's definitional unfoldings.
-In each goal, a jump exit asks whether its target is mapped and at which
-position through the list of labels, `["start", ".loop", …]`. Once vcgen
-supplies the target, `grind` evaluates that question with the `MachineWP`
-normalization rules. -/
-macro "cfg_cases" "[" ids:Lean.Parser.Tactic.simpLemma,* "]" : tactic =>
+/-- Split the control-flow obligation `Program.ForallBlocks P (Program.view p).2`
+into one goal per block: compute the blocks of the program's text and unfold
+`Program.ForallBlocks` over them. In each goal, a jump exit asks whether its
+target is mapped and at which position through the list of labels,
+`["start", ".loop", …]`. Once vcgen supplies the target, `grind` evaluates
+that question with the `MachineWP` normalization rules. -/
+macro "cfg_cases" : tactic =>
   `(tactic|
-    (intro l blk hblk n
-     cfg_view hblk as hview
+    (cfg_view as hview
      have hlabels := congrArg (List.map (·.1)) hview
      simp only [List.map_cons, List.map_nil] at hlabels
-     rw [Program.blockAt, hview] at hblk
+     rw [hview]
      clear hview
-     simp only [$ids,*, Program.blockAtAux, List.head?_cons, List.head?_nil, Option.map_some,
-       Option.map_none] at hblk
-     repeat' split at hblk
-     all_goals subst_vars
-     all_goals simp only [Option.some.injEq, reduceCtorEq] at hblk
-     all_goals subst hblk
+     simp only [Program.forallBlocks_cons_cons, Program.forallBlocks_singleton]
+     repeat' apply And.intro
+     all_goals intro n
      all_goals simp only [Program.EdgeLt, Program.isSome_blockAt, Program.blockIdx_eq_view,
        hlabels]
      all_goals clear hlabels))

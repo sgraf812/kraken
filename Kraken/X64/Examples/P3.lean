@@ -82,7 +82,7 @@ theorem p3_correct (d : MachineData) (h_bounds : p3_spec d < 2 ^ 64)
     ⦃ fun _ s => s.regs.rdx.toNat = p3_spec d ∧ s.regs.rax = 0 ⦄ := by
   simp only [p3_spec] at h_bounds ⊢
   apply MachineWP.cfg (p3_table d) (fun _ s => s.regs.rbx.toNat)
-  cfg_cases [p3]
+  cfg_cases
   · vcgen with (cfg_exit; finish)
   · vcgen with (cfg_exit; finish)
   · vcgen with (cfg_exit; finish)

@@ -73,7 +73,7 @@ theorem invoke_spec {α : Type} {Pre : α → Int64 → MachineData → Prop}
     (Exit := fun x ra t₀ a s => a = f ∧ s = t₀ ∧ Pre x ra t₀)
     (hblocks := ?_) (hpre := ?_) (hexit := ?_)
   · intro x ra t₀
-    cfg_cases [invoke_body]
+    cfg_cases
     vcgen
     all_goals simp_all
     -- the pointer is readable (the target being `f` is solved by `simp_all`)
@@ -98,7 +98,7 @@ theorem handler_spec (hpl : Program.PlacedIn handler_body) : HandlerSpec := by
     (fun _ ra t₀ l s => l = "handler" ∧ s = t₀ ∧ t₀.retAddr = some ra)
     (hblocks := ?_) (hpre := ?_)
   · intro _ ra t₀
-    cfg_cases [handler_body]
+    cfg_cases
     vcgen
     all_goals call_simp
     all_goals grind

@@ -199,7 +199,7 @@ theorem even_spec (hpl : Program.PlacedIn even_body) (n : Nat) (ih : OddSpecBelo
     (fun R ra t₀ s => n < 2 ^ 32 ∧ CallPostCells n R ra t₀ s ∧ RetU8 s ((n + 1) % 2))
     (hblocks := ?_) (hpre := ?_) (hpost := ?_)
   · intro R ra t₀
-    cfg_cases [even_body]
+    cfg_cases
     · -- entry: prologue, spill, test
       vcgen
       all_goals call_simp

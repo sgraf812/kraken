@@ -109,7 +109,7 @@ theorem store_jump_spec (hpl : Program.PlacedIn store_jump_body) : StoreJumpSpec
   refine Kraken.Executable.ProcSpec.of_cfg (p := store_jump_body)
     (fun _ ra t₀ => store_jump_table ra t₀) (hblocks := ?_) (hpre := ?_)
   · intro _ ra t₀
-    cfg_cases [store_jump_body]
+    cfg_cases
     · -- the store and the jump through it
       vcgen
       all_goals call_simp

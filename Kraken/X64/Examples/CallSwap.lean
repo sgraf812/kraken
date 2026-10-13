@@ -93,7 +93,7 @@ theorem pswap_correct (d : MachineData) (hslot : SwapPre d) :
   have hcall := MachineWP.fun_spec_from_label pswap_body_placed pswap_body_spec
   have hpl := pswap_placed
   apply MachineWP.cfg (pswap_table d)
-  cfg_cases [pswap]
+  cfg_cases
   · vcgen [hcall] simplifying_assumptions with (cfg_exit; finish)
   · vcgen simplifying_assumptions with (cfg_exit; finish)
   · vcgen simplifying_assumptions with (cfg_exit; finish)

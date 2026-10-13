@@ -186,7 +186,7 @@ theorem odd_specK (hpl : Program.PlacedIn odd_body) (N : Nat) (ih : EvenSpecK N)
     (hblocks := ?_) (hpre := ?_) (hpost := ?_)
   · rintro ⟨n, R⟩ ra K t₀ ⟨hN, -⟩
     dsimp only at hN ⊢
-    cfg_cases [odd_body]
+    cfg_cases
     · -- entry: prologue, spill, test
       vcgen
       all_goals call_simp

@@ -139,7 +139,7 @@ theorem vector_fmul_sse_correct (d : MachineData) (len : Nat)
       vector_fmul_sse_prog
     ⦃ fun _ s => s.dmem =⋆ Mem.Blocks [(d.regs.get64 .rdi, len * 4)] ⋆ R ⦄ := by
   apply MachineWP.cfg (vfm_table d (len * 4) R) vfm_var
-  cfg_cases [vector_fmul_sse_prog]
+  cfg_cases
   · vcgen with (cfg_exit; finish)
   · vcgen with (cfg_exit; finish)
 

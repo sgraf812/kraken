@@ -127,7 +127,7 @@ theorem sbr_neg_odd_64_correct (d : MachineData)
     ⦃ fun _ s => s.dmem =⋆ Mem.Blocks [(d.regs.get64 .rdi, 256), (ps_mask2, 16)] ⋆ R ⦄ := by
   have h_mask_aligned := ps_mask2_aligned
   apply MachineWP.cfg (sbr_table d ps_mask2 R) sbr_var
-  cfg_cases [sbr_neg_odd_64_prog]
+  cfg_cases
   · vcgen with (cfg_exit; finish)
   · vcgen with (cfg_exit; finish)
   · vcgen with (cfg_exit; finish)
