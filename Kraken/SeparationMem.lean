@@ -289,6 +289,13 @@ theorem Blocks.Inside.add_base_add {w : Nat} {a c x : BitVec w} {n len : Nat}
     rw [BitVec.add_comm c a, BitVec.add_assoc, BitVec.add_comm, BitVec.add_sub_cancel]
     exact h)
 
+/-- An access at a pointer `p` into a block, given the pointer's offset `p - a`
+from the base. -/
+theorem Blocks.Inside.ptr {w : Nat} {a p : BitVec w} {n len : Nat}
+    {bs : List (BitVec w × Nat)} (h : (p - a).toNat + n ≤ len) :
+    Blocks.Inside p n ((a, len) :: bs) :=
+  Or.inl h
+
 /-- An access at an offset `x` from a pointer `p` into a block, given the
 pointer's offset `p - a` from the base: the form in which a loop invariant
 tracks a moving pointer. -/
@@ -354,9 +361,10 @@ grind_pattern Blocks.Inside.base => Blocks.Inside a n ((a, len) :: bs)
 grind_pattern Blocks.Inside.base_add => Blocks.Inside (a + x) n ((a, len) :: bs)
 grind_pattern Blocks.Inside.base_add_add => Blocks.Inside (a + c + x) n ((a, len) :: bs)
 grind_pattern Blocks.Inside.add_base_add => Blocks.Inside (c + a + x) n ((a, len) :: bs)
--- The pointer rule also needs the offset `p - a` among the terms, which an
+-- The pointer rules also need the offset `p - a` among the terms, which an
 -- invariant about the pointer puts there. Otherwise any pointer into any block
 -- would match, and ruling out the wrong blocks swamps the arithmetic.
+grind_pattern Blocks.Inside.ptr => Blocks.Inside p n ((a, len) :: bs), p - a
 grind_pattern Blocks.Inside.ptr_add => Blocks.Inside (p + x) n ((a, len) :: bs), p - a
 grind_pattern Blocks.loadInt_isSome => sep (Blocks bs) F m, Mem.loadInt m addr n
 grind_pattern Blocks.storeInt => sep (Blocks bs) F m, Mem.storeInt m addr n v

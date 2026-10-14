@@ -104,6 +104,15 @@ the separation-logic proofs (`SepAluMem`, `SepDynamicStack`) need immediates
 in their `Int64` form. -/
 attribute [scoped grind norm] Int64.toBitVec_ofNat_norm Int64.toBitVec_neg_ofNat_norm
 
+/- The specs for `d(%b,%i,1)` also cover `(%b,%i,1)`, which the parser writes
+with the displacement `0`, so their side conditions read at `b + i + 0`. The
+normalizer writes that `0` as the literal `(0 : BitVec 64)`, which
+`BitVec.add_zero` (stated at `0#n`) does not match. -/
+theorem _root_.BitVec.add_ofNat_zero {w} (x : BitVec w) : x + (0 : BitVec w) = x :=
+  BitVec.add_zero x
+
+attribute [scoped grind norm] BitVec.add_ofNat_zero
+
 /- A jump exit of `MachineWP.cfg` asks where its target sits in the list of
 labels of the program, `["start", ".loop", …]`. With `MachineWP` open,
 `grind`'s normalizer answers by evaluation. -/
