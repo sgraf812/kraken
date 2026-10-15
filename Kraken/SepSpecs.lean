@@ -322,10 +322,7 @@ registers and flags after the addition of the loaded value `Int.ofBytes bs`. -/
         let v := a + bv
         ⌜bs.AtM (rg.get64 b + BitVec.ofInt 64 d.toInt)
             ⊑ Q () (rg.set64 rd v) z
-                (StatusFlags.from_result v
-                  { cf := v.unsigned != a.unsigned + bv.unsigned,
-                    af := (v.take 4).unsigned != (a.take 4).unsigned + (bv.take 4).unsigned,
-                    of := v.signed != a.signed + bv.signed })⌝
+                (StatusFlags.ofAdd a bv)⌝
           ⊓ bs.AtM (rg.get64 b + BitVec.ofInt 64 d.toInt) ⦄
       Directive.instr (.regular .W64 .W64
           (.add (.reg (.low rd .W64))

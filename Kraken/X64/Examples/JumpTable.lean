@@ -75,8 +75,8 @@ the stack popped and the memory unchanged.
   blocks and the out-of-range branch are `vcgen` + `grind`.
 * Library additions this needed: the parser learned `movslq`; there are new
   rules for `cmpl $i, %r32`, `movl` (register and immediate), `xorl`,
-  `leaq sym(%rip)` and `movslq (%b,%i,s)`; and `CondCode.interp_a_sub` /
-  `interp_be_sub` read `ja`/`jbe` after `cmp` as the unsigned order.
+  `leaq sym(%rip)` and `movslq (%b,%i,s)`; and `CondCode.interp_a_ofSub` /
+  `interp_be_ofSub` read `ja`/`jbe` after `cmp` as the unsigned order.
 -/
 
 open Kraken MachineWP Std.WP Lean.Order
@@ -163,7 +163,7 @@ theorem sel_spec (hpl : Program.PlacedIn sel_body) : SelSpec := by
     (hblocks := ?_) (hpre := ?_)
   · intro _ ra t₀
     cfg_cases
-    · -- dispatch. `grind` takes the `ja` to `.Ldefault` (`CondCode.interp_a_sub`
+    · -- dispatch. `grind` takes the `ja` to `.Ldefault` (`CondCode.interp_a_ofSub`
       -- reads the flags as `2 < x`); what is left is the jump through the table.
       vcgen
       all_goals (try grind)

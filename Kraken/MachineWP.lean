@@ -369,10 +369,7 @@ constant; it does not depend on where the instruction sits. -/
         WP.wp p Q E
           { s with
               regs := s.regs.set64 r v,
-              status := StatusFlags.from_result v
-                { cf := v.unsigned != b.unsigned - a.unsigned,
-                  af := (v.take 4).unsigned != (b.take 4).unsigned - (a.take 4).unsigned,
-                  of := v.signed != b.signed - a.signed } } ⦄
+              status := StatusFlags.ofSub b a } ⦄
       (Directive.instr (.regular asz .W64 (.sub (.reg (.low r .W64)) (.imm (.int64 i)))) :: p)
     ⦃ Q; E ⦄ :=
   fallthrough_spec (fun s rng P hP => by wp_step; exact hP)
@@ -387,10 +384,7 @@ constant; it does not depend on where the instruction sits. -/
         WP.wp p Q E
           { s with
               regs := s.regs.set64 r v,
-              status := StatusFlags.from_result v
-                { cf := v.unsigned != b.unsigned - a.unsigned,
-                  af := (v.take 4).unsigned != (b.take 4).unsigned - (a.take 4).unsigned,
-                  of := v.signed != b.signed - a.signed } } ⦄
+              status := StatusFlags.ofSub b a } ⦄
       (Directive.instr (.regular asz .W64
           (.sub (.reg (.low r .W64)) (.imm (.sub (.label l₁) (.label l₂))))) :: p)
     ⦃ Q; E ⦄ :=
@@ -403,7 +397,7 @@ no register changes. -/
         let v := s.regs.get64 ra &&& s.regs.get64 rb
         ∀ af : Bool,
           WP.wp p Q E
-            { s with status := StatusFlags.from_result v { cf := false, af, of := false } } ⦄
+            { s with status := StatusFlags.ofLogic v af } ⦄
       (Directive.instr (.regular asz .W64
           (.test (.reg (.low ra .W64)) (.regOrMem (.reg (.low rb .W64))))) :: p)
     ⦃ Q; E ⦄ :=
@@ -433,10 +427,7 @@ no register changes. -/
         WP.wp p Q E
           { s with
               regs := s.regs.set64 r v,
-              status := StatusFlags.from_result v
-                { cf := v.unsigned != a.unsigned + b.unsigned,
-                  af := (v.take 4).unsigned != (a.take 4).unsigned + (b.take 4).unsigned,
-                  of := v.signed != a.signed + b.signed } } ⦄
+              status := StatusFlags.ofAdd a b } ⦄
       (Directive.instr (.regular asz .W64 (.add (.reg (.low r .W64)) (.imm (.int64 i)))) :: p)
     ⦃ Q; E ⦄ :=
   fallthrough_spec (fun s rng P hP => by wp_step; exact hP)
@@ -450,10 +441,7 @@ no register changes. -/
         WP.wp p Q E
           { s with
               regs := s.regs.set64 rd v,
-              status := StatusFlags.from_result v
-                { cf := v.unsigned != a.unsigned + b.unsigned + c,
-                  af := (v.take 4).unsigned != (a.take 4).unsigned + (b.take 4).unsigned + c,
-                  of := v.signed != a.signed + b.signed + c } } ⦄
+              status := StatusFlags.ofAdc a b c } ⦄
       (Directive.instr (.regular asz .W64
           (.adc (.reg (.low rd .W64)) (.regOrMem (.reg (.low rs .W64))))) :: p)
     ⦃ Q; E ⦄ :=
@@ -479,7 +467,7 @@ no register changes. -/
           WP.wp p Q E
             { s with
                 regs := s.regs.set64 rd v,
-                status := StatusFlags.from_result v { cf := false, of := false, af } } ⦄
+                status := StatusFlags.ofLogic v af } ⦄
       (Directive.instr (.regular asz .W64
           (.xor (.reg (.low rd .W64)) (.regOrMem (.reg (.low rs .W64))))) :: p)
     ⦃ Q; E ⦄ :=
@@ -494,7 +482,7 @@ flags are those of the result, with `af` left arbitrary. -/
           WP.wp p Q E
             { s with
                 regs := s.regs.set64 r v,
-                status := StatusFlags.from_result v { cf := false, of := false, af } } ⦄
+                status := StatusFlags.ofLogic v af } ⦄
       (Directive.instr (.regular asz .W64 (.and (.reg (.low r .W64)) (.imm (.int64 i)))) :: p)
     ⦃ Q; E ⦄ :=
   fallthrough_nondet_spec (fun s rng P hP => by wp_step; exact hP)
@@ -513,10 +501,7 @@ packed-float rules carry the lane arithmetic as the value written. -/
         WP.wp p Q E
           { s with
               regs := s.regs.set64 rd v,
-              status := StatusFlags.from_result v
-                { cf := v.unsigned != a.unsigned + b.unsigned,
-                  af := (v.take 4).unsigned != (a.take 4).unsigned + (b.take 4).unsigned,
-                  of := v.signed != a.signed + b.signed } } ⦄
+              status := StatusFlags.ofAdd a b } ⦄
       (Directive.instr (.regular asz .W64
           (.add (.reg (.low rd .W64)) (.regOrMem (.reg (.low rs .W64))))) :: p)
     ⦃ Q; E ⦄ :=
@@ -529,8 +514,7 @@ packed-float rules carry the lane arithmetic as the value written. -/
         WP.wp p Q E
           { s with
               regs := s.regs.set64 r v,
-              status := StatusFlags.from_result v
-                { cf := b != 0, af := (b.take 4) != 0, of := v.signed != - b.signed } } ⦄
+              status := StatusFlags.ofNeg b } ⦄
       (Directive.instr (.regular asz .W64 (.neg (.reg (.low r .W64)))) :: p)
     ⦃ Q; E ⦄ :=
   fallthrough_spec (fun s rng P hP => by wp_step; exact hP)
@@ -686,10 +670,7 @@ wrapped to 32 bits and zero-extended; the upper half of the index is ignored. -/
         let v := a - b
         WP.wp p Q E
           { s with
-              status := StatusFlags.from_result v
-                { cf := v.unsigned != a.unsigned - b.unsigned,
-                  af := (v.take 4).unsigned != (a.take 4).unsigned - (b.take 4).unsigned,
-                  of := v.signed != a.signed - b.signed } } ⦄
+              status := StatusFlags.ofSub a b } ⦄
       (Directive.instr (.regular asz .W64
           (.cmp (.reg (.low ra .W64)) (.regOrMem (.reg (.low rb .W64))))) :: p)
     ⦃ Q; E ⦄ :=
@@ -703,10 +684,7 @@ wrapped to 32 bits and zero-extended; the upper half of the index is ignored. -/
         let v := a - b
         WP.wp p Q E
           { s with
-              status := StatusFlags.from_result v
-                { cf := v.unsigned != a.unsigned - b.unsigned,
-                  af := (v.take 4).unsigned != (a.take 4).unsigned - (b.take 4).unsigned,
-                  of := v.signed != a.signed - b.signed } } ⦄
+              status := StatusFlags.ofSub a b } ⦄
       (Directive.instr (.regular asz .W64 (.cmp (.reg (.low r .W64)) (.imm (.int64 i)))) :: p)
     ⦃ Q; E ⦄ :=
   fallthrough_spec (fun s rng P hP => by wp_step; exact hP)
@@ -846,10 +824,7 @@ their 32-bit difference with the immediate. -/
             let c := i.toBitVec.truncate 32
             let v := a - c
             WP.wp p Q E { s with
-              status := StatusFlags.from_result v
-                { cf := v.unsigned != a.unsigned - c.unsigned,
-                  af := (v.take 4).unsigned != (a.take 4).unsigned - (c.take 4).unsigned,
-                  of := v.signed != a.signed - c.signed } }) ⦄
+              status := StatusFlags.ofSub a c }) ⦄
       (Directive.instr (.regular .W64 .W32
           (.cmp (.mem ⟨some (.reg b), none, .int64 d⟩) (.imm (.int64 i)))) :: p)
     ⦃ Q; E ⦄ :=
@@ -946,10 +921,7 @@ and its flags. -/
         WP.wp p Q E
           { s with
               regs := s.regs.set64 r (v.setWidth 64),
-              status := StatusFlags.from_result v
-                { cf := v.unsigned != b.unsigned - a.unsigned,
-                  af := (v.take 4).unsigned != (b.take 4).unsigned - (a.take 4).unsigned,
-                  of := v.signed != b.signed - a.signed } } ⦄
+              status := StatusFlags.ofSub b a } ⦄
       (Directive.instr (.regular asz .W32 (.sub (.reg (.low r .W32)) (.imm (.int64 i)))) :: p)
     ⦃ Q; E ⦄ :=
   fallthrough_spec (fun s rng P hP => by
@@ -963,10 +935,7 @@ and its flags. -/
         let v := a - c
         WP.wp p Q E
           { s with
-              status := StatusFlags.from_result v
-                { cf := v.unsigned != a.unsigned - c.unsigned,
-                  af := (v.take 4).unsigned != (a.take 4).unsigned - (c.take 4).unsigned,
-                  of := v.signed != a.signed - c.signed } } ⦄
+              status := StatusFlags.ofSub a c } ⦄
       (Directive.instr (.regular asz .W32 (.cmp (.reg (.low r .W32)) (.imm (.int64 i)))) :: p)
     ⦃ Q; E ⦄ :=
   fallthrough_spec (fun s rng P hP => by
@@ -1000,7 +969,7 @@ register, and its flags, with `af` left arbitrary. -/
           WP.wp p Q E
             { s with
                 regs := s.regs.set64 rd (v.setWidth 64),
-                status := StatusFlags.from_result v { cf := false, of := false, af } } ⦄
+                status := StatusFlags.ofLogic v af } ⦄
       (Directive.instr (.regular asz .W32
           (.xor (.reg (.low rd .W32)) (.regOrMem (.reg (.low rs .W32))))) :: p)
     ⦃ Q; E ⦄ :=
@@ -1041,7 +1010,7 @@ left arbitrary. -/
           WP.wp p Q E
             { s with
                 regs := s.regs.set64 r ((s.regs.get64 r).replaceLow v),
-                status := StatusFlags.from_result v { cf := false, of := false, af } } ⦄
+                status := StatusFlags.ofLogic v af } ⦄
       (Directive.instr (.regular asz .W8 (.and (.reg (.low r .W8)) (.imm (.int64 i)))) :: p)
     ⦃ Q; E ⦄ :=
   fallthrough_nondet_spec (fun s rng P hP => by

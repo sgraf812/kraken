@@ -102,8 +102,8 @@ does not case split on signs. `grind` never unfolds `neg` to `sf` and `of`.
 After `cmp %b, %a` (the flags of `a - b`), `neg` is `a < b` in the signed order.
 After `add $i, %r` (the flags of `i + r`), `neg` is `r < -i`, which holds when
 `i` is not the least signed value; for `add $16, %rdx` the hypothesis on `i` is
-`16 ≠ 2 ^ 63`. The hypothesis on `f` says that the overflow flag is the one the
-instruction computes; `grind` discharges it by reducing the projection. -/
+`16 ≠ 2 ^ 63`. The rules for `neg` of each instruction's flags follow the
+definitions of those flags, in the section on the flags an instruction leaves. -/
 
 /-- The true result of the operation that set the flags is negative. -/
 def StatusFlags.neg (s : StatusFlags) : Bool := s.sf != s.of
@@ -128,50 +128,17 @@ theorem BitVec.toInt_lt_toInt_iff_flip (a b : BitVec 64) :
   rw [BitVec.toInt_eq_toNat_cond, BitVec.toInt_eq_toNat_cond]
   split <;> split <;> omega
 
-@[grind =] theorem StatusFlags.neg_from_result_sub (a b : BitVec 64)
-    (f : StatusFlags.from_result.Remaining)
-    (hf : f.of = ((a - b).signed != a.signed - b.signed)) :
-    (StatusFlags.from_result (a - b) f).neg
-      = decide ((a.toNat + 2 ^ 63) % 2 ^ 64 < (b.toNat + 2 ^ 63) % 2 ^ 64) := by
-  rw [StatusFlags.neg, StatusFlags.sf_from_result, StatusFlags.of_from_result, hf]
-  have : ((a - b).msb != ((a - b).signed != a.signed - b.signed))
-      = decide (a.toInt < b.toInt) := by
-    grind [BitVec.signed_eq]
-  simp only [this, BitVec.toInt_lt_toInt_iff_flip]
-
 theorem BitVec.toInt_neg_ofNat_of_ne (n : Nat) (hn : n % 2 ^ 64 ≠ 2 ^ 63) :
     (-(OfNat.ofNat n : BitVec 64)).toInt = -(OfNat.ofNat n : BitVec 64).toInt := by
   apply BitVec.toInt_neg_of_ne_intMin
   intro h; apply hn; rw [← BitVec.toNat_ofNat n 64, show BitVec.ofNat 64 n = OfNat.ofNat n from rfl, h]
   simp [BitVec.toNat_intMin]
 
-theorem StatusFlags.neg_from_result_add (n : Nat) (b : BitVec 64)
-    (f : StatusFlags.from_result.Remaining)
-    (hf : f.of = (((OfNat.ofNat n : BitVec 64) + b).signed
-      != (OfNat.ofNat n : BitVec 64).signed + b.signed))
-    (hn : n % 2 ^ 64 ≠ 2 ^ 63) :
-    (StatusFlags.from_result ((OfNat.ofNat n : BitVec 64) + b) f).neg
-      = decide ((b.toNat + 2 ^ 63) % 2 ^ 64 < ((2 ^ 64 - n % 2 ^ 64) % 2 ^ 64 + 2 ^ 63) % 2 ^ 64) := by
-  have ha : (OfNat.ofNat n : BitVec 64).toNat = n % 2 ^ 64 := BitVec.toNat_ofNat n 64
-  rw [StatusFlags.neg, StatusFlags.sf_from_result, StatusFlags.of_from_result, hf, ← ha,
-    ← BitVec.toNat_neg]
-  have : (((OfNat.ofNat n : BitVec 64) + b).msb
-        != (((OfNat.ofNat n : BitVec 64) + b).signed
-          != (OfNat.ofNat n : BitVec 64).signed + b.signed))
-      = decide (b.toInt < (-(OfNat.ofNat n : BitVec 64)).toInt) := by
-    rw [BitVec.toInt_neg_ofNat_of_ne n hn]
-    grind [BitVec.signed_eq]
-  simp only [this, BitVec.toInt_lt_toInt_iff_flip]
-
-grind_pattern StatusFlags.neg_from_result_add =>
-  StatusFlags.neg (StatusFlags.from_result ((OfNat.ofNat n : BitVec 64) + b) f)
-
 /-! ## Unsigned comparisons
 
 `ja`/`jbe` after `cmp` read the flags of `a - b` as the unsigned order of `a`
-and `b`: the carry flag is the borrow, the zero flag equality. The hypothesis
-on `f` says the carry flag is the one a subtraction computes; `grind`
-discharges it by reducing the projection, as for the signed rules above. -/
+and `b`: the carry flag is the borrow, the zero flag equality. The rules for
+`ja` and `jbe` follow the definition of `StatusFlags.ofSub`. -/
 
 /-- The borrow of an unsigned subtraction, as two linear cases. -/
 theorem BitVec.toNat_sub_cases {w} (a b : BitVec w) :
@@ -186,11 +153,62 @@ theorem BitVec.toNat_sub_cases {w} (a b : BitVec w) :
       Nat.add_mod_right, Nat.mod_eq_of_lt (by omega)]
   · rw [Nat.mod_eq_of_lt (by omega)]
 
-@[grind =] theorem CondCode.interp_a_sub {w} (a b : BitVec w)
-    (f : StatusFlags.from_result.Remaining)
-    (hf : f.cf = ((a - b).unsigned != a.unsigned - b.unsigned)) :
-    CondCode.a.interp (StatusFlags.from_result (a - b) f) = decide (b.toNat < a.toNat) := by
-  rw [CondCode.interp_a, StatusFlags.cf_from_result, StatusFlags.zf_from_result, hf]
+/-! ## The flags an instruction leaves
+
+`StatusFlags.ofSub a b` are the flags `sub` and `cmp` leave for `a - b`,
+`StatusFlags.ofAdd a b` and `StatusFlags.ofAdc a b c` the flags `add` and `adc`
+leave for `a + b` and `a + b + c`, `StatusFlags.ofNeg b` the flags `neg` leaves
+for `-b`, and `StatusFlags.ofLogic v af` the flags `and` and `xor` leave for the
+result `v`, with the auxiliary carry `af` undefined. A flag enters a
+verification condition only when a condition code reads it, through the rules
+below; the auxiliary carry and the parity have none. -/
+
+def StatusFlags.ofSub {w} (a b : BitVec w) : StatusFlags :=
+  StatusFlags.from_result (a - b)
+    { cf := (a - b).unsigned != a.unsigned - b.unsigned,
+      af := ((a - b).take 4).unsigned != (a.take 4).unsigned - (b.take 4).unsigned,
+      of := (a - b).signed != a.signed - b.signed }
+
+def StatusFlags.ofAdd {w} (a b : BitVec w) : StatusFlags :=
+  StatusFlags.from_result (a + b)
+    { cf := (a + b).unsigned != a.unsigned + b.unsigned,
+      af := ((a + b).take 4).unsigned != (a.take 4).unsigned + (b.take 4).unsigned,
+      of := (a + b).signed != a.signed + b.signed }
+
+def StatusFlags.ofAdc (a b : BitVec 64) (c : Bool) : StatusFlags :=
+  StatusFlags.from_result (a + b + BitVec.ofNat 64 c.toNat)
+    { cf := (a + b + BitVec.ofNat 64 c.toNat).unsigned != a.unsigned + b.unsigned + c,
+      af := ((a + b + BitVec.ofNat 64 c.toNat).take 4).unsigned
+        != (a.take 4).unsigned + (b.take 4).unsigned + c,
+      of := (a + b + BitVec.ofNat 64 c.toNat).signed != a.signed + b.signed + c }
+
+def StatusFlags.ofNeg (b : BitVec 64) : StatusFlags :=
+  StatusFlags.from_result (-b)
+    { cf := b != 0, af := (b.take 4) != 0, of := (-b).signed != - b.signed }
+
+def StatusFlags.ofLogic {w} (v : BitVec w) (af : Bool) : StatusFlags :=
+  StatusFlags.from_result v { cf := false, of := false, af }
+
+@[simp, grind =] theorem StatusFlags.zf_ofSub {w} (a b : BitVec w) :
+    (StatusFlags.ofSub a b).zf = (a - b == BitVec.zero w) := rfl
+@[simp, grind =] theorem StatusFlags.cf_ofSub {w} (a b : BitVec w) :
+    (StatusFlags.ofSub a b).cf = ((a - b).unsigned != a.unsigned - b.unsigned) := rfl
+@[simp] theorem StatusFlags.sf_ofSub {w} (a b : BitVec w) :
+    (StatusFlags.ofSub a b).sf = (a - b).msb := rfl
+@[simp] theorem StatusFlags.of_ofSub {w} (a b : BitVec w) :
+    (StatusFlags.ofSub a b).of = ((a - b).signed != a.signed - b.signed) := rfl
+@[grind =] theorem StatusFlags.neg_ofSub (a b : BitVec 64) :
+    (StatusFlags.ofSub a b).neg
+      = decide ((a.toNat + 2 ^ 63) % 2 ^ 64 < (b.toNat + 2 ^ 63) % 2 ^ 64) := by
+  rw [StatusFlags.neg, StatusFlags.sf_ofSub, StatusFlags.of_ofSub]
+  have : ((a - b).msb != ((a - b).signed != a.signed - b.signed))
+      = decide (a.toInt < b.toInt) := by
+    grind [BitVec.signed_eq]
+  simp only [this, BitVec.toInt_lt_toInt_iff_flip]
+
+@[grind =] theorem CondCode.interp_a_ofSub {w} (a b : BitVec w) :
+    CondCode.a.interp (StatusFlags.ofSub a b) = decide (b.toNat < a.toNat) := by
+  rw [CondCode.interp_a, StatusFlags.cf_ofSub, StatusFlags.zf_ofSub]
   have ⟨h₁, h₂⟩ := BitVec.toNat_sub_cases a b
   have ha := a.isLt
   have hb := b.isLt
@@ -214,17 +232,68 @@ theorem BitVec.toNat_sub_cases {w} (a b : BitVec w) :
     have : ¬ b.toNat < a.toNat := by omega
     simp [this]
     omega
-
-@[grind =] theorem CondCode.interp_be_sub {w} (a b : BitVec w)
-    (f : StatusFlags.from_result.Remaining)
-    (hf : f.cf = ((a - b).unsigned != a.unsigned - b.unsigned)) :
-    CondCode.be.interp (StatusFlags.from_result (a - b) f) = decide (a.toNat ≤ b.toNat) := by
-  have h := CondCode.interp_a_sub a b f hf
+@[grind =] theorem CondCode.interp_be_ofSub {w} (a b : BitVec w) :
+    CondCode.be.interp (StatusFlags.ofSub a b) = decide (a.toNat ≤ b.toNat) := by
+  have h := CondCode.interp_a_ofSub a b
   rw [CondCode.interp_a] at h
   rw [CondCode.interp_be]
   revert h
-  cases (StatusFlags.from_result (a - b) f).cf <;> cases (StatusFlags.from_result (a - b) f).zf <;>
-    simp <;> omega
+  cases (StatusFlags.ofSub a b).cf <;> cases (StatusFlags.ofSub a b).zf <;> simp <;> omega
+
+@[simp, grind =] theorem StatusFlags.zf_ofAdd {w} (a b : BitVec w) :
+    (StatusFlags.ofAdd a b).zf = (a + b == BitVec.zero w) := rfl
+@[simp, grind =] theorem StatusFlags.cf_ofAdd {w} (a b : BitVec w) :
+    (StatusFlags.ofAdd a b).cf = ((a + b).unsigned != a.unsigned + b.unsigned) := rfl
+@[simp] theorem StatusFlags.sf_ofAdd {w} (a b : BitVec w) :
+    (StatusFlags.ofAdd a b).sf = (a + b).msb := rfl
+@[simp] theorem StatusFlags.of_ofAdd {w} (a b : BitVec w) :
+    (StatusFlags.ofAdd a b).of = ((a + b).signed != a.signed + b.signed) := rfl
+theorem StatusFlags.neg_ofAdd (n : Nat) (b : BitVec 64) (hn : n % 2 ^ 64 ≠ 2 ^ 63) :
+    (StatusFlags.ofAdd (OfNat.ofNat n) b).neg
+      = decide ((b.toNat + 2 ^ 63) % 2 ^ 64 < ((2 ^ 64 - n % 2 ^ 64) % 2 ^ 64 + 2 ^ 63) % 2 ^ 64) := by
+  have ha : (OfNat.ofNat n : BitVec 64).toNat = n % 2 ^ 64 := BitVec.toNat_ofNat n 64
+  rw [StatusFlags.neg, StatusFlags.sf_ofAdd, StatusFlags.of_ofAdd, ← ha, ← BitVec.toNat_neg]
+  have : (((OfNat.ofNat n : BitVec 64) + b).msb
+        != (((OfNat.ofNat n : BitVec 64) + b).signed
+          != (OfNat.ofNat n : BitVec 64).signed + b.signed))
+      = decide (b.toInt < (-(OfNat.ofNat n : BitVec 64)).toInt) := by
+    rw [BitVec.toInt_neg_ofNat_of_ne n hn]
+    grind [BitVec.signed_eq]
+  simp only [this, BitVec.toInt_lt_toInt_iff_flip]
+
+grind_pattern StatusFlags.neg_ofAdd => StatusFlags.neg (StatusFlags.ofAdd (OfNat.ofNat n) b)
+
+@[simp, grind =] theorem StatusFlags.zf_ofAdc (a b : BitVec 64) (c : Bool) :
+    (StatusFlags.ofAdc a b c).zf = (a + b + BitVec.ofNat 64 c.toNat == BitVec.zero 64) := rfl
+@[simp, grind =] theorem StatusFlags.cf_ofAdc (a b : BitVec 64) (c : Bool) :
+    (StatusFlags.ofAdc a b c).cf
+      = ((a + b + BitVec.ofNat 64 c.toNat).unsigned != a.unsigned + b.unsigned + c) := rfl
+@[simp] theorem StatusFlags.sf_ofAdc (a b : BitVec 64) (c : Bool) :
+    (StatusFlags.ofAdc a b c).sf = (a + b + BitVec.ofNat 64 c.toNat).msb := rfl
+@[simp] theorem StatusFlags.of_ofAdc (a b : BitVec 64) (c : Bool) :
+    (StatusFlags.ofAdc a b c).of
+      = ((a + b + BitVec.ofNat 64 c.toNat).signed != a.signed + b.signed + c) := rfl
+
+@[simp, grind =] theorem StatusFlags.zf_ofNeg (b : BitVec 64) :
+    (StatusFlags.ofNeg b).zf = (-b == BitVec.zero 64) := rfl
+@[simp, grind =] theorem StatusFlags.cf_ofNeg (b : BitVec 64) :
+    (StatusFlags.ofNeg b).cf = (b != 0) := rfl
+@[simp] theorem StatusFlags.sf_ofNeg (b : BitVec 64) :
+    (StatusFlags.ofNeg b).sf = (-b).msb := rfl
+@[simp] theorem StatusFlags.of_ofNeg (b : BitVec 64) :
+    (StatusFlags.ofNeg b).of = ((-b).signed != - b.signed) := rfl
+
+@[simp, grind =] theorem StatusFlags.zf_ofLogic {w} (v : BitVec w) (af : Bool) :
+    (StatusFlags.ofLogic v af).zf = (v == BitVec.zero w) := rfl
+@[simp, grind =] theorem StatusFlags.cf_ofLogic {w} (v : BitVec w) (af : Bool) :
+    (StatusFlags.ofLogic v af).cf = false := rfl
+@[simp] theorem StatusFlags.sf_ofLogic {w} (v : BitVec w) (af : Bool) :
+    (StatusFlags.ofLogic v af).sf = v.msb := rfl
+@[simp] theorem StatusFlags.of_ofLogic {w} (v : BitVec w) (af : Bool) :
+    (StatusFlags.ofLogic v af).of = false := rfl
+@[grind =] theorem StatusFlags.neg_ofLogic {w} (v : BitVec w) (af : Bool) :
+    (StatusFlags.ofLogic v af).neg = v.msb := by
+  simp [StatusFlags.neg, StatusFlags.ofLogic]
 
 /-! ## Reading a named register, one lemma per field -/
 
