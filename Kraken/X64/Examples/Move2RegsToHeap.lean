@@ -37,5 +37,5 @@ theorem move2_correct (env₀ : Env) (s₀ : MachineData) (a0 a8 : BitVec 64)
         (s.machine.regs.get64 .r13) = (s₀.regs.get64 .rcx) ∧
         s.machine.regs.rdi = s₀.regs.rdi; fun _ _ => True⦄ := by
   vcgen [move2Prog] with (first (easm) (skip))
-  simp_all
+  all_goals simp_all
   -- all_goals (simp_all [BitVec.ofInt_toInt] <;> bv_decide)

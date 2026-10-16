@@ -112,7 +112,7 @@ private def easmEgraphCore (mvarId : MVarId) : GrindTacticM Bool := mvarId.withC
       trace[Kraken.easm] "mechanism: raw internalized={← alreadyInternalized known}, structural twin in egraph={twin?.isSome}, twin pointer-eq raw={(twin?.map (isSameExpr · known)).getD false}, shared pointer-eq raw={isSameExpr known' known}"
     unless (← alreadyInternalized known') do
       internalize known' 0
-      processNewFacts
+      processToDo
     if (← isInconsistent) then return false
     let cls ← getEqc known'
     let some v ← cls.findM? (fun e =>

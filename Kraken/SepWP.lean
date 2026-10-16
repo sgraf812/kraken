@@ -336,8 +336,9 @@ theorem sep_elim [CodeEnv] {q : Program} {F : MProp 64}
 interpretation is a frame closure, and `∗` composes resources by `sep_assoc`.
 This is the fact the frame inference of `vcgen` discharges per spec
 application. -/
-theorem frames [CodeEnv] (q : Program) (F : MProp 64) :
-    @WP.Frames Program Unit _ _ _ _ instWP _ frameOp _ _ q F := by
+theorem frames [CodeEnv] (q : Program) (F : MProp 64)
+    (P : Reg64s → RegZmms → StatusFlags → MProp 64) :
+    @WP.Frames Program Unit _ _ _ _ instWP _ frameOp _ _ q F P := by
   refine WP.frames_of_frameClosure frameOp MProp.sep ?_ ?_ ⟨fun q => (base.wpTrans q), fun _ => rfl⟩
   · intro r r' a
     funext regs zmms flags
@@ -376,9 +377,10 @@ where `vcgen` sequences them. -/
 
 /-- The frame fact of one directive, spelled with the exception companion
 `vcgen` derives for the exit channel. -/
-@[grind .] theorem frames_directive [CodeEnv] (d : Directive) (F : MProp 64) :
-    WP.Frames (Prog := Directive) frameOp d F :=
-  ⟨(frames [d] F).op_wp_le_wp_op⟩
+@[grind .] theorem frames_directive [CodeEnv] (d : Directive) (F : MProp 64)
+    (P : Reg64s → RegZmms → StatusFlags → MProp 64) :
+    WP.Frames (Prog := Directive) frameOp d F P :=
+  ⟨(frames [d] F P).op_wp_le_wp_op⟩
 
 end SepWP
 
