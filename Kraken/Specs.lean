@@ -617,10 +617,13 @@ grind_pattern BitVec.toNat_and_highMask_toNat => x.toNat &&& (OfNat.ofNat m : Na
 
 /-! ## Alignment
 
-An alignment check is a remainder of the address, which `grind` reads as
-arithmetic. -/
+An alignment check is a divisibility of the address, which `grind` reads as a
+divisibility constraint of linear integer arithmetic. -/
 
-attribute [grind =] isAligned
+theorem isAligned_iff_dvd {n : Nat} {x : BitVec 64} : isAligned n x = true ↔ n ∣ x.toNat := by
+  simp [isAligned, Nat.dvd_iff_mod_eq_zero]
+
+grind_pattern isAligned_iff_dvd => isAligned n x
 
 /-! ## Per-register field reads over `set64`, one lemma per field -/
 
