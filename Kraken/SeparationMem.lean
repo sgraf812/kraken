@@ -294,6 +294,9 @@ theorem Blocks.NoWrap.tail {w : Nat} {p : BitVec w × Nat} {bs : List (BitVec w 
   obtain ⟨a, len⟩ := p
   exact h.2
 
+theorem Blocks.NoWrap.ptr {w : Nat} {a _p : BitVec w} {len : Nat} {bs : List (BitVec w × Nat)}
+    (h : Blocks.NoWrap ((a, len) :: bs)) : a.toNat + len < 2 ^ w := h.head
+
 /-- The `n` bytes at `addr` lie inside one of the blocks. -/
 def Blocks.Inside {w : Nat} (addr : BitVec w) (n : Nat) : List (BitVec w × Nat) → Prop
   | [] => False
@@ -398,9 +401,14 @@ grind_pattern Blocks.Inside.ptr => Blocks.Inside p n ((a, len) :: bs), p - a
 grind_pattern Blocks.Inside.ptr_add => Blocks.Inside (p + x) n ((a, len) :: bs), p - a
 grind_pattern Blocks.loadInt_isSome => sep (Blocks bs) F m, Mem.loadInt m addr n
 grind_pattern Blocks.storeInt => sep (Blocks bs) F m, Mem.storeInt m addr n v
-grind_pattern Blocks.noWrap => sep (Blocks bs) F m
-grind_pattern Blocks.NoWrap.head => Blocks.NoWrap ((a, len) :: bs)
-grind_pattern Blocks.NoWrap.tail => Blocks.NoWrap (p :: bs)
+-- `grind` gets the bound of a block `(a, len)` when an offset `_p - a` of a pointer
+-- `_p` from its base is among the terms. `Blocks.NoWrap.ptr` puts `Blocks.NoWrap` of the
+-- list that starts at the block among the terms, `Blocks.NoWrap.tail` puts it there for
+-- each longer list up to the list of a fact `m =⋆ Blocks bs ⋆ F`, and `Blocks.noWrap`
+-- proves it from that fact.
+grind_pattern Blocks.noWrap => sep (Blocks bs) F m, Blocks.NoWrap bs
+grind_pattern Blocks.NoWrap.ptr => (a, len) :: bs, _p - a
+grind_pattern Blocks.NoWrap.tail => p :: bs, Blocks.NoWrap bs
 
 /-! ## Readable addresses across stores
 
