@@ -183,7 +183,7 @@ private abbrev sp_table (d : MachineData) (L : Nat) : Label → MachineData → 
       let rcx := (s.regs.get64 .rcx).toNat
       s.regs.get64 .rdi = d.regs.get64 .rdi ∧ s.regs.get64 .rsi = d.regs.get64 .rsi ∧
       (s.regs.get64 .rdx).toNat = L ∧ s.dmem = d.dmem ∧
-      rcx = L / 128 * 128 ∧ r8 % 128 = 0 ∧ r8 < rcx
+      rcx % 128 = 0 ∧ rcx ≤ L ∧ L < rcx + 128 ∧ r8 % 128 = 0 ∧ r8 < rcx
   | ".l64", s =>
       let r8 := (s.regs.get64 .r8).toNat
       let rcx := (s.regs.get64 .rcx).toNat
