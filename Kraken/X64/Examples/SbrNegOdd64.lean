@@ -223,7 +223,8 @@ theorem sbr_neg_odd_64_hyps_satisfiable :
   generalize (List.replicate 16 (0 : UInt8) ++ List.replicate 256 0).At 32#64 = m at h2
   refine ⟨{ dmem := m, regs := { rdi := 48 } }, Std.ExtHashMap.emp, by dsimp only; decide, ?_⟩
   rw [Std.ExtHashMap.sep_emp, sbr_wit_mask]
-  exact h2
+  obtain ⟨m₁, m₂, hu, hi, hb₁, hb₂⟩ := h2
+  exact ⟨m₁, m₂, hu, hi, ⟨(by decide : (48#64 : BitVec 64).toNat + 256 < 2 ^ 64), hb₁⟩, by decide, hb₂⟩
 
 -- array logics, insn support
 -- look into what happens with NaN

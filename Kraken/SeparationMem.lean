@@ -243,11 +243,56 @@ theorem Block.storeInt {w : Nat} {a addr : BitVec w} {len n : Nat} {F : Mem w �
     hw (storeInt_slice h' hin hw v)
 
 /-- Blocks separated from each other, as `(base, length)` pairs:
-`Blocks [(a₁, l₁), (a₂, l₂)]` is `Block a₁ l₁ ⋆ Block a₂ l₂`. -/
+`Blocks [(a₁, l₁), (a₂, l₂)]` is `Block a₁ l₁ ⋆ Block a₂ l₂`. Each block `(a, len)`
+also lies below the top of memory, `a.toNat + len < 2 ^ w`, so that the address
+`a + len` one past its end does not wrap around. -/
 def Blocks {w : Nat} : List (BitVec w × Nat) → Mem w → Prop
   | [] => emp
-  | [(a, len)] => Block a len
-  | (a, len) :: b :: bs => Block a len ⋆ Blocks (b :: bs)
+  | [(a, len)] => fun h => a.toNat + len < 2 ^ w ∧ Block a len h
+  | (a, len) :: b :: bs => (fun h => a.toNat + len < 2 ^ w ∧ Block a len h) ⋆ Blocks (b :: bs)
+
+theorem Blocks.cons_elim {w : Nat} {a : BitVec w} {len : Nat} {bs : List (BitVec w × Nat)}
+    {F : Mem w → Prop} {m : Mem w} (h : m =⋆ Blocks ((a, len) :: bs) ⋆ F) :
+    a.toNat + len < 2 ^ w ∧ m =⋆ Block a len ⋆ (Blocks bs ⋆ F) := by
+  cases bs with
+  | nil =>
+    obtain ⟨m1, m2, hu, hi, ⟨hw, hb⟩, hF⟩ := h
+    exact ⟨hw, m1, m2, hu, hi, hb, by rw [Blocks, emp_sep]; exact hF⟩
+  | cons b bs =>
+    rw [Blocks, sep_assoc] at h
+    obtain ⟨m1, m2, hu, hi, ⟨hw, hb⟩, hF⟩ := h
+    exact ⟨hw, m1, m2, hu, hi, hb, hF⟩
+
+theorem Blocks.cons_intro {w : Nat} {a : BitVec w} {len : Nat} {bs : List (BitVec w × Nat)}
+    {F : Mem w → Prop} {m : Mem w} (hw : a.toNat + len < 2 ^ w)
+    (h : m =⋆ Block a len ⋆ (Blocks bs ⋆ F)) : m =⋆ Blocks ((a, len) :: bs) ⋆ F := by
+  obtain ⟨m1, m2, hu, hi, hb, hF⟩ := h
+  cases bs with
+  | nil => rw [Blocks, emp_sep] at hF; exact ⟨m1, m2, hu, hi, ⟨hw, hb⟩, hF⟩
+  | cons b bs => rw [Blocks, sep_assoc]; exact ⟨m1, m2, hu, hi, ⟨hw, hb⟩, hF⟩
+
+/-- Each block of the list lies below the top of memory. -/
+def Blocks.NoWrap {w : Nat} : List (BitVec w × Nat) → Prop
+  | [] => True
+  | (a, len) :: bs => a.toNat + len < 2 ^ w ∧ Blocks.NoWrap bs
+
+theorem Blocks.noWrap {w : Nat} {bs : List (BitVec w × Nat)} {F : Mem w → Prop} {m : Mem w}
+    (h : m =⋆ Blocks bs ⋆ F) : Blocks.NoWrap bs := by
+  induction bs generalizing F with
+  | nil => trivial
+  | cons p bs ih =>
+    obtain ⟨a, len⟩ := p
+    obtain ⟨hw, h'⟩ := Blocks.cons_elim h
+    rw [sep_comm_l] at h'
+    exact ⟨hw, ih h'⟩
+
+theorem Blocks.NoWrap.head {w : Nat} {a : BitVec w} {len : Nat} {bs : List (BitVec w × Nat)}
+    (h : Blocks.NoWrap ((a, len) :: bs)) : a.toNat + len < 2 ^ w := h.1
+
+theorem Blocks.NoWrap.tail {w : Nat} {p : BitVec w × Nat} {bs : List (BitVec w × Nat)}
+    (h : Blocks.NoWrap (p :: bs)) : Blocks.NoWrap bs := by
+  obtain ⟨a, len⟩ := p
+  exact h.2
 
 /-- The `n` bytes at `addr` lie inside one of the blocks. -/
 def Blocks.Inside {w : Nat} (addr : BitVec w) (n : Nat) : List (BitVec w × Nat) → Prop
@@ -319,18 +364,11 @@ theorem Blocks.loadInt_isSome {w : Nat} {bs : List (BitVec w × Nat)} {F : Mem w
   | nil => exact hin.elim
   | cons p bs ih =>
     obtain ⟨a, len⟩ := p
-    cases bs with
-    | nil =>
-      rcases hin with hin | hin
-      · exact Block.loadInt_isSome h hin
-      · exact hin.elim
-    | cons q bs =>
-      have h' : m =⋆ Block a len ⋆ (Blocks (q :: bs) ⋆ F) := by
-        rw [← sep_assoc]; exact h
-      rcases hin with hin | hin
-      · exact Block.loadInt_isSome h' hin
-      · rw [sep_comm_l] at h'
-        exact ih h' hin
+    obtain ⟨-, h'⟩ := Blocks.cons_elim h
+    rcases hin with hin | hin
+    · exact Block.loadInt_isSome h' hin
+    · rw [sep_comm_l] at h'
+      exact ih h' hin
 
 /-- A store inside one of the blocks keeps all of them. -/
 theorem Blocks.storeInt {w : Nat} {bs : List (BitVec w × Nat)} {F : Mem w → Prop}
@@ -341,20 +379,12 @@ theorem Blocks.storeInt {w : Nat} {bs : List (BitVec w × Nat)} {F : Mem w → P
   | nil => exact hin.elim
   | cons p bs ih =>
     obtain ⟨a, len⟩ := p
-    cases bs with
-    | nil =>
-      rcases hin with hin | hin
-      · exact Block.storeInt h hin v
-      · exact hin.elim
-    | cons q bs =>
-      have h' : m =⋆ Block a len ⋆ (Blocks (q :: bs) ⋆ F) := by
-        rw [← sep_assoc]; exact h
-      show (Block a len ⋆ Blocks (q :: bs) ⋆ F) (m.storeInt addr n v)
-      rw [sep_assoc]
-      rcases hin with hin | hin
-      · exact Block.storeInt h' hin v
-      · rw [sep_comm_l] at h' ⊢
-        exact ih h' hin
+    obtain ⟨hw, h'⟩ := Blocks.cons_elim h
+    refine Blocks.cons_intro hw ?_
+    rcases hin with hin | hin
+    · exact Block.storeInt h' hin v
+    · rw [sep_comm_l] at h' ⊢
+      exact ih h' hin
 
 grind_pattern Blocks.Inside.tail => Blocks.Inside addr n (p :: bs)
 grind_pattern Blocks.Inside.base => Blocks.Inside a n ((a, len) :: bs)
@@ -368,6 +398,9 @@ grind_pattern Blocks.Inside.ptr => Blocks.Inside p n ((a, len) :: bs), p - a
 grind_pattern Blocks.Inside.ptr_add => Blocks.Inside (p + x) n ((a, len) :: bs), p - a
 grind_pattern Blocks.loadInt_isSome => sep (Blocks bs) F m, Mem.loadInt m addr n
 grind_pattern Blocks.storeInt => sep (Blocks bs) F m, Mem.storeInt m addr n v
+grind_pattern Blocks.noWrap => sep (Blocks bs) F m
+grind_pattern Blocks.NoWrap.head => Blocks.NoWrap ((a, len) :: bs)
+grind_pattern Blocks.NoWrap.tail => Blocks.NoWrap (p :: bs)
 
 /-! ## Readable addresses across stores
 

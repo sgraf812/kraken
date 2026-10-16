@@ -117,6 +117,8 @@ theorem butterflies_float_terminates_and_safe
     (h_v2_len : v2.length = len * 4)
     (h_v1_aligned : isAligned 16 s₀.regs.rdi.toBitVec)
     (h_v2_aligned : isAligned 16 s₀.regs.rsi.toBitVec)
+    (h_v1_nw : s₀.regs.rdi.toBitVec.toNat + len * 4 < 2 ^ 64)
+    (h_v2_nw : s₀.regs.rsi.toBitVec.toNat + len * 4 < 2 ^ 64)
     (R : DataMem → Prop)
     (h_mem : s₀.dmem =⋆ Eq (v1.At s₀.regs.rdi.toBitVec) ⋆ Eq (v2.At s₀.regs.rsi.toBitVec) ⋆ R) :
     Eventually (straightlineStep (layout butterflies_float_prog))
@@ -127,11 +129,22 @@ theorem butterflies_float_terminates_and_safe
           s'.1.dmem =⋆ Eq (v1'.At s₀.regs.rdi.toBitVec) ⋆ Eq (v2'.At s₀.regs.rsi.toBitVec) ⋆ R)
       (s₀, Kraken.Layout.start Directive) := by
   have hw : len * 4 ≤ 2 ^ 64 := by omega
-  obtain ⟨m12, mR, hu, hi, ⟨m1, m2, hu', hi', rfl, rfl⟩, hR⟩ := h_mem
+  have h_blocks : s₀.dmem =⋆
+      Mem.Blocks [(s₀.regs.rdi.toBitVec, len * 4), (s₀.regs.rsi.toBitVec, len * 4)] ⋆ R := by
+    refine Mem.Blocks.cons_intro h_v1_nw (Mem.Block.sep_intro h_v1_len hw ?_)
+    rw [Std.ExtHashMap.sep_comm_l]
+    refine Mem.Blocks.cons_intro h_v2_nw (Mem.Block.sep_intro h_v2_len hw ?_)
+    simp only [Mem.Blocks, Std.ExtHashMap.emp_sep]
+    rwa [Std.ExtHashMap.sep_comm_l, ← Std.ExtHashMap.sep_assoc]
   refine eventually_weaken _ _ _ _ ?_ (Program.run_of_triple
     (butterflies_correct s₀ len h_len_reg h_len_mod h_len_bound h_len_gt h_v1_aligned
-      h_v2_aligned R
-      ⟨_, mR, hu, hi, ⟨_, _, hu', hi', ⟨hw, v1, h_v1_len, rfl⟩, ⟨hw, v2, h_v2_len, rfl⟩⟩, hR⟩)
-    rfl)
-  rintro s' ⟨m12, mR, hu, hi, ⟨m1, m2, hu', hi', ⟨-, v1', h1, rfl⟩, ⟨-, v2', h2, rfl⟩⟩, hR⟩
-  exact ⟨v1', v2', h1, h2, _, mR, hu, hi, ⟨_, _, hu', hi', rfl, rfl⟩, hR⟩
+      h_v2_aligned R h_blocks) rfl)
+  intro s' h
+  obtain ⟨-, h⟩ := Mem.Blocks.cons_elim h
+  obtain ⟨-, v1', h1, h⟩ := Mem.Block.sep_elim h
+  rw [Std.ExtHashMap.sep_comm_l] at h
+  obtain ⟨-, h⟩ := Mem.Blocks.cons_elim h
+  obtain ⟨-, v2', h2, h⟩ := Mem.Block.sep_elim h
+  simp only [Mem.Blocks, Std.ExtHashMap.emp_sep] at h
+  rw [Std.ExtHashMap.sep_comm_l, ← Std.ExtHashMap.sep_assoc] at h
+  exact ⟨v1', v2', h1, h2, h⟩
