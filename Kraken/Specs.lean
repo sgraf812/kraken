@@ -197,7 +197,7 @@ def StatusFlags.ofLogic {w} (v : BitVec w) (af : Bool) : StatusFlags :=
     (StatusFlags.ofSub a b).sf = (a - b).msb := rfl
 @[simp] theorem StatusFlags.of_ofSub {w} (a b : BitVec w) :
     (StatusFlags.ofSub a b).of = ((a - b).signed != a.signed - b.signed) := rfl
-@[grind =] theorem StatusFlags.neg_ofSub (a b : BitVec 64) :
+theorem StatusFlags.neg_ofSub (a b : BitVec 64) :
     (StatusFlags.ofSub a b).neg
       = decide ((a.toNat + 2 ^ 63) % 2 ^ 64 < (b.toNat + 2 ^ 63) % 2 ^ 64) := by
   rw [StatusFlags.neg, StatusFlags.sf_ofSub, StatusFlags.of_ofSub]
@@ -205,6 +205,11 @@ def StatusFlags.ofLogic {w} (v : BitVec w) (af : Bool) : StatusFlags :=
       = decide (a.toInt < b.toInt) := by
     grind [BitVec.signed_eq]
   simp only [this, BitVec.toInt_lt_toInt_iff_flip]
+@[grind =] theorem StatusFlags.neg_ofSub_of_lt (a b : BitVec 64)
+    (ha : a.toNat < 2 ^ 63) (hb : b.toNat < 2 ^ 63) :
+    (StatusFlags.ofSub a b).neg = decide (a.toNat < b.toNat) := by
+  rw [StatusFlags.neg_ofSub, Nat.mod_eq_of_lt (by omega), Nat.mod_eq_of_lt (by omega)]
+  simp
 
 @[grind =] theorem CondCode.interp_a_ofSub {w} (a b : BitVec w) :
     CondCode.a.interp (StatusFlags.ofSub a b) = decide (b.toNat < a.toNat) := by
