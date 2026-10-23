@@ -304,6 +304,31 @@ theorem Blocks.Inside.add_base_add {w : Nat} {a c x : BitVec w} {n len : Nat}
     rw [BitVec.add_comm c a, BitVec.add_assoc, BitVec.add_comm, BitVec.add_sub_cancel]
     exact h)
 
+theorem Blocks.Inside.sub {w : Nat} {a p x : BitVec w} {n len : Nat}
+    {bs : List (BitVec w × Nat)} (hx : x.toNat ≤ (p - a).toNat) (h : (p - a).toNat - x.toNat + n ≤ len) :
+    Blocks.Inside (p - x) n ((a, len) :: bs) := by
+  refine Or.inl ?_
+  rw [show p - x - a = (p - a) - x by
+    rw [BitVec.sub_eq_add_neg, BitVec.sub_eq_add_neg, BitVec.sub_eq_add_neg, BitVec.sub_eq_add_neg,
+      BitVec.add_assoc, BitVec.add_comm (-x), ← BitVec.add_assoc], BitVec.toNat_sub_of_le hx]
+  exact h
+
+theorem Blocks.Inside.sub_sub {w : Nat} {a p x y : BitVec w} {n len : Nat}
+    {bs : List (BitVec w × Nat)} (hx : x.toNat + y.toNat ≤ (p - a).toNat)
+    (h : (p - a).toNat - x.toNat - y.toNat + n ≤ len) :
+    Blocks.Inside (p - x - y) n ((a, len) :: bs) := by
+  have hpx : (p - x - a).toNat = (p - a).toNat - x.toNat := by
+    rw [show p - x - a = (p - a) - x by
+      rw [BitVec.sub_eq_add_neg, BitVec.sub_eq_add_neg, BitVec.sub_eq_add_neg, BitVec.sub_eq_add_neg,
+        BitVec.add_assoc, BitVec.add_comm (-x), ← BitVec.add_assoc],
+      BitVec.toNat_sub_of_le (BitVec.le_def.mpr (by omega))]
+  exact Blocks.Inside.sub (by omega) (by omega)
+
+theorem Blocks.Inside.mono {w : Nat} {addr a : BitVec w} {n len len' : Nat}
+    {bs : List (BitVec w × Nat)} (h : Blocks.Inside addr n ((a, len) :: bs)) (hl : len ≤ len') :
+    Blocks.Inside addr n ((a, len') :: bs) :=
+  h.imp (fun h => by omega) id
+
 /-- An access at an offset `x` from a pointer `p` into a block, given the
 pointer's offset `p - a` from the base: the form in which a loop invariant
 tracks a moving pointer. -/
@@ -369,6 +394,9 @@ grind_pattern Blocks.Inside.base => Blocks.Inside a n ((a, len) :: bs)
 grind_pattern Blocks.Inside.base_add => Blocks.Inside (a + x) n ((a, len) :: bs)
 grind_pattern Blocks.Inside.base_add_sub => Blocks.Inside (a + x - y) n ((a, len) :: bs)
 grind_pattern Blocks.Inside.base_add_add => Blocks.Inside (a + c + x) n ((a, len) :: bs)
+grind_pattern Blocks.Inside.sub => Blocks.Inside (p - x) n ((a, len) :: bs), p - a
+grind_pattern Blocks.Inside.sub_sub => Blocks.Inside (p - x - y) n ((a, len) :: bs), p - a
+grind_pattern Blocks.Inside.mono => Blocks.Inside addr n ((a, len) :: bs), Blocks.Inside addr n ((a, len') :: bs)
 grind_pattern Blocks.Inside.add_base_add => Blocks.Inside (c + a + x) n ((a, len) :: bs)
 -- The pointer rule also needs the offset `p - a` among the terms, which an
 -- invariant about the pointer puts there. Otherwise any pointer into any block
@@ -598,6 +626,22 @@ def UnchangedOutside {w : Nat} (bs : List (BitVec w × Nat)) (m m' : Mem w) : Pr
 
 def Mapped {w : Nat} (bs : List (BitVec w × Nat)) (m : Mem w) : Prop :=
   ∀ b, Blocks.Inside b 1 bs → (m.get? b).isSome
+
+theorem UnchangedOutside.loadInt_singleton {w : Nat} {m m' : Mem w} {a b : BitVec w} {n len : Nat}
+    (h : UnchangedOutside [(b, len)] m m') (hl : len ≤ (a - b).toNat) (hw : (a - b).toNat + n ≤ 2 ^ w) :
+    m'.loadInt a n = m.loadInt a n := by
+  simp only [Mem.loadInt, Mem.loadBytes]
+  rw [List.map_congr_left (fun i hi => h _ fun hin => ?_)]
+  have hi := List.mem_range.mp hi
+  rcases hin with hin | hin
+  · rw [show a + BitVec.ofNat w i - b = (a - b) + BitVec.ofNat w i by
+      rw [BitVec.sub_eq_add_neg, BitVec.sub_eq_add_neg, BitVec.add_assoc, BitVec.add_comm _ (-b),
+        ← BitVec.add_assoc], BitVec.toNat_add, BitVec.toNat_ofNat, Nat.mod_eq_of_lt (a := i) (by omega),
+      Nat.mod_eq_of_lt (by omega)] at hin
+    omega
+  · exact hin
+
+grind_pattern UnchangedOutside.loadInt_singleton => UnchangedOutside [(b, len)] m m', Mem.loadInt m' a n
 
 def Blocks.Disjoint {w : Nat} (bs bs' : List (BitVec w × Nat)) : Prop :=
   ∀ b, Blocks.Inside b 1 bs → ¬ Blocks.Inside b 1 bs'
