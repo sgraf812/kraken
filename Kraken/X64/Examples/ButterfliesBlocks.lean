@@ -41,6 +41,8 @@ set_option experimental.vcgen true
 attribute [local grind =] BitVec.add_zero
 
 
+public section
+
 namespace State.ButterfliesBlocks
 
 /-- The program: the prologue moves both pointers to the end of their array
@@ -96,3 +98,5 @@ theorem butterflies_correct [Host] [FunDecls] (d : MachineData) (len : Nat)
   all_goals kvcgen64 with finish
 
 end State.ButterfliesBlocks
+
+end

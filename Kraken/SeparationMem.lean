@@ -453,11 +453,14 @@ def Bytes {w : Nat} (a : BitVec w) (bs : List UInt8) : Mem w → Prop := Eq (bs.
 def Contains {w : Nat} (m : Mem w) (a : BitVec w) (bs : List UInt8) : Prop :=
   ∀ i (h : i < bs.length), m.get? (a + .ofNat w i) = some bs[i]
 
-private theorem Blocks_cons_sep {w : Nat} (a : BitVec w) (len : Nat) (l : List (BitVec w × Nat))
+theorem Blocks_cons_sep {w : Nat} (a : BitVec w) (len : Nat) (l : List (BitVec w × Nat))
     (F : Mem w → Prop) : Blocks ((a, len) :: l) ⋆ F = Block a len ⋆ (Blocks l ⋆ F) := by
   cases l with
   | nil => rw [Blocks, Blocks, emp_sep]
   | cons b l => rw [Blocks, sep_assoc]
+
+theorem Blocks_nil_sep {w : Nat} (F : Mem w → Prop) : Blocks [] ⋆ F = F := by
+  rw [Blocks, emp_sep]
 
 theorem Blocks.storeInt_head {w : Nat} {a : BitVec w} {n : Nat} {l : List (BitVec w × Nat)}
     {F : Mem w → Prop} {m : Mem w} (h : m =⋆ Blocks ((a, n) :: l) ⋆ F) (v : Int) :
