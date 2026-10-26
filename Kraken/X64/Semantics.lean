@@ -1,13 +1,19 @@
+module
+
 -- The reference semantics are taken from https://www.felixcloutier.com/x86/,
 -- which itself is just extracted from https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html
 
 import Kraken.Attribute
-import Kraken.Float32Fma
-import Kraken.Layout
-import Kraken.Mem
-import Kraken.X64.Syntax
-import Lean
-import Std
+public import Kraken.Float32Fma
+public import Kraken.Layout
+public import Kraken.Mem
+meta import Kraken.Mem
+public import Kraken.X64.Syntax
+meta import Kraken.X64.Syntax
+public import Lean.ToExpr
+meta import Lean.Elab.Deriving.ToExpr
+
+@[expose] public section
 
 -- injective coercions only
 attribute [-instance] BitVec.instNatCast
@@ -223,8 +229,24 @@ def BitVec.toFloat32 (v : BitVec 32) : Float32 :=
 def Float32.toBitVec (f : Float32) : BitVec 32 :=
   UInt32.toBitVec (Float32.toBits f)
 
-/-- The three-operand sibling of `packedBinOp`: `op` on each `c`-bit chunk of
-`a`, `b` and `d`. -/
+/-- An SSE single-precision operation on one lane: a NaN operand propagates (quieted, the first
+operand winning), and an invalid operation gives the default NaN ("QNaN floating-point
+indefinite"). In binary32, `0x400000` is bit 22, the most significant fraction bit, which makes a
+NaN quiet; `0xffc00000` (sign set, exponent all ones, fraction `100…0`) is the default NaN.
+Lean's `Float32` can't express this: its logical model has a single NaN (all NaNs are equal), so
+every NaN result reads back as `0x7fc00000`. -/
+def sseBinOp (op : Float32 → Float32 → Float32) (a b : BitVec 32) : BitVec 32 :=
+  if a.toFloat32.isNaN then a ||| 0x400000#32
+  else if b.toFloat32.isNaN then b ||| 0x400000#32
+  else let r := op a.toFloat32 b.toFloat32; if r.isNaN then 0xffc00000#32 else r.toBitVec
+
+def sseTernOp (op : Float32 → Float32 → Float32 → Float32) (a b c : BitVec 32) : BitVec 32 :=
+  if a.toFloat32.isNaN then a ||| 0x400000#32
+  else if b.toFloat32.isNaN then b ||| 0x400000#32
+  else if c.toFloat32.isNaN then c ||| 0x400000#32
+  else let r := op a.toFloat32 b.toFloat32 c.toFloat32
+    if r.isNaN then 0xffc00000#32 else r.toBitVec
+
 def BitVec.packedTernOp {w : Nat} (c : Nat) (op : BitVec c → BitVec c → BitVec c → BitVec c)
     (a b d : BitVec w) : BitVec w :=
   if _ : c = 0 ∨ w < c then
@@ -236,24 +258,6 @@ def BitVec.packedTernOp {w : Nat} (c : Nat) (op : BitVec c → BitVec c → BitV
 termination_by w
 decreasing_by omega
 
-/-! Single-precision lane arithmetic, on the bits of a lane. The model rounds
-to nearest, ties to even (MXCSR is not modeled). -/
-
-/-- `a + b` on single-precision lanes. -/
-def BitVec.f32add (a b : BitVec 32) : BitVec 32 :=
-  Float32.toBitVec (BitVec.toFloat32 a + BitVec.toFloat32 b)
-
-/-- `a * b` on single-precision lanes. -/
-def BitVec.f32mul (a b : BitVec 32) : BitVec 32 :=
-  Float32.toBitVec (BitVec.toFloat32 a * BitVec.toFloat32 b)
-
-/-- `a * b + c` on single-precision lanes, rounded once. -/
-def BitVec.f32fma (a b c : BitVec 32) : BitVec 32 :=
-  Float32.toBitVec
-    (Kraken.Float32.fma (BitVec.toFloat32 a) (BitVec.toFloat32 b) (BitVec.toFloat32 c))
-
-/-- One 128-bit lane of `shufps`: the low two floats of the result come from
-`a` and the high two from `b`, each picked by two bits of `imm`. -/
 def BitVec.shufps128 (imm : UInt8) (a b : BitVec 128) : BitVec 128 :=
   let pick (x : BitVec 128) (k : Nat) : BitVec 32 :=
     x.extractLsb' (32 * ((imm.toNat >>> k) % 4)) 32
@@ -296,8 +300,12 @@ instance (w : AvxWidth) : NondetSupportingType w.type := .avx_bitvec w
 instance : NondetSupportingType Bool := .bool
 instance : NondetSupportingType StatusFlags := .statusFlags
 
+structure MachineState where
+  data : MachineData
+  pc : Int64
+
 inductive Effects
-  | done (a : MachineData × Int64)
+  | done (a : MachineState)
   | unimplemented (msg : String)
   | gp_unaligned (addr : BitVec 64) (w : Nat)
   -- loads and stores *outside* the data memory, eg. MMIO, might still affect the data memory:
@@ -451,10 +459,14 @@ match o with
 
 @[kstep]
 def CondCode.interp (cc : CondCode) (s : StatusFlags) : Bool := match cc with
-  | .z  => s.zf | .nz => !s.zf | .c  => s.cf | .nc => !s.cf
-  | .a  => !s.cf && !s.zf | .be => s.cf || s.zf
-  | .l => s.sf != s.of | .le => (s.sf != s.of) || s.zf
-  | .ge => s.sf == s.of | .g => !s.zf && (s.sf == s.of)
+  | .o  => s.of | .no => !s.of
+  | .c  => s.cf | .nc => !s.cf
+  | .z  => s.zf | .nz => !s.zf
+  | .be => s.cf || s.zf | .a  => !s.cf && !s.zf
+  | .s  => s.sf | .ns => !s.sf
+  | .p  => s.pf | .np => !s.pf
+  | .l  => s.sf != s.of | .ge => s.sf == s.of
+  | .le => (s.sf != s.of) || s.zf | .g  => !s.zf && (s.sf == s.of)
 
 @[kstep] def ShiftCountExpr.interp [Labels] (c : ShiftCountExpr) (s : MachineData) (p : Std.Rco Int64) := match c with
   | .cl => s.regs.rcx.toBitVec.take 8
@@ -669,7 +681,8 @@ set_option maxHeartbeats 1000000
   | .shl dst count =>
     dst.interp s p (fun a s =>
     let count := count.interpMasked s p w
-    if count == 0 then next s else
+    -- A zero count leaves flags unchanged but still writes dst, zero-extending 32-bit registers.
+    if count == 0 then s.set dst a p next else
     let v := a <<< count
     undefined (λ af =>
     (λ setcf => if count < w.bits then setcf (a <<< (count-1)).msb else undefined setcf) (λ cf =>
@@ -678,7 +691,7 @@ set_option maxHeartbeats 1000000
   | .shr dst count =>
     dst.interp s p (fun a s =>
     let count := count.interpMasked s p w
-    if count == 0 then next s else
+    if count == 0 then s.set dst a p next else
     let v := a.ushiftRight count
     undefined (λ af =>
     (λ setcf => if count < w.bits then setcf (a.getLsbD (count-1)) else undefined setcf) (λ cf =>
@@ -687,40 +700,43 @@ set_option maxHeartbeats 1000000
   | .sar dst count =>
     dst.interp s p (fun a s =>
     let count := count.interpMasked s p w
-    if count == 0 then next s else
+    if count == 0 then s.set dst a p next else
     let v := a.sshiftRight count
+    let cf := (a.sshiftRight (count-1)).getLsbD 0
     undefined (λ af =>
-    (λ setcf => if count < w.bits then setcf (a.getLsbD (count-1)) else undefined setcf) (λ cf =>
     (λ setof => if count == 1 then setof false else undefined setof) (λ of =>
-    { s with status := .from_result v { s.status with cf, af, of } }.set dst v p next))))
+    { s with status := .from_result v { s.status with cf, af, of } }.set dst v p next)))
   | .shrd dst src count =>
     dst.interp s p (fun a s =>
     src.interp s p (fun b s =>
     let count := count.interpMasked s p w
-    if count == 0 then next s else
+    if count == 0 then s.set dst a p next else
     let v := (((b.append a) >>> count).take w.bits).setWidth _
-    (λ setstatus => if count >= w.bits then undefined setstatus else
+    (λ setstatus => if count > w.bits then undefined setstatus else
       let cf := a.getLsbD (count-1)
       undefined (λ af =>
       (λ setof => if count == 1 then setof (v.msb != a.msb) else undefined setof) (λ of =>
       setstatus (.from_result v { cf, af, of})))) (λ status =>
-    { s with status }.set dst v p next)))
+    -- The result is undefined if the count exceeds the operand size (only possible for 16 bits).
+    (λ setv => if count > w.bits then undefined setv else setv v) (λ v =>
+    { s with status }.set dst v p next))))
   | .shld dst src count =>
     dst.interp s p (fun a s =>
     src.interp s p (fun b s =>
     let count := count.interpMasked s p w
-    if count == 0 then next s else
+    if count == 0 then s.set dst a p next else
     let v := (((a.append b) <<< count).drop w.bits).setWidth _
-    (λ setstatus => if count >= w.bits then undefined setstatus else
+    (λ setstatus => if count > w.bits then undefined setstatus else
       let cf := (a <<< (count-1)).msb
       undefined (λ af =>
       (λ setof => if count == 1 then setof (v.msb != a.msb) else undefined setof) (λ of =>
       setstatus (.from_result v { cf, af, of})))) (λ status =>
-    { s with status }.set dst v p next)))
+    (λ setv => if count > w.bits then undefined setv else setv v) (λ v =>
+    { s with status }.set dst v p next))))
   | .rol dst count =>
     dst.interp s p (fun a s =>
     let count := count.interpMasked s p w
-    if count == 0 then next s else
+    if count == 0 then s.set dst a p next else
     let v := a.rotateLeft count
     let cf := v.getLsbD 0
     (λ setof => if count == 1 then setof (v.msb != a.msb) else undefined setof) (λ of =>
@@ -728,7 +744,7 @@ set_option maxHeartbeats 1000000
   | .ror dst count =>
     dst.interp s p (fun a s =>
     let count := count.interpMasked s p w
-    if count == 0 then next s else
+    if count == 0 then s.set dst a p next else
     let v := a.rotateRight count
     let cf := v.msb
     (λ setof => if count == 1 then setof (v.msb != a.msb) else undefined setof) (λ of =>
@@ -736,7 +752,7 @@ set_option maxHeartbeats 1000000
   | .rcr dst count =>
     dst.interp s p (fun a s =>
     let count := count.interpMasked s p w
-    if count == 0 then next s else
+    if count == 0 then s.set dst a p next else
     let t := (BitVec.ofBool s.status.cf ++ a).rotateRight count
     let (cf, v) := (t.msb, t.take w.bits)
     (λ setof => if count == 1 then setof (v.msb != a.msb) else undefined setof) (λ of =>
@@ -744,7 +760,7 @@ set_option maxHeartbeats 1000000
   | .rcl dst count =>
     dst.interp s p (fun a s =>
     let count := count.interpMasked s p w
-    if count == 0 then next s else
+    if count == 0 then s.set dst a p next else
     let t := (BitVec.ofBool s.status.cf ++ a).rotateLeft count
     let (cf, v) := (t.msb, t.take w.bits)
     (λ setof => if count == 1 then setof (v.msb != a.msb) else undefined setof) (λ of =>
@@ -791,32 +807,19 @@ match i with
   | .subps dst src =>
     src.interp s p (checkAlign := true) (fun a s =>
     dst.interp s p (fun b s =>
-      let v := BitVec.packedBinOp 32 (fun dst_chunk src_chunk =>
-        let f_dst := BitVec.toFloat32 dst_chunk
-        let f_src := BitVec.toFloat32 src_chunk
-        Float32.toBitVec (f_dst - f_src)
-      ) b a
-      s.setAvxLegacy dst v p next))
+      s.setAvxLegacy dst (BitVec.packedBinOp 32 (sseBinOp (· - ·)) b a) p next))
   | .addps dst src =>
     src.interp s p (checkAlign := true) (fun a s =>
     dst.interp s p (fun b s =>
-      let v := BitVec.packedBinOp 32 (fun dst_chunk src_chunk =>
-        let f_dst := BitVec.toFloat32 dst_chunk
-        let f_src := BitVec.toFloat32 src_chunk
-        Float32.toBitVec (f_dst + f_src)
-      ) b a
-      s.setAvxLegacy dst v p next))
+      s.setAvxLegacy dst (BitVec.packedBinOp 32 (sseBinOp (· + ·)) b a) p next))
   | .mulps dst src =>
     src.interp s p (checkAlign := true) (fun a s =>
     dst.interp s p (fun b s =>
-      s.setAvxLegacy dst (BitVec.packedBinOp 32 BitVec.f32mul b a) p next))
+      s.setAvxLegacy dst (BitVec.packedBinOp 32 (sseBinOp (· * ·)) b a) p next))
   | .xorps dst src =>
     src.interp s p (checkAlign := true) (fun a s =>
     dst.interp s p (fun b s =>
       s.setAvxLegacy dst (b ^^^ a) p next))
-  -- VEX-encoded forms: a register destination is written with the bits above
-  -- the operation width cleared, and only `vmovaps` requires an aligned memory
-  -- operand.
   | .vmovaps dst src =>
     src.interp s p (checkAlign := true)
       (fun val s => s.setAvx dst val p (checkAlign := true) next)
@@ -825,14 +828,15 @@ match i with
       next (s.setAvxReg dst (s.zmms.get src1 ^^^ b)))
   | .vaddps dst src1 src2 =>
     src2.interp s p (fun b s =>
-      next (s.setAvxReg dst (BitVec.packedBinOp 32 BitVec.f32add (s.zmms.get src1) b)))
+      next (s.setAvxReg dst (BitVec.packedBinOp 32 (sseBinOp (· + ·)) (s.zmms.get src1) b)))
   | .vmulps dst src1 src2 =>
     src2.interp s p (fun b s =>
-      next (s.setAvxReg dst (BitVec.packedBinOp 32 BitVec.f32mul (s.zmms.get src1) b)))
+      next (s.setAvxReg dst (BitVec.packedBinOp 32 (sseBinOp (· * ·)) (s.zmms.get src1) b)))
   | .vfmadd231ps dst src1 src2 =>
     src2.interp s p (fun b s =>
       next (s.setAvxReg dst
-        (BitVec.packedTernOp 32 BitVec.f32fma (s.zmms.get src1) b (s.zmms.get dst))))
+        (BitVec.packedTernOp 32 (sseTernOp fun d x y => Kraken.Float32.fma x y d)
+          (s.zmms.get dst) (s.zmms.get src1) b)))
   | .vshufps dst src1 src2 imm =>
     src2.interp s p (fun b s =>
       next (s.setAvxReg dst (BitVec.packedBinOp 128 (BitVec.shufps128 imm) (s.zmms.get src1) b)))
@@ -848,7 +852,7 @@ match i with
     let a := s.zmms.get src1
     let b := s.zmms.get src2
     next (s.setAvxReg dst
-      (a.extractLsb' 32 96 ++ BitVec.f32add (a.extractLsb' 0 32) (b.extractLsb' 0 32)))
+      (a.extractLsb' 32 96 ++ sseBinOp (· + ·) (a.extractLsb' 0 32) (b.extractLsb' 0 32)))
   | .vzeroupper => next { s with zmms := s.zmms.zeroUpper }
 
 @[kstep]
@@ -872,33 +876,31 @@ def Instr.interp [Labels]
   | .byteArray _ => .unimplemented s!"Unimplemented: execution reached data block at {p.1}"
 
 def Directives.interp [Labels]
-  (ds : List (Directive × Nat)) (s : MachineData) (pc : Int64)
-  (ret : Int64 → MachineData → Effects) : Effects :=
+  (ds : List (Kraken.Sized Directive)) (s : MachineData) (pc : Int64)
+  (ret : Int64 → MachineData → Effects) (jmp : Int64 → MachineData → Effects := ret) : Effects :=
   match ds with
   | [] => ret pc s
-  | (d, sz) :: ds =>
-    d.interp s (.mk pc (pc+.ofNat sz)) (jmp:=ret) (next := (fun s =>
-    interp ds s (pc+.ofNat sz) ret))
+  | {directive, size := sz} :: ds =>
+    directive.interp s (.mk pc (pc+.ofNat sz)) (jmp:=jmp) (next := (fun s =>
+    interp ds s (pc+.ofNat sz) ret jmp))
 
 abbrev Layout := Kraken.Layout Directive
 
 @[reducible]
 def Executable.labels (e : Executable) : Labels :=
   { label l := (e.withAddresses.findSome?
-      (fun (p, d, _) => if d = .label l then .some p else .none)).getD (-1) }
+      (fun {directive, addr, ..} => if directive = .label l then .some addr else .none)).getD (-1) }
 
-def Executable.directivesFromLabel (e : Executable) (l : Label) : List (Directive × Nat) :=
-  e.2.dropWhile (·.1 != .label l)
-
-abbrev MachineState := MachineData × Int64
+def Executable.directivesFromLabel (e : Executable) (l : Label) : List (Kraken.Sized Directive) :=
+  e.program.dropWhile (·.directive != .label l)
 
 def Executable.step (e : Executable) (s : MachineState) (ret : MachineState → Effects) : Effects :=
   let := Executable.labels e
-  Directives.interp (e.directivesAtAddress s.2) s.1 s.2 (fun pc s => ret (s, pc))
+  Directives.interp (e.directivesAtAddress s.pc) s.data s.pc (fun pc s => ret ⟨s, pc⟩)
 
 def Executable.straightline (e : Executable) (s : MachineState) (ret : MachineState → Effects) : Effects :=
   let := Executable.labels e
-  Directives.interp (e.directivesFromAddress s.2) s.1 s.2 (fun pc s => ret (s, pc))
+  Directives.interp (e.directivesFromAddress s.pc) s.data s.pc (fun pc s => ret ⟨s, pc⟩)
 
 -- -- Concrete evaluators for expedient testing
 
@@ -942,4 +944,4 @@ abbrev eval [layout : Layout] (prog : Program) := Executable.eval (layout prog)
     .instr (.regular .W64 .W64 .ret) ]
   let start := (Executable.labels exe).label "main"
   let data : MachineData := { dmem := Mem.storeInt {} 0x100 8 0x1337, regs := {rsp := 0x100} }
-  (Executable.eval exe (data, start) (fun (_, pc) => pc = 0x1337)).bind (fun s => .ok s.1.regs.rax)
+  (Executable.eval exe {data, pc := start} (fun st => st.pc = 0x1337)).bind (fun s => .ok s.1.regs.rax)

@@ -1,3 +1,5 @@
+module
+
 /-
 Kraken AArch64 - Example Programs
 
@@ -11,6 +13,8 @@ import Kraken.AArch64.Sep
 import Kraken.Eval
 import Kraken.SeparationTactics
 import Kraken.Tactics
+import Std.Tactic.BVDecide
+
 
 open Kraken.AArch64
 open Kraken.AArch64.Parser
@@ -21,14 +25,9 @@ attribute [ksimp]
   BitVec.ofInt_ofNat
   BitVec.ofInt_toInt
   BitVec.ofNat_uInt64ToNat
-  BitVec.reduceOfInt
   BitVec.setWidth_eq
   Int.add_zero
-  Int.reduceBmod
-  Int.reduceNeg
-  Int64.reduceToInt
   Int64.toInt_neg
-  Nat.reducePow
   Nat.shiftRight_zero
   Nat.sub_zero
   UInt64.ofBitVec_add
@@ -49,7 +48,7 @@ def swap : Program := parseAArch64("
   eor x0, x0, x1")
 
 theorem swap_correct [layout : Layout] (d : MachineData) :
-    straightlineStep (layout swap) (d, layout.start)
+    straightlineStep (layout swap) ⟨d, layout.start⟩
     (fun s' =>
         s'.1.regs.getRegOrZr .X0 = d.regs.getRegOrZr .X1 ∧
         s'.1.regs.getRegOrZr .X1 = d.regs.getRegOrZr .X0) := by
@@ -64,17 +63,12 @@ def arith_shift : Program := parseAArch64("
   sub x3, x2, x0
 ")
 
-/- Parked at the merge with the machine-founded wp branch: on the
-pr-release-15067 toolchain `bv_decide` abstracts `BitVec.ofInt 64
-(Int64.toInt c)` literals as opaque instead of folding them, and the goal no
-longer closes. Re-enable when the toolchain and the kstep pipeline agree on
-the literal normal form.
 theorem arith_shift_correct [layout : Layout] (d : MachineData) :
-    straightlineStep (layout arith_shift) (d, layout.start) (fun s' =>
+    straightlineStep (layout arith_shift) ⟨d, layout.start⟩ (fun s' =>
       s'.1.regs.getRegOrZr .X3 = 3 * (d.regs.getRegOrZr .X1 + 42)) := by
   kprologue arith_shift with d
   sym => kstep; tactic =>
-  simp only [show BitVec.ofInt 64 (Int64.toInt 42) = 42#64 from rfl,
+  simp (config := { zetaDelta := true }) only [show BitVec.ofInt 64 (Int64.toInt 42) = 42#64 from rfl,
     show (Int64.toInt 0).toNat = 0 from rfl]
   bv_decide
 
@@ -86,17 +80,11 @@ start:
   cbnz x0, start
   mov x1, #42
 ")
--/
 
-/- Parked at the merge with the machine-founded wp branch: on the
-pr-release-15067 toolchain `bv_decide` abstracts `BitVec.ofInt 64
-(Int64.toInt c)` literals as opaque instead of folding them, and the goal no
-longer closes. Re-enable when the toolchain and the kstep pipeline agree on
-the literal normal form.
 theorem p4_correct [layout : Layout] (d : MachineData) :
     Eventually (straightlineStep (layout controlflow))
       (fun s' => s'.1.regs.X1 = 42)
-      (d, layout.start) := by
+      ⟨d, layout.start⟩ := by
   apply step_cps
   kprologue controlflow with d
   sym => kstep; tactic =>
@@ -105,8 +93,8 @@ theorem p4_correct [layout : Layout] (d : MachineData) :
   simp [this]
   sym => kstep; tactic =>
   apply Eventually.done
+  simp (config := { zetaDelta := true }) only [show BitVec.ofInt 64 (Int64.toInt 42) = 42#64 from rfl]
   bv_decide
--/
 
 -- Example 5: Storing and loading registers to/from memory
 open Std
@@ -128,7 +116,7 @@ theorem move_2_regs_to_heap_correct [layout : Layout] (s₀ : MachineData)
         s'.1.regs.X3 = s₀.regs.X0 ∧
         s'.1.regs.X4 = s₀.regs.X1 ∧
         s'.1.regs.X2 = s₀.regs.X2)
-      (s₀, layout.start) := by
+      ⟨s₀, layout.start⟩ := by
   apply step_cps
   kprologue move_2_regs_to_heap with s₀
 
@@ -156,7 +144,8 @@ theorem move_2_regs_to_heap_correct [layout : Layout] (s₀ : MachineData)
   kstep
   tactic =>
   apply Eventually.done
-  rw [BitVec.ofInt_ofBytes_toBytes 64 8 rfl, BitVec.ofInt_ofBytes_toBytes 64 8 rfl]
+  rw [BitVec.ofInt_ofBytes_toBytes 64 8 rfl, BitVec.ofInt_ofBytes_toBytes 64 8 rfl, BitVec.ofInt_toInt,
+    BitVec.ofInt_toInt]
   exact ⟨rfl, rfl, rfl⟩
 
 -- Example 6: Memory access with shifted register offset [x1, x2, lsl #3]
@@ -172,7 +161,7 @@ theorem reg_offset_example_correct [layout : Layout] (s₀ : MachineData)
     (h_mem : s₀.dmem =⋆ Eq (v.At (s₀.regs.X1.toBitVec + BitVec.ofInt 64 (s₀.regs.X2.toBitVec.toNat <<< 3))) ⋆ R) :
     Eventually (straightlineStep (layout reg_offset_example))
       (fun s' => s'.1.regs.X3 = 42)
-      (s₀, layout.start) := by
+      ⟨s₀, layout.start⟩ := by
   apply step_cps
   kprologue reg_offset_example with s₀
   have h_bs : v.toBytes.length = 8 := UInt64.toBytes_length v

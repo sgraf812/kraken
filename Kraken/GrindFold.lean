@@ -1,3 +1,5 @@
+module
+
 /-
 Userspace `grind` propagators that constant-fold ground `BitVec` arithmetic.
 
@@ -9,8 +11,10 @@ propagators materialize a ground `BitVec` sum (and the `Nat` sum feeding the
 carry comparison) as an e-class literal, so each carry collapses to `false`
 before the next instruction.
 -/
-import Lean.Meta.Tactic.Grind.Simp
-import Lean.Meta.Tactic.Grind.PropagatorAttr
+public import Lean.Meta.Tactic.Grind.Simp
+public import Lean.Meta.Tactic.Grind.PropagatorAttr
+
+public section
 
 open Lean Lean.Meta Lean.Meta.Grind
 

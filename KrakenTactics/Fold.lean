@@ -1,3 +1,5 @@
+module
+
 /-
 `kfold`: fold a verification condition along its state chain in one pass, and
 the rewrite set `vcgen simplifying_assumptions` normalizes each state literal
@@ -10,11 +12,13 @@ pointer, and looking one up is a single hash probe. `Sym.Simp` then expands each
 state exactly once as it traverses the goal bottom-up, caching by pointer, and
 collapses the value on the spot.
 -/
-import Lean
-import Kraken.Specs
-import Kraken.StateSimp
-import KrakenTactics.ClearDead
-import Std.Tactic.BVDecide
+public import Lean
+public import Kraken.Specs
+public import Kraken.StateSimp
+public import KrakenTactics.ClearDead
+public import Std.Tactic.BVDecide
+
+public section
 
 open Lean Meta Elab Tactic Sym Sym.Simp
 

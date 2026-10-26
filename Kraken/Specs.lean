@@ -1,36 +1,25 @@
+module
+
 /-
-The register and system-state read-over-write API the spec framework discharges
-against: `Sys D` and its projections, register reads over `set64` (both the
-indexed `get64` and the per-field accessors), the `MachineData` record
-projections, and the `StatusFlags`/`BitVec` reductions the flag and address
-arithmetic normalize with.
+The register read-over-write API the spec framework discharges against:
+register reads over `set64` (both the indexed `get64` and the per-field
+accessors), the `MachineData` record projections, and the
+`StatusFlags`/`BitVec` reductions the flag and address arithmetic normalize
+with.
 -/
-import Kraken.X64.OmniSemantics
-import Kraken.GrindFold
-import Std.Tactic.Do
+public import Kraken.X64.OmniSemantics
+public import Kraken.X64.Registers
+public import Kraken.GrindFold
+public import Std.Tactic.Do
+public import Std.WP
+import Std.Tactic.BVDecide
+
+@[expose] public section
 
 open Std.WP
-open Std.WP.WPMonad
 
 set_option mvcgen.warning false
 set_option grind.warning false
-
-/-! ## System state
-
-The denotational monad runs over `Sys D`: the CPU `MachineData` plus a device
-state `D`. Instruction primitives update `machine` and thread `device`; a `jump`
-carries the whole `Sys D` in the exception, so `device` survives control transfer.
-The projection-over-`mk` lemmas let the state-simplification and `easm` fold a
-`Sys` update the way they already fold a `MachineData` update. -/
-
-structure Sys (D : Type) where
-  machine : MachineData
-  device : D
-
-@[simp] theorem Sys.machine_mk {D : Type} (m : MachineData) (d : D) :
-    (Sys.mk m d).machine = m := rfl
-@[simp] theorem Sys.device_mk {D : Type} (m : MachineData) (d : D) :
-    (Sys.mk m d).device = d := rfl
 
 /-! ## Address spelling -/
 
@@ -44,19 +33,6 @@ def AddrExpr.interp64 (labels : Labels) (a : AddrExpr) (s : Reg64s) (p : Std.Rco
 
 /-! ## `.unsigned`/`.signed` reductions -/
 @[grind hom] theorem BitVec.unsigned_hom {w} (x : BitVec w) : x.unsigned = (x.toNat : Int) := rfl
-@[simp] theorem BitVec.unsigned_eq {w} (x : BitVec w) : x.unsigned = (x.toNat : Int) := rfl
-@[simp] theorem BitVec.signed_eq {w} (x : BitVec w) : x.signed = x.toInt := rfl
-
-@[simp, grind =] theorem StatusFlags.cf_from_result {w} (v : BitVec w)
-    (f : StatusFlags.from_result.Remaining) :
-    (StatusFlags.from_result v f).cf = f.cf := rfl
-
-@[simp] theorem StatusFlags.from_result.Remaining.cf_mk (c a o : Bool) :
-    (StatusFlags.from_result.Remaining.mk c a o).cf = c := rfl
-
-@[simp, grind =] theorem StatusFlags.zf_from_result {w} (v : BitVec w)
-    (f : StatusFlags.from_result.Remaining) :
-    (StatusFlags.from_result v f).zf = (v == BitVec.zero w) := rfl
 
 @[simp, grind =] theorem StatusFlags.sf_from_result {w} (v : BitVec w)
     (f : StatusFlags.from_result.Remaining) :
@@ -68,91 +44,8 @@ def AddrExpr.interp64 (labels : Labels) (a : AddrExpr) (s : Reg64s) (p : Std.Rco
 
 /-! ## Condition-code reductions, one lemma per code -/
 
-@[simp, grind =] theorem CondCode.interp_z (s : StatusFlags) :
-    CondCode.z.interp s = s.zf := rfl
-@[simp, grind =] theorem CondCode.interp_nz (s : StatusFlags) :
-    CondCode.nz.interp s = !s.zf := rfl
-@[simp, grind =] theorem CondCode.interp_c (s : StatusFlags) :
-    CondCode.c.interp s = s.cf := rfl
-@[simp, grind =] theorem CondCode.interp_nc (s : StatusFlags) :
-    CondCode.nc.interp s = !s.cf := rfl
-@[simp, grind =] theorem CondCode.interp_a (s : StatusFlags) :
-    CondCode.a.interp s = (!s.cf && !s.zf) := rfl
-@[simp, grind =] theorem CondCode.interp_be (s : StatusFlags) :
-    CondCode.be.interp s = (s.cf || s.zf) := rfl
-@[simp, grind =] theorem CondCode.interp_l (s : StatusFlags) :
-    CondCode.l.interp s = (s.sf != s.of) := rfl
-@[simp, grind =] theorem CondCode.interp_le (s : StatusFlags) :
-    CondCode.le.interp s = ((s.sf != s.of) || s.zf) := rfl
-@[simp, grind =] theorem CondCode.interp_ge (s : StatusFlags) :
-    CondCode.ge.interp s = (s.sf == s.of) := rfl
-@[simp, grind =] theorem CondCode.interp_g (s : StatusFlags) :
-    CondCode.g.interp s = (!s.zf && (s.sf == s.of)) := rfl
-
-/-! ## Signed comparisons
-
-`cmp` leaves the flags of `a - b`, and `jl`/`jge` read them as the signed order
-of `a` and `b`. The two rules below give that reading directly, as the unsigned
-order of the operands with their sign bits flipped. That spelling is linear
-arithmetic with a constant modulus, so `grind` does not case split on the signs
-of `a`, `b` and `a - b`, as it does when the flags unfold to `BitVec.toInt`. The
-hypothesis on `f` says that the overflow flag is the one a subtraction
-computes; `grind` discharges it by reducing the projection. -/
-
-theorem BitVec.toInt_lt_toInt_iff_flip (a b : BitVec 64) :
-    a.toInt < b.toInt ↔ (a.toNat + 2 ^ 63) % 2 ^ 64 < (b.toNat + 2 ^ 63) % 2 ^ 64 := by
-  have ha := a.isLt
-  have hb := b.isLt
-  rw [BitVec.toInt_eq_toNat_cond, BitVec.toInt_eq_toNat_cond]
-  split <;> split <;> omega
-
-theorem BitVec.toInt_le_toInt_iff_flip (a b : BitVec 64) :
-    a.toInt ≤ b.toInt ↔ (a.toNat + 2 ^ 63) % 2 ^ 64 ≤ (b.toNat + 2 ^ 63) % 2 ^ 64 := by
-  have ha := a.isLt
-  have hb := b.isLt
-  rw [BitVec.toInt_eq_toNat_cond, BitVec.toInt_eq_toNat_cond]
-  split <;> split <;> omega
-
-@[grind =] theorem CondCode.interp_l_sub (a b : BitVec 64)
-    (f : StatusFlags.from_result.Remaining)
-    (hf : f.of = ((a - b).signed != a.signed - b.signed)) :
-    CondCode.l.interp (StatusFlags.from_result (a - b) f)
-      = decide ((a.toNat + 2 ^ 63) % 2 ^ 64 < (b.toNat + 2 ^ 63) % 2 ^ 64) := by
-  rw [CondCode.interp_l, StatusFlags.sf_from_result, StatusFlags.of_from_result, hf]
-  have : ((a - b).msb != ((a - b).signed != a.signed - b.signed))
-      = decide (a.toInt < b.toInt) := by
-    grind [BitVec.signed_eq]
-  simp only [this, BitVec.toInt_lt_toInt_iff_flip]
-
-@[grind =] theorem CondCode.interp_ge_sub (a b : BitVec 64)
-    (f : StatusFlags.from_result.Remaining)
-    (hf : f.of = ((a - b).signed != a.signed - b.signed)) :
-    CondCode.ge.interp (StatusFlags.from_result (a - b) f)
-      = decide ((b.toNat + 2 ^ 63) % 2 ^ 64 ≤ (a.toNat + 2 ^ 63) % 2 ^ 64) := by
-  rw [CondCode.interp_ge, StatusFlags.sf_from_result, StatusFlags.of_from_result, hf]
-  have : ((a - b).msb == ((a - b).signed != a.signed - b.signed))
-      = decide (b.toInt ≤ a.toInt) := by
-    grind [BitVec.signed_eq]
-  simp only [this, BitVec.toInt_le_toInt_iff_flip]
-
 /-! ## Reading a named register, one lemma per field -/
 
-@[simp, grind =] theorem Reg64s.get64_rax (s : Reg64s) : s.get64 .rax = s.rax.toBitVec := rfl
-@[simp, grind =] theorem Reg64s.get64_rbx (s : Reg64s) : s.get64 .rbx = s.rbx.toBitVec := rfl
-@[simp, grind =] theorem Reg64s.get64_rcx (s : Reg64s) : s.get64 .rcx = s.rcx.toBitVec := rfl
-@[simp, grind =] theorem Reg64s.get64_rdx (s : Reg64s) : s.get64 .rdx = s.rdx.toBitVec := rfl
-@[simp, grind =] theorem Reg64s.get64_rsi (s : Reg64s) : s.get64 .rsi = s.rsi.toBitVec := rfl
-@[simp, grind =] theorem Reg64s.get64_rdi (s : Reg64s) : s.get64 .rdi = s.rdi.toBitVec := rfl
-@[simp, grind =] theorem Reg64s.get64_rsp (s : Reg64s) : s.get64 .rsp = s.rsp.toBitVec := rfl
-@[simp, grind =] theorem Reg64s.get64_rbp (s : Reg64s) : s.get64 .rbp = s.rbp.toBitVec := rfl
-@[simp, grind =] theorem Reg64s.get64_r8 (s : Reg64s) : s.get64 .r8 = s.r8.toBitVec := rfl
-@[simp, grind =] theorem Reg64s.get64_r9 (s : Reg64s) : s.get64 .r9 = s.r9.toBitVec := rfl
-@[simp, grind =] theorem Reg64s.get64_r10 (s : Reg64s) : s.get64 .r10 = s.r10.toBitVec := rfl
-@[simp, grind =] theorem Reg64s.get64_r11 (s : Reg64s) : s.get64 .r11 = s.r11.toBitVec := rfl
-@[simp, grind =] theorem Reg64s.get64_r12 (s : Reg64s) : s.get64 .r12 = s.r12.toBitVec := rfl
-@[simp, grind =] theorem Reg64s.get64_r13 (s : Reg64s) : s.get64 .r13 = s.r13.toBitVec := rfl
-@[simp, grind =] theorem Reg64s.get64_r14 (s : Reg64s) : s.get64 .r14 = s.r14.toBitVec := rfl
-@[simp, grind =] theorem Reg64s.get64_r15 (s : Reg64s) : s.get64 .r15 = s.r15.toBitVec := rfl
 
 /-! ## Register identity as a number
 
@@ -298,22 +191,14 @@ read back as a byte. -/
 @[simp, grind =] theorem MachineData.zmms_setReg (s : MachineData) {w} (r : Reg w) (v : w.type) :
     (s.setReg r v).zmms = s.zmms := rfl
 
-@[simp] theorem MachineData.regs_mk (r z st d) : (MachineData.mk r z st d).regs = r := rfl
-@[simp] theorem MachineData.dmem_mk (r z st d) : (MachineData.mk r z st d).dmem = d := rfl
-@[simp] theorem MachineData.status_mk (r z st d) : (MachineData.mk r z st d).status = st := rfl
-@[simp] theorem MachineData.zmms_mk (r z st d) : (MachineData.mk r z st d).zmms = z := rfl
 
 /-! ## Machine words in `grind`'s arithmetic
 
 A register holds a `UInt64` whose payload is a `BitVec 64`, and the instruction
 semantics moves between the two spellings and back through `Nat`. Each equation
-below is one crossing that `grind` cannot take on its own: the payload bridge,
-the range fact every word carries, and the three reductions a wrapping
-subtraction and a double-width product need once the result is known to fit. -/
-
-@[grind =] theorem UInt64.toNat_payload (x : UInt64) : x.toBitVec.toNat = x.toNat := rfl
-
-@[grind .] theorem UInt64.lt_size (x : UInt64) : x.toNat < 2 ^ 64 := x.toNat_lt
+below is one crossing that `grind` cannot take on its own: the three reductions
+a wrapping subtraction and a double-width product need once the result is known
+to fit. -/
 
 @[grind =] theorem BitVec.toNat_sub_le {a b : BitVec 64} (h : b.toNat ≤ a.toNat) :
     (a - b).toNat = a.toNat - b.toNat :=
@@ -356,106 +241,6 @@ theorem Int64.toBitVec_neg_ofNat_norm (n : Nat) :
   rw [Int64.toBitVec_neg, Int64.toBitVec_ofNat_norm]
   apply BitVec.eq_of_toNat_eq
   simp only [BitVec.toNat_neg, BitVec.toNat_ofNat]
-
-/-! ## Masks
-
-Code rounds down to a multiple of a power of two with `and $-2^k, %r`, and takes
-the remainder with `and $2^k-1, %r`. The rules below read such an `and` as
-arithmetic, both on the register value and on its `toNat`, the form `grind`
-reaches through `BitVec.toNat_and`. Each fires only on a literal mask of its
-shape. A number `n ≤ 2 ^ w` is a power of two exactly when `2 ^ w % n = 0`, so
-the guards are literal arithmetic, which `grind` decides by evaluation. -/
-
-theorem Nat.and_two_pow_sub_two_pow {x w k : Nat} (hk : k ≤ w) (hx : x < 2 ^ w) :
-    x &&& (2 ^ w - 2 ^ k) = x / 2 ^ k * 2 ^ k := by
-  apply Nat.eq_of_testBit_eq
-  intro i
-  have h1 : 2 ^ w - 2 ^ k = 2 ^ k * (2 ^ (w - k) - 1) := by
-    rw [Nat.mul_sub, Nat.mul_one, ← Nat.pow_add, Nat.add_sub_cancel' hk]
-  rw [h1, Nat.mul_comm (x / 2 ^ k), Nat.testBit_and, Nat.testBit_two_pow_mul,
-    Nat.testBit_two_pow_mul, Nat.testBit_two_pow_sub_one, Nat.testBit_div_two_pow]
-  by_cases hik : k ≤ i
-  · simp only [ge_iff_le, hik, decide_true, Bool.true_and, Nat.sub_add_cancel hik]
-    by_cases hiw : i < w
-    · simp [show i - k < w - k by omega]
-    · have : x.testBit i = false :=
-        Nat.testBit_lt_two_pow (Nat.lt_of_lt_of_le hx (Nat.pow_le_pow_right (by decide) (by omega)))
-      simp [this]
-  · simp [hik]
-
-theorem Nat.exists_eq_two_pow_of_dvd : ∀ {w n : Nat}, n ∣ 2 ^ w → ∃ k, n = 2 ^ k
-  | 0, _, h => ⟨0, Nat.dvd_one.mp h⟩
-  | w + 1, n, h => by
-    rcases Nat.mod_two_eq_zero_or_one n with h2 | h2
-    · obtain ⟨m, rfl⟩ := Nat.dvd_of_mod_eq_zero h2
-      rw [Nat.pow_succ, Nat.mul_comm (2 ^ w)] at h
-      obtain ⟨k, hk⟩ := Nat.exists_eq_two_pow_of_dvd
-        (Nat.dvd_of_mul_dvd_mul_left (show 0 < 2 by decide) h)
-      exact ⟨k + 1, by rw [hk, Nat.pow_succ, Nat.mul_comm]⟩
-    · have hc : Nat.Coprime n 2 := by
-        show Nat.gcd n 2 = 1
-        rw [Nat.gcd_comm, Nat.gcd_rec, h2]
-        rfl
-      rw [Nat.pow_succ] at h
-      exact Nat.exists_eq_two_pow_of_dvd (hc.dvd_of_dvd_mul_right h)
-
-theorem BitVec.toNat_ofNat_lit_of_lt {w m : Nat} (hm : m < 2 ^ w) :
-    (OfNat.ofNat m : BitVec w).toNat = m := by
-  show (BitVec.ofNat w m).toNat = m
-  rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hm]
-
-/-- An `and` of a register value with a mask of low bits is a remainder. -/
-theorem BitVec.toNat_and_lowMask_toNat {w : Nat} (x : BitVec w) (m : Nat)
-    (h : 2 ^ w % (m + 1) = 0) :
-    x.toNat &&& m = x.toNat % (m + 1) := by
-  obtain ⟨k, hk⟩ := Nat.exists_eq_two_pow_of_dvd (Nat.dvd_of_mod_eq_zero h)
-  rw [hk, show m = 2 ^ k - 1 by omega, Nat.and_two_pow_sub_one_eq_mod]
-
-/-- An `and` of a register value with a mask of high bits rounds down to a
-multiple of `2 ^ w - m`. -/
-theorem BitVec.toNat_and_highMask_toNat {w : Nat} (x : BitVec w) (m : Nat) (hm : m < 2 ^ w)
-    (h : 2 ^ w % (2 ^ w - m) = 0) :
-    x.toNat &&& m = x.toNat / (2 ^ w - m) * (2 ^ w - m) := by
-  obtain ⟨k, hk⟩ := Nat.exists_eq_two_pow_of_dvd (Nat.dvd_of_mod_eq_zero h)
-  have hkw : k ≤ w := (Nat.pow_le_pow_iff_right Nat.one_lt_two).mp (by omega)
-  rw [hk, show m = 2 ^ w - 2 ^ k by omega]
-  exact Nat.and_two_pow_sub_two_pow hkw x.isLt
-
-/-- An `and` with a mask of low bits is a remainder. -/
-theorem BitVec.toNat_and_lowMask {w : Nat} (x : BitVec w) (m : Nat) (hm : m < 2 ^ w)
-    (h : 2 ^ w % (m + 1) = 0) :
-    (x &&& (OfNat.ofNat m : BitVec w)).toNat = x.toNat % (m + 1) := by
-  rw [BitVec.toNat_and, BitVec.toNat_ofNat_lit_of_lt hm]
-  exact BitVec.toNat_and_lowMask_toNat x m h
-
-/-- An `and` with a mask of high bits rounds down to a multiple of `2 ^ w - m`. -/
-theorem BitVec.toNat_and_highMask {w : Nat} (x : BitVec w) (m : Nat) (hm : m < 2 ^ w)
-    (h : 2 ^ w % (2 ^ w - m) = 0) :
-    (x &&& (OfNat.ofNat m : BitVec w)).toNat = x.toNat / (2 ^ w - m) * (2 ^ w - m) := by
-  rw [BitVec.toNat_and, BitVec.toNat_ofNat_lit_of_lt hm]
-  exact BitVec.toNat_and_highMask_toNat x m hm h
-
-grind_pattern BitVec.toNat_and_lowMask => x &&& (OfNat.ofNat m : BitVec w) where
-  guard m < 2 ^ w
-  guard 2 ^ w % (m + 1) = 0
-
-grind_pattern BitVec.toNat_and_highMask => x &&& (OfNat.ofNat m : BitVec w) where
-  guard m < 2 ^ w
-  guard 2 ^ w % (2 ^ w - m) = 0
-
-grind_pattern BitVec.toNat_and_lowMask_toNat => x.toNat &&& (OfNat.ofNat m : Nat) where
-  guard 2 ^ w % (m + 1) = 0
-
-grind_pattern BitVec.toNat_and_highMask_toNat => x.toNat &&& (OfNat.ofNat m : Nat) where
-  guard m < 2 ^ w
-  guard 2 ^ w % (2 ^ w - m) = 0
-
-/-! ## Alignment
-
-An alignment check is a remainder of the address, which `grind` reads as
-arithmetic. -/
-
-attribute [grind =] isAligned
 
 /-! ## Per-register field reads over `set64`, one lemma per field -/
 

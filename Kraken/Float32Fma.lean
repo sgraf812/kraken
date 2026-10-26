@@ -1,3 +1,5 @@
+module
+
 /-!
 # Fused multiply-add on `Float32`
 
@@ -45,7 +47,7 @@ def fmaUnpacked (spec : Format) (a b c : UnpackedFloat) : UnpackedFloat :=
 even), as the x86 `vfmadd` instructions compute it. As with the other
 `Float32` operations, a NaN result is the model's canonical NaN, while the
 processor returns its own default NaN or propagates a payload. -/
-def fma (a b c : _root_.Float32) : _root_.Float32 :=
+public def fma (a b c : _root_.Float32) : _root_.Float32 :=
   .ofModel (_root_.Float32.Model.pack
     (fmaUnpacked Format.binary32 a.toModel.unpack b.toModel.unpack c.toModel.unpack))
 

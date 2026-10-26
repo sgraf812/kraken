@@ -1,3 +1,5 @@
+module
+
 /-
 Dead-hypothesis elimination.
 
@@ -14,7 +16,9 @@ step, a subfield by the next) stay connected.
 Nothing here is domain-specific: the input is equation hypotheses and a
 goal, the output is the goal with unreachable equations cleared.
 -/
-import Lean
+public import Lean
+
+public section
 open Lean Elab Tactic Meta
 
 elab "clear_dead" : tactic => do

@@ -1,7 +1,11 @@
+module
+
 import Kraken.Attribute
-import Kraken.Layout
-import Lean
-import Std
+public import Kraken.Layout
+public import Lean.ToExpr
+meta import Lean.Elab.Deriving.ToExpr
+
+@[expose] public section
 
 inductive Width | W8 | W16 | W32 | W64 deriving Repr, BEq, DecidableEq, Hashable, Lean.ToExpr
 
@@ -169,7 +173,7 @@ attribute [coe] AvxOperand.regOrMem
 abbrev AvxOperand.avx {w} (r : AvxReg w) : AvxOperand w := regOrMem (.avx r)
 abbrev AvxOperand.mem {w} (m : AddrExpr) : AvxOperand w := regOrMem (.mem m)
 
-inductive CondCode | z | nz | c | nc | a | be | l | le | ge | g
+inductive CondCode | o | no | c | nc | z | nz | be | a | s | ns | p | np | l | ge | le | g
   deriving Repr, BEq, DecidableEq, Hashable, Lean.ToExpr
 abbrev CondCode.e := CondCode.z
 abbrev CondCode.ne := CondCode.nz
@@ -287,6 +291,46 @@ inductive Directive
   deriving BEq, DecidableEq, Repr, Hashable, Lean.ToExpr
 
 abbrev Program := List Directive
+
+def Directive.label? : Directive → Option Label
+  | .label l => some l
+  | _ => none
+
+/-- The labels of the text, in order. -/
+def Program.labels (p : Program) : List Label := p.filterMap Directive.label?
+
+@[simp, grind =] theorem Program.labels_nil : Program.labels [] = [] := rfl
+
+@[simp, grind =] theorem Program.labels_cons_label (l : Label) (p : Program) :
+    Program.labels (.label l :: p) = l :: Program.labels p := rfl
+
+@[simp, grind =] theorem Program.labels_cons_instr (i : Instr) (p : Program) :
+    Program.labels (.instr i :: p) = Program.labels p := rfl
+
+@[simp, grind =] theorem Program.labels_cons_byteArray (a : ByteArray) (p : Program) :
+    Program.labels (.byteArray a :: p) = Program.labels p := rfl
+
+theorem Program.labels_append (a b : Program) :
+    Program.labels (a ++ b) = Program.labels a ++ Program.labels b :=
+  List.filterMap_append
+
+theorem Program.mem_labels {p : Program} {l : Label} : l ∈ Program.labels p ↔ Directive.label l ∈ p := by
+  rw [Program.labels, List.mem_filterMap]
+  constructor
+  · rintro ⟨d, hd, hl⟩
+    cases d <;> simp_all [Directive.label?]
+  · exact fun h => ⟨_, h, rfl⟩
+
+theorem List.Nodup.eq_of_getElem?_label {P : Program} (hnd : (Program.labels P).Nodup) {i j : Nat}
+    {l : Label} (hi : P[i]? = some (.label l)) (hj : P[j]? = some (.label l)) : i = j := by
+  induction P generalizing i j with
+  | nil => simp at hi
+  | cons d P ih =>
+    cases i <;> cases j <;> cases d <;>
+      grind [Program.labels_cons_label, Program.labels_cons_instr, Program.labels_cons_byteArray,
+        Program.mem_labels, List.mem_of_getElem?]
+
+
 abbrev Executable := Kraken.Executable Directive
 
 namespace Reg

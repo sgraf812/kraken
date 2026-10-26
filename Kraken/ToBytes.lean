@@ -1,3 +1,7 @@
+module
+
+@[expose] public section
+
 abbrev Nat.take (v : Nat) (w : Nat) : Nat := v % 2 ^ w
 abbrev Int.take (v : Int) (w : Nat) : Int := v % (2 : Int) ^ w
 
@@ -100,10 +104,9 @@ private theorem pow_256_eq_pow_2 (n : Nat) (w : Nat) (h : w = 8 * n) : (256 : In
   subst w
   rw [show (256 : Int) = 2 ^ 8 by decide, ← Int.pow_mul]
 
-theorem BitVec.ofInt_ofBytes_toBytes (w : Nat) (n : Nat) (h_wn : w = 8 * n) (val : BitVec w) :
-    BitVec.ofInt w (Int.ofBytes (Int.toBytes n val.toInt)) = val := by
+theorem BitVec.ofInt_ofBytes_toBytes (w : Nat) (n : Nat) (h_wn : w = 8 * n) (v : Int) :
+    BitVec.ofInt w (Int.ofBytes (Int.toBytes n v)) = BitVec.ofInt w v := by
   rw [ofBytes_toBytes, show 8 * n = w from h_wn.symm, Int.take, BitVec.ofInt_emod_self]
-  exact BitVec.ofInt_toInt
 
 /-- `ofInt_ofBytes_toBytes` for an arbitrary integer: the bytes of `v` read
 back at width `w = 8 * n` are `v` at that width. -/
@@ -327,7 +330,7 @@ def UInt8.ofBytes (bs : List UInt8) : UInt8 :=
   ⟨BitVec.ofInt 8 (Int.ofBytes bs)⟩
 
 theorem UInt8.ofBytes_toBytes (val : UInt8) : UInt8.ofBytes val.toBytes = val := by
-  exact congrArg UInt8.ofBitVec (BitVec.ofInt_ofBytes_toBytes 8 1 rfl val.toBitVec)
+  exact congrArg UInt8.ofBitVec ((BitVec.ofInt_ofBytes_toBytes 8 1 rfl val.toBitVec.toInt).trans BitVec.ofInt_toInt)
 
 theorem UInt8.toBytes_ofBytes (bs : List UInt8) (h : 1 ≤ bs.length) : (UInt8.ofBytes bs).toBytes = bs.take 1 := by
   exact BitVec.toBytes_ofBytes 8 1 rfl bs h
@@ -336,7 +339,7 @@ def UInt16.ofBytes (bs : List UInt8) : UInt16 :=
   ⟨BitVec.ofInt 16 (Int.ofBytes bs)⟩
 
 theorem UInt16.ofBytes_toBytes (val : UInt16) : UInt16.ofBytes val.toBytes = val := by
-  exact congrArg UInt16.ofBitVec (BitVec.ofInt_ofBytes_toBytes 16 2 rfl val.toBitVec)
+  exact congrArg UInt16.ofBitVec ((BitVec.ofInt_ofBytes_toBytes 16 2 rfl val.toBitVec.toInt).trans BitVec.ofInt_toInt)
 
 theorem UInt16.toBytes_ofBytes (bs : List UInt8) (h : 2 ≤ bs.length) : (UInt16.ofBytes bs).toBytes = bs.take 2 := by
   exact BitVec.toBytes_ofBytes 16 2 rfl bs h
@@ -345,7 +348,7 @@ def UInt32.ofBytes (bs : List UInt8) : UInt32 :=
   ⟨BitVec.ofInt 32 (Int.ofBytes bs)⟩
 
 theorem UInt32.ofBytes_toBytes (val : UInt32) : UInt32.ofBytes val.toBytes = val := by
-  exact congrArg UInt32.ofBitVec (BitVec.ofInt_ofBytes_toBytes 32 4 rfl val.toBitVec)
+  exact congrArg UInt32.ofBitVec ((BitVec.ofInt_ofBytes_toBytes 32 4 rfl val.toBitVec.toInt).trans BitVec.ofInt_toInt)
 
 theorem UInt32.toBytes_ofBytes (bs : List UInt8) (h : 4 ≤ bs.length) : (UInt32.ofBytes bs).toBytes = bs.take 4 := by
   exact BitVec.toBytes_ofBytes 32 4 rfl bs h
@@ -354,7 +357,7 @@ def UInt64.ofBytes (bs : List UInt8) : UInt64 :=
   ⟨BitVec.ofInt 64 (Int.ofBytes bs)⟩
 
 theorem UInt64.ofBytes_toBytes (val : UInt64) : UInt64.ofBytes val.toBytes = val := by
-  exact congrArg UInt64.ofBitVec (BitVec.ofInt_ofBytes_toBytes 64 8 rfl val.toBitVec)
+  exact congrArg UInt64.ofBitVec ((BitVec.ofInt_ofBytes_toBytes 64 8 rfl val.toBitVec.toInt).trans BitVec.ofInt_toInt)
 
 theorem UInt64.toBytes_ofBytes (bs : List UInt8) (h : 8 ≤ bs.length) : (UInt64.ofBytes bs).toBytes = bs.take 8 := by
   exact BitVec.toBytes_ofBytes 64 8 rfl bs h

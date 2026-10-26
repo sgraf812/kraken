@@ -1,4 +1,5 @@
 import Kraken.SepCells
+import Std.Tactic.BVDecide
 
 /-!
 Exercises for `Kraken.SepCells`: memory stated as a `⋆`-tree of `=@` and `?@`

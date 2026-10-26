@@ -1,3 +1,5 @@
+module
+
 /-
 The frame inference procedure of the separation wp, with `ecancel` as its
 engine. At a spec application `vcgen` hands over the goal's precondition and
@@ -5,21 +7,25 @@ the spec's precondition with its logical variables live.
 `Kraken.Tactic.solveSepSplit` at `MProp.sepOps` cancels the spec's footprint
 out of the goal precondition, assigning the logical variables by matching,
 the remainder to the frame, and proves the split by one AC equation.
-`SepWP.split_of_eq` turns that equation into the split VC's proof, and
-`SepWP.frames_directive` is the frame-rule side goal.
+`Program.FrameWP.split_of_eq` turns that equation into the split VC's proof, and
+`Program.FrameWP.frames_directive` is the frame-rule side goal.
 
 Every instruction spec is a triple of one directive, so the procedure is
 keyed on `Directive`: that is where `vcgen` applies a spec with a footprint.
 -/
-import Kraken.SepSpecs
-import Lean.Elab.Tactic.VCGen.FrameProc
+public import Kraken.SepSpecs
+public import Kraken.SepCancel
+public import Kraken.KVCGen
+public import Lean.Elab.Tactic.VCGen.FrameProc
+
+public section
 
 open Lean Meta Sym Sym.Internal Elab Tactic VCGen
 open Std.WP
 open Lean.Order
-open scoped SepWP
+open scoped Program.FrameWP
 
-namespace SepWP
+namespace Program.FrameWP
 
 /-- The split VC of a frame `R` and a footprint `fp`: the precondition is
 `fp ∗ R` by AC, and the spec runs at `fp`. -/
@@ -41,15 +47,16 @@ theorem split_of_eq_ofProp {pre fp R : MProp 64}
   exact le_meet _ _ _ (le_ofProp _ _ hφ) PartialOrder.rel_refl
 
 /-- The wand of the frame operator at a state is the wand of `∗` at that
-state: `FrameOp.upperAdjoint_pointwise_apply` through the three layers. -/
+state: `PreservesSup.upperAdjoint_comp_apply` through the three layers. -/
 theorem upperAdjoint_frameOp_pointwise (R : MProp 64)
     (X : Reg64s → RegZmms → StatusFlags → MProp 64) (r : Reg64s) (z : RegZmms)
     (f : StatusFlags) :
     PreservesSup.upperAdjoint (frameOp R) X r z f
       = PreservesSup.upperAdjoint (MProp.sep R) (X r z f) := by
-  unfold SepWP.frameOp
-  rw [FrameOp.upperAdjoint_pointwise_apply, FrameOp.upperAdjoint_pointwise_apply,
-    FrameOp.upperAdjoint_pointwise_apply]
+  show PreservesSup.upperAdjoint
+    (Function.comp (Function.comp (Function.comp (MProp.sep R)))) X r z f = _
+  rw [PreservesSup.upperAdjoint_comp_apply, PreservesSup.upperAdjoint_comp_apply,
+    PreservesSup.upperAdjoint_comp_apply]
 
 /-- The wand of the empty frame is the identity. -/
 theorem upperAdjoint_frameOp_emp
@@ -77,7 +84,7 @@ conjunct `φ` is the post entailment `new ⊑ Q () r z f`, where after the
 frame rule `Q () r z f` is the wand `upperAdjoint (frameOp R) X r z f`; it is
 pushed through the frame's layers by `upperAdjoint_frameOp_pointwise`, so the
 lattice split of `vcgen` continues at `R ∗ new ⊑ X r z f`. -/
-def sepFrameSplit (i : FrameInferenceInfo) (goal : FrameGoal) :
+meta def sepFrameSplit (i : FrameInferenceInfo) (goal : FrameGoal) :
     Lean.Meta.Grind.GrindM FrameSplit := do
   let ss := goal.framedApp.excessArgs
   let W := goal.framedApp.expr.stripArgsN ss.size
@@ -104,13 +111,13 @@ def sepFrameSplit (i : FrameInferenceInfo) (goal : FrameGoal) :
     #[leArgs[0]!, leArgs[1]!, specPre])
   match pure? with
   | none =>
-    let prf ← mkAppNS (← mkConstS ``SepWP.split_of_eq)
+    let prf ← mkAppNS (← mkConstS ``Program.FrameWP.split_of_eq)
       #[i.pre, fp, R, W, ss[0]!, ss[1]!, ss[2]!, hc, goal.specProof]
     return { splitVCProof := prf, subgoals := sideGoals }
   | some φ =>
     let φ ← shareCommon (← instantiateMVarsS φ)
     let (hφ, sub) ← pushWand mprop R i.le φ
-    let prf ← mkAppNS (← mkConstS ``SepWP.split_of_eq_ofProp)
+    let prf ← mkAppNS (← mkConstS ``Program.FrameWP.split_of_eq_ofProp)
       #[i.pre, fp, R, W, ss[0]!, ss[1]!, ss[2]!, φ, hc, hφ, goal.specProof]
     return { splitVCProof := prf, subgoals := sub :: sideGoals }
 where
@@ -123,14 +130,14 @@ where
       | let h ← mkFreshExprSyntheticOpaqueMVar φ; return (h, h.mvarId!)
     let args := rhs.getAppArgs
     unless rhs.isAppOfArity ``Lean.Order.PreservesSup.upperAdjoint 7
-        && args[2]!.isAppOfArity ``SepWP.frameOp 1 do
+        && args[2]!.isAppOfArity ``Program.FrameWP.frameOp 1 do
       let h ← mkFreshExprSyntheticOpaqueMVar φ; return (h, h.mvarId!)
     let X := args[3]!
     let isEmp := R.isAppOf ``MProp.emp
     let heq ← if isEmp then
-        mkAppNS (← mkConstS ``SepWP.upperAdjoint_frameOp_emp) #[X, args[4]!, args[5]!, args[6]!]
+        mkAppNS (← mkConstS ``Program.FrameWP.upperAdjoint_frameOp_emp) #[X, args[4]!, args[5]!, args[6]!]
       else
-        mkAppNS (← mkConstS ``SepWP.upperAdjoint_frameOp_pointwise) #[R, X, args[4]!, args[5]!, args[6]!]
+        mkAppNS (← mkConstS ``Program.FrameWP.upperAdjoint_frameOp_pointwise) #[R, X, args[4]!, args[5]!, args[6]!]
     let some (_, _, rhs') := (← instantiateMVarsS (← Sym.inferType heq)).eq?
       | throwError "sep frameproc: not an equation{indentExpr heq}"
     let rhs' ← shareCommon rhs'
@@ -142,17 +149,18 @@ where
     return (hφ, hsub.mvarId!)
 
 /-- Phase one: always frame, at the goal's own state. -/
-def sepFrameProc : FrameInferenceProc := fun i =>
+meta def sepFrameProc : FrameInferenceProc := fun i =>
   return .commit i.unframedApp.excessArgs (sepFrameSplit i)
 
-@[frameproc] def sepFP : FrameProc where
+/-- Active under `open scoped Program.FrameWP`, together with the instance. -/
+@[scoped frameproc] meta def sepFP : FrameProc where
   prog := ``Directive
-  opHead := ``SepWP.frameOp
-  mkOpAppM := fun _ => pure (mkConst ``SepWP.frameOp)
+  opHead := ``Program.FrameWP.frameOp
+  mkOpAppM := fun _ => pure (mkConst ``Program.FrameWP.frameOp)
   mkResourceTy := fun _ => pure (mkApp (mkConst ``MProp) (mkNatLit 64))
   proc := sepFrameProc
 
-end SepWP
+end Program.FrameWP
 
 /-! ## Smoke tests
 
@@ -167,30 +175,30 @@ open Kraken.X64.Parser
 
 attribute [local grind .] Lean.Order.PartialOrder.rel_refl
 
-example [CodeEnv] (bs : List UInt8) (hlen : bs.length = 8) :
+example [Host] [FunDecls] (bs : List UInt8) (hlen : bs.length = 8) :
     ⦃ fun r z f => bs.AtM (r.get64 .rdx + BitVec.ofInt 64 (136 : Int64).toInt) ⦄
-      (parse("movq %rax, 136(%rdx)\nmovq $1, %rbx"))
+      parse("movq %rax, 136(%rdx)\nmovq $1, %rbx")
     ⦃ fun _ r z f => (Int.toBytes 8 (r.get64 .rax).toInt).AtM
         (r.get64 .rdx + BitVec.ofInt 64 (136 : Int64).toInt) ⦄ := by
-  vcgen with finish
+  kvcgen64 with finish
 
-example [CodeEnv] (bs cs : List UInt8) (hb : bs.length = 8) (hc : cs.length = 8) :
+example [Host] [FunDecls] (bs cs : List UInt8) (hb : bs.length = 8) (hc : cs.length = 8) :
     ⦃ fun r z f => bs.AtM (r.get64 .rdx + BitVec.ofInt 64 (136 : Int64).toInt)
         ∗ cs.AtM (r.get64 .rdx + BitVec.ofInt 64 (144 : Int64).toInt) ⦄
-      (parse("movq %rax, 136(%rdx)\nmovq %rbx, 144(%rdx)"))
+      parse("movq %rax, 136(%rdx)\nmovq %rbx, 144(%rdx)")
     ⦃ fun _ r z f => (Int.toBytes 8 (r.get64 .rax).toInt).AtM
           (r.get64 .rdx + BitVec.ofInt 64 (136 : Int64).toInt)
         ∗ (Int.toBytes 8 (r.get64 .rbx).toInt).AtM
           (r.get64 .rdx + BitVec.ofInt 64 (144 : Int64).toInt) ⦄ := by
-  vcgen with finish
+  kvcgen64 with finish
 
-example [CodeEnv] (bs cs : List UInt8) (hb : bs.length = 8) (hc : cs.length = 8) :
+example [Host] [FunDecls] (bs cs : List UInt8) (hb : bs.length = 8) (hc : cs.length = 8) :
     ⦃ fun r z f => bs.AtM (r.get64 .rdx + BitVec.ofInt 64 (136 : Int64).toInt)
         ∗ cs.AtM (r.get64 .rdx + BitVec.ofInt 64 (144 : Int64).toInt) ⦄
-      (parse("movq %rax, 136(%rdx)\naddq 144(%rdx), %rbx"))
+      parse("movq %rax, 136(%rdx)\naddq 144(%rdx), %rbx")
     ⦃ fun _ r z f => (Int.toBytes 8 (r.get64 .rax).toInt).AtM
           (r.get64 .rdx + BitVec.ofInt 64 (136 : Int64).toInt)
         ∗ cs.AtM (r.get64 .rdx + BitVec.ofInt 64 (144 : Int64).toInt) ⦄ := by
-  vcgen with finish
+  kvcgen64 with finish
 
 end Smoke

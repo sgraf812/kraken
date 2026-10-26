@@ -1,13 +1,15 @@
+module
+
 /-
 Common Kraken Proof Tactics.
 
 Core tactics and theorems for stepping through Kraken assembly proofs.
 -/
 
-import Kraken.Attribute
+public import Kraken.Attribute
 import Kraken.Layout
-import Lean
-import Std
+
+public meta section
 
 open Lean Meta Elab Tactic Kraken
 
@@ -83,7 +85,7 @@ elab_rules : tactic
 
       evalTactic (← `(tactic|
         (let ss := $s
-         change ($straightlineStepId:ident _ (ss, _) _)
+         change ($straightlineStepId:ident _ ⟨ss, _⟩ _)
          obtain $statePat:rcasesPat := $s
          delta $p
          dsimp only [$straightlineStepId:ident, $execStraightlineId:ident]
@@ -414,7 +416,7 @@ partial def evalSymKStep : Grind.GrindTactic :=
       pure state
 
     let (keepGoingSpec, goal) ←
-      match ← Lean.Meta.DiscrTree.getMatch specTree goalState with
+      match Sym.getMatch (← getMCtx) specTree goalState with
       | #[ thmName ] =>
         logInfo m!"Found a spec lemma: {thmName}"
         let (goal, subGoals) ← rwTarget goal false (mkConst thmName)
