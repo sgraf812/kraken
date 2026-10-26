@@ -520,6 +520,37 @@ local macro "run_sse" : tactic =>
     AvxWidth.bytes, Bool.not_true, Bool.and_false, Bool.false_eq_true, ite_false, Effects.All]
   exact hn _ hq
 
+@[spec] public theorem mulps_load_sib1_spec (x : AvxReg .W128) (b i : Reg64) (d : Int64) :
+    ⦃ fun s =>
+        let a := s.regs.get64 b + s.regs.get64 i + BitVec.ofInt 64 d.toInt
+        isAligned 16 a = true ∧ (Mem.loadInt s.dmem a 16).isSome = true
+          ∧ Q () { s with zmms := (s.zmms.setLegacy x
+              (BitVec.packedBinOp 32 (sseBinOp (· * ·)) (s.zmms.get x)
+                (BitVec.ofInt 128 (Mem.loadInt s.dmem a 16).get!))) } ⦄
+      (Directive.instr (.avx .W64 .W128
+          (.mulps (.avx x) (.mem ⟨some (.reg b), some ⟨i, .W8⟩, .int64 d⟩))))
+    ⦃ Q; E ⦄ := by
+  refine ⟨fun s ⟨hal, hsome, hq⟩ => ?_⟩
+  obtain ⟨v, hv⟩ := Option.isSome_iff_exists.mp hsome
+  refine Program.wp_single fun _ _ _ _ hn _ => ?_
+  simp only [Directive.interp, Instr.interp, AvxOperation.interp, AvxRegOrMem.interp,
+    MachineData.setAvxLegacy, MachineData.setAvxLegacyReg, MachineData.loadAvx,
+    AddrExpr.zeroExtend_interp_sib1, hal, hv, AvxWidth.bytes, Bool.not_true, Bool.and_false,
+    Bool.false_eq_true, ite_false, Effects.All]
+  exact hn _ (by rwa [hv, Option.get!_some] at hq)
+
+@[spec] public theorem lea_index32_disp_spec (r i : Reg64) (c : Width) (d : Int64) :
+    ⦃ fun s => Q () { s with regs := (s.regs.set64 r
+        ((s.regs.get (.low i .W32) * BitVec.ofNat 32 c.bytes
+          + d.toBitVec.setWidth 32).zeroExtend 64)) } ⦄
+      (Directive.instr (.regular .W32 .W64
+          (.lea (.low r .W64) ⟨none, some ⟨i, c⟩, .int64 d⟩)))
+    ⦃ Q; E ⦄ := by
+  refine ⟨fun s hq => Program.wp_single fun _ _ _ _ hn _ => ?_⟩
+  run_step
+  simp only [AddrExpr.zeroExtend_interp_index32_disp]
+  exact hn _ hq
+
 public theorem MachineData.not_stackBelow_self (s : MachineData) : ¬ s.StackBelow s :=
   BitVec.not_serialLt_self _
 
