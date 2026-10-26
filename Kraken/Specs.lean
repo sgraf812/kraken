@@ -12,7 +12,6 @@ public import Kraken.X64.Registers
 public import Kraken.GrindFold
 public import Std.Tactic.Do
 public import Std.WP
-import Std.Tactic.BVDecide
 
 @[expose] public section
 
@@ -33,14 +32,6 @@ def AddrExpr.interp64 (labels : Labels) (a : AddrExpr) (s : Reg64s) (p : Std.Rco
 
 /-! ## `.unsigned`/`.signed` reductions -/
 @[grind hom] theorem BitVec.unsigned_hom {w} (x : BitVec w) : x.unsigned = (x.toNat : Int) := rfl
-
-@[simp, grind =] theorem StatusFlags.sf_from_result {w} (v : BitVec w)
-    (f : StatusFlags.from_result.Remaining) :
-    (StatusFlags.from_result v f).sf = v.msb := rfl
-
-@[simp, grind =] theorem StatusFlags.of_from_result {w} (v : BitVec w)
-    (f : StatusFlags.from_result.Remaining) :
-    (StatusFlags.from_result v f).of = f.of := rfl
 
 /-! ## Condition-code reductions, one lemma per code -/
 
@@ -90,97 +81,8 @@ attribute [grind =] Width.bytes
     s.get (.low r .W64) = s.get64 r := by
   simp [Reg64s.get, Reg.base, Reg.offset, BitVec.take, BitVec.drop]
 
-/-- A 32-bit read is the low half of the 64-bit register. A `grind` rule only,
-so the simp normal form of a 32-bit read is unchanged. -/
-@[grind =] theorem Reg64s.get_low32 (s : Reg64s) (r : Reg64) :
-    s.get (.low r .W32) = (s.get64 r).setWidth 32 := by
-  simp only [Reg64s.get, Reg.base, Reg.offset, BitVec.take, BitVec.drop]
-  apply BitVec.eq_of_toNat_eq
-  simp [BitVec.extractLsb'_toNat, BitVec.toNat_setWidth]
-
 @[simp, grind =] theorem Reg64s.set_low64 (s : Reg64s) (r : Reg64) (v : BitVec 64) :
     Reg64s.set s (.low r .W64) v = s.set64 r v := rfl
-
-/-- An 8-bit read is the low byte of the 64-bit register. A `grind` rule only,
-like `get_low32`. -/
-@[grind =] theorem Reg64s.get_low8 (s : Reg64s) (r : Reg64) :
-    s.get (.low r .W8) = (s.get64 r).setWidth 8 := by
-  simp only [Reg64s.get, Reg.base, Reg.offset, BitVec.take, BitVec.drop]
-  apply BitVec.eq_of_toNat_eq
-  simp [BitVec.extractLsb'_toNat, BitVec.toNat_setWidth]
-
-/-- A 32-bit write zero-extends into the 64-bit register. -/
-@[simp, grind =] theorem Reg64s.set_low32 (s : Reg64s) (r : Reg64) (v : BitVec 32) :
-    Reg64s.set s (.low r .W32) v = s.set64 r (v.setWidth 64) := rfl
-
-/-- An 8-bit write replaces the low byte and keeps the rest. -/
-@[simp, grind =] theorem Reg64s.set_low8 (s : Reg64s) (r : Reg64) (v : BitVec 8) :
-    Reg64s.set s (.low r .W8) v = s.set64 r ((s.get64 r).replaceLow v) := rfl
-
-/-- The low byte after an 8-bit write is the byte written. -/
-@[grind =] theorem BitVec.toNat_replaceLow8_mod (old : BitVec 64) (new : BitVec 8) :
-    (old.replaceLow new).toNat % 256 = new.toNat := by
-  have h : (old.replaceLow new).setWidth 8 = new := by
-    simp only [BitVec.replaceLow, BitVec.drop]
-    bv_decide
-  have := congrArg BitVec.toNat h
-  simpa [BitVec.toNat_setWidth] using this
-
-/-- The high bytes after an 8-bit write are the old ones. -/
-@[grind =] theorem BitVec.toNat_replaceLow8_div (old : BitVec 64) (new : BitVec 8) :
-    (old.replaceLow new).toNat / 256 = old.toNat / 256 := by
-  have h : (old.replaceLow new) >>> 8 = old >>> 8 := by
-    simp only [BitVec.replaceLow, BitVec.drop]
-    bv_decide
-  have := congrArg BitVec.toNat h
-  simpa [BitVec.toNat_ushiftRight, Nat.shiftRight_eq_div_pow] using this
-
-/-- An 8-bit read after an 8-bit write is the byte written. -/
-@[simp, grind =] theorem BitVec.setWidth_replaceLow8 (old : BitVec 64) (new : BitVec 8) :
-    (old.replaceLow new).setWidth 8 = new := by
-  simp only [BitVec.replaceLow, BitVec.drop]
-  bv_decide
-
-/-! A value stored as `n` bytes and loaded back is the value, at the width of
-the register it goes into. Instances of `BitVec.ofInt_ofBytes_toBytes_eq` at
-the widths the instruction rules produce, so `grind` sees through
-store-then-load without being told the width. -/
-
-@[grind =] theorem BitVec.ofInt8_ofBytes_toBytes1 (v : Int) :
-    BitVec.ofInt 8 (Int.ofBytes (Int.toBytes 1 v)) = BitVec.ofInt 8 v :=
-  BitVec.ofInt_ofBytes_toBytes_eq 8 1 rfl v
-@[grind =] theorem BitVec.ofInt32_ofBytes_toBytes4 (v : Int) :
-    BitVec.ofInt 32 (Int.ofBytes (Int.toBytes 4 v)) = BitVec.ofInt 32 v :=
-  BitVec.ofInt_ofBytes_toBytes_eq 32 4 rfl v
-@[grind =] theorem BitVec.ofInt64_ofBytes_toBytes8 (v : Int) :
-    BitVec.ofInt 64 (Int.ofBytes (Int.toBytes 8 v)) = BitVec.ofInt 64 v :=
-  BitVec.ofInt_ofBytes_toBytes_eq 64 8 rfl v
-
-attribute [grind =] BitVec.ofInt_toInt BitVec.toNat_setWidth
-
-/-! `and al, 1` and the byte it leaves: a compiler's way of making a `bool`
-well-formed. The low bit of a byte, as a natural number and as the integer
-a store of the byte writes; and an integer that came from a natural number,
-read back as a byte. -/
-
-@[grind =] theorem BitVec.toNat_and_one (x : BitVec 8) : (x &&& 1#8).toNat = x.toNat % 2 := by
-  rw [BitVec.toNat_and]; exact Nat.and_one_is_mod _
-
-@[grind =] theorem BitVec.toInt_setWidth8_and_one (x : BitVec 64) :
-    ((x.setWidth 8 &&& 1#8).toInt) = ((x.toNat % 2 : Nat) : Int) := by
-  have h := BitVec.toNat_and_one (x.setWidth 8)
-  rw [BitVec.toNat_setWidth, Nat.mod_mod_of_dvd _ (by decide)] at h
-  rw [BitVec.toInt_eq_toNat_of_msb, h]
-  rw [BitVec.msb_eq_decide, decide_eq_false_iff_not, Nat.not_le]
-  omega
-
-/-- As an integer equation on any `v`: `grind` normalises casts inward
-(`↑((n + 1) % 2)` becomes `(↑n + 1) % 2`), so a statement keyed on
-`BitVec.ofInt 8 ↑k` would not be found. -/
-@[grind =] theorem BitVec.natCast_toNat_ofInt8 (v : Int) :
-    ((BitVec.ofInt 8 v).toNat : Int) = v % 256 := by
-  rw [BitVec.toNat_ofInt, Int.toNat_of_nonneg (Int.emod_nonneg _ (by decide))]
-  rfl
 
 @[simp, grind =] theorem MachineData.regs_setReg (s : MachineData) {w} (r : Reg w) (v : w.type) :
     (s.setReg r v).regs = s.regs.set r v := rfl
@@ -225,22 +127,6 @@ to fit. -/
 @[simp, grind =] theorem BitVec.ofInt_toInt_int64 (c : Int64) :
     BitVec.ofInt 64 c.toInt = c.toBitVec := by
   rw [show c.toInt = c.toBitVec.toInt from rfl, BitVec.ofInt_toInt]
-
-/-- An immediate reaches `grind` as the payload of an `Int64` literal. This
-rule rewrites the payload to a `BitVec` literal, so that shift counts,
-displacements and masks are numerals to the arithmetic (`no_index` lets it
-match the numeral). `MachineWP` registers it with `grind`'s normalizer. -/
-theorem Int64.toBitVec_ofNat_norm (n : Nat) :
-    (no_index (OfNat.ofNat n : Int64)).toBitVec = BitVec.ofNat 64 n := rfl
-
-/-- A negative immediate, likewise: the parser writes it as the negation of a
-literal. -/
-theorem Int64.toBitVec_neg_ofNat_norm (n : Nat) :
-    (-(no_index (OfNat.ofNat n : Int64))).toBitVec
-      = BitVec.ofNat 64 (2 ^ 64 - n % 2 ^ 64) := by
-  rw [Int64.toBitVec_neg, Int64.toBitVec_ofNat_norm]
-  apply BitVec.eq_of_toNat_eq
-  simp only [BitVec.toNat_neg, BitVec.toNat_ofNat]
 
 /-! ## Per-register field reads over `set64`, one lemma per field -/
 

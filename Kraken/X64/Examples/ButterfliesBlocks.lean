@@ -1,15 +1,16 @@
+module
+
+public import Kraken.StateCfg
+public import Kraken.SeparationMem
 import Kraken.X64.Parser
-import Kraken.MachineWP
-import Kraken.SeparationMem
 
 /-!
 # Butterflies over blocks: an SSE loop over two arrays
 
 A variant of `Butterflies.lean` that states the machine-level theorem over
-`Mem.Blocks`, as the triple is: each array is an owned region of `4 * len`
-bytes whose contents are not tracked. The theorem is then the triple read at
-the machine. (`Butterflies.lean` states it over the arrays' bytes, and converts
-to and from blocks.)
+`Mem.Blocks`: each array is an owned region of `4 * len` bytes whose contents
+are not tracked. (`Butterflies.lean` states it over the arrays' bytes, and
+converts to and from blocks.)
 
 The loop walks two 16-byte-aligned float arrays `v1`, `v2` of `len` floats
 (`4 * len` bytes) in 16-byte chunks, replacing `(a, b)` by `(a + b, a - b)`.
@@ -21,23 +22,26 @@ We prove that the loop terminates without faulting, and that on exit the two
 arrays (with some new contents) are still where they were, separated from each
 other and from the frame `R`.
 
-`butterflies_correct` is one `Triple` of the machine-founded wp, proved through
-the control-flow rule: `bf_table` gives the assertion at each label (at `loop`,
-the loop invariant), `bf_var` is the variant (the bytes still to process), and
-`MachineWP.cfg` with `cfg_cases` produces one `vcgen` obligation per block,
-each closed by `finish`. The library's `grind` rules for accesses inside
-blocks, and for the address, alignment and flag arithmetic, are all the proof
-needs. `Program.run_of_triple` reads the triple back as the baseline judgment
+`butterflies_correct` is the program's `wp`, proved through the control-flow
+rule `Program.WP.cfg`: the table gives the assertion at each label (at `loop`,
+the loop invariant), the variant is the bytes still to process, and
+`cfg_cases` produces one obligation per block, each closed by `kvcgen64`.
+`Program.WP.step1_of_wp_at` reads the `wp` back at the machine
 (`butterflies_float_terminates_and_safe`).
 -/
 
 open Kraken.X64.Parser
-open Kraken
 open Std.WP
-open MachineWP
 open Lean.Order
+open scoped Program.WP
 
 set_option experimental.vcgen true
+
+/- The `sib1` rules leave a zero displacement as `+ 0` in the address. -/
+attribute [local grind =] BitVec.add_zero
+
+
+namespace State.ButterfliesBlocks
 
 /-- The program: the prologue moves both pointers to the end of their array
 and negates the byte count into `rdx`; each iteration of the loop does one
@@ -60,70 +64,35 @@ loop:
     jl loop
 ")
 
-/-! ## The proof -/
-
-/- The `jl` exit reads the overflow flag, which compares signed values. -/
-attribute [local grind =] BitVec.signed_eq
-
-/-- The spec table: the machine at each label, for a run that started on `d`
-over arrays of `L` bytes. At `loop` it is the loop invariant: both pointers sit
-one past the end of their array, `rdx` is minus the bytes still to process (a
-positive multiple of 16, at most `L`), and the arrays are in place. -/
-private abbrev bf_table (d : MachineData) (L : Nat) (R : DataMem → Prop) :
-    Label → MachineData → Prop
-  | "start", s => s = d
-  | "loop", s =>
-      let j := (-s.regs.get64 .rdx).toNat
-      s.regs.get64 .rdi = d.regs.get64 .rdi + BitVec.ofNat 64 L ∧
-      s.regs.get64 .rsi = d.regs.get64 .rsi + BitVec.ofNat 64 L ∧
-      0 < j ∧ j ≤ L ∧ j % 16 = 0 ∧
-      s.dmem =⋆ Mem.Blocks [(d.regs.get64 .rdi, L), (d.regs.get64 .rsi, L)] ⋆ R
-  | _, _ => False
-
-/-- The variant: the bytes still to process at `loop`; the prologue runs once. -/
-private abbrev bf_var : Label → MachineData → Nat
-  | "loop", s => (-s.regs.get64 .rdx).toNat
-  | _, _ => 2 ^ 64
-
-variable [layout : _root_.Layout] [Executable.ValidLayout (layout butterflies_float_prog)]
-
-/-- The ambient code of the example: `butterflies_float_prog`, laid out. -/
-local instance butterflies.env : CodeEnv := ⟨layout butterflies_float_prog⟩
-
-theorem butterflies_correct (d : MachineData) (len : Nat)
-    (h_len_reg : d.regs.get (Reg.low .rdx .W32) = BitVec.ofNat 32 len)
+theorem butterflies_correct [Host] [FunDecls] (d : MachineData) (len : Nat)
+    (h_len_reg : (d.regs.get64 .rdx).take 32 = BitVec.ofNat 32 len)
     (h_len_mod : len % 4 = 0) (h_len_bound : len * 4 < 2 ^ 31) (h_len_gt : len > 0)
     (h_v1_aligned : isAligned 16 (d.regs.get64 .rdi) = true)
     (h_v2_aligned : isAligned 16 (d.regs.get64 .rsi) = true)
     (R : DataMem → Prop)
     (h_mem : d.dmem =⋆
       Mem.Blocks [(d.regs.get64 .rdi, len * 4), (d.regs.get64 .rsi, len * 4)] ⋆ R) :
-    ⦃ fun s => s = d ⦄
-      butterflies_float_prog
-    ⦃ fun _ s => s.dmem =⋆
-        Mem.Blocks [(d.regs.get64 .rdi, len * 4), (d.regs.get64 .rsi, len * 4)] ⋆ R ⦄ := by
-  apply MachineWP.cfg (bf_table d (len * 4) R) bf_var
-  cfg_cases [butterflies_float_prog]
-  · vcgen with finish
-  · vcgen with finish
+    WP.wp butterflies_float_prog
+      (fun _ t => t.dmem =⋆
+        Mem.Blocks [(d.regs.get64 .rdi, len * 4), (d.regs.get64 .rsi, len * 4)] ⋆ R)
+      (fun _ _ => False) d := by
+  refine Program.WP.cfg
+    (fun b t =>
+      let L := len * 4
+      let j := (-t.regs.get64 .rdx).toNat
+      match b with
+      | .entry | .label "start" => t = d
+      | .label "loop" =>
+          t.regs.get64 .rdi = d.regs.get64 .rdi + BitVec.ofNat 64 L ∧
+          t.regs.get64 .rsi = d.regs.get64 .rsi + BitVec.ofNat 64 L ∧
+          0 < j ∧ j ≤ L ∧ j % 16 = 0 ∧ t.regs.get64 .rsp = d.regs.get64 .rsp ∧
+          t.dmem =⋆ Mem.Blocks [(d.regs.get64 .rdi, L), (d.regs.get64 .rsi, L)] ⋆ R
+      | .exit => t.dmem =⋆ Mem.Blocks [(d.regs.get64 .rdi, L), (d.regs.get64 .rsi, L)] ⋆ R
+      | _ => False)
+    (fun l t => match l with
+      | "loop" => (-t.regs.get64 .rdx).toNat
+      | _ => 2 ^ 64) ?_ rfl
+  cfg_cases
+  all_goals kvcgen64 with finish
 
-/-- `butterflies_correct`, read at the machine as the baseline judgment. -/
-theorem butterflies_float_terminates_and_safe
-    (s₀ : MachineData)
-    (len : Nat)
-    (h_len_reg   : s₀.regs.get (Reg.low .rdx .W32) = BitVec.ofNat 32 len)
-    (h_len_mod   : len % 4 = 0)
-    (h_len_bound : len * 4 < 2^31)
-    (h_len_gt    : len > 0)
-    (h_v1_aligned : isAligned 16 s₀.regs.rdi.toBitVec)
-    (h_v2_aligned : isAligned 16 s₀.regs.rsi.toBitVec)
-    (R : DataMem → Prop)
-    (h_mem : s₀.dmem =⋆
-      Mem.Blocks [(s₀.regs.rdi.toBitVec, len * 4), (s₀.regs.rsi.toBitVec, len * 4)] ⋆ R) :
-    Eventually (straightlineStep (layout butterflies_float_prog))
-      (fun s' => s'.1.dmem =⋆
-        Mem.Blocks [(s₀.regs.rdi.toBitVec, len * 4), (s₀.regs.rsi.toBitVec, len * 4)] ⋆ R)
-      (s₀, Kraken.Layout.start Directive) :=
-  Program.run_of_triple
-    (butterflies_correct s₀ len h_len_reg h_len_mod h_len_bound h_len_gt h_v1_aligned
-      h_v2_aligned R h_mem) rfl
+end State.ButterfliesBlocks

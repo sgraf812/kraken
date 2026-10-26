@@ -280,6 +280,15 @@ theorem BitVec.toNat_sub_cases {w} (a b : BitVec w) :
 @[expose] def StatusFlags.ofLogic {w} (v : BitVec w) (af : Bool) : StatusFlags :=
   StatusFlags.from_result v { cf := false, of := false, af }
 
+@[expose] def StatusFlags.ofNeg {w} (b : BitVec w) : StatusFlags :=
+  StatusFlags.from_result (-b)
+    { cf := b != 0, af := (b.take 4) != 0, of := (-b).signed != - b.signed }
+
+@[simp, grind =] theorem StatusFlags.zf_ofNeg {w} (b : BitVec w) :
+    (StatusFlags.ofNeg b).zf = (-b == BitVec.zero w) := rfl
+@[simp, grind =] theorem StatusFlags.cf_ofNeg {w} (b : BitVec w) :
+    (StatusFlags.ofNeg b).cf = (b != 0) := rfl
+
 @[simp, grind =] theorem StatusFlags.zf_ofSub {w} (a b : BitVec w) :
     (StatusFlags.ofSub a b).zf = (a - b == BitVec.zero w) := rfl
 @[simp, grind =] theorem StatusFlags.cf_ofSub {w} (a b : BitVec w) :
