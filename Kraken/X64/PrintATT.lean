@@ -123,12 +123,25 @@ def operation {w} (aw : Width) (op : Operation w) : String :=
 
 def avxOperation {w} (aw : Width) (op : AvxOperation w) : String :=
   let two (mn : String) {w} (d x : AvxRegOrMem w) := s!"{mn} {avxRm aw x}, {avxRm aw d}"
+  let three (mn : String) {w} (d a : AvxReg w) (b : AvxRegOrMem w) :=
+    s!"{mn} {avxRm aw b}, {avxReg a}, {avxReg d}"
   match op with
   | .movups d x => two "movups" d x
   | .vmovups d x => two "vmovups" d x
   | .movaps d x => two "movaps" d x
   | .subps d x => two "subps" d x
   | .addps d x => two "addps" d x
+  | .vmovaps d x => two "vmovaps" d x
+  | .vxorps d a b => three "vxorps" d a b
+  | .vaddps d a b => three "vaddps" d a b
+  | .vmulps d a b => three "vmulps" d a b
+  | .vfmadd231ps d a b => three "vfmadd231ps" d a b
+  | .vshufps d a b i => s!"vshufps ${i}, {avxRm aw b}, {avxReg a}, {avxReg d}"
+  | .vextractf128 d x i => s!"vextractf128 ${i}, {avxReg x}, {avxReg d}"
+  | .vmovhlps d a b => s!"vmovhlps {avxReg b}, {avxReg a}, {avxReg d}"
+  | .vmovss d a b => s!"vmovss {avxReg b}, {avxReg a}, {avxReg d}"
+  | .vaddss d a b => s!"vaddss {avxReg b}, {avxReg a}, {avxReg d}"
+  | .vzeroupper => "vzeroupper"
 
 def instr : Instr → String
   | .regular aw _ op => operation aw op

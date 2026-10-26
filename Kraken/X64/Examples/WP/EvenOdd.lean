@@ -65,6 +65,7 @@ theorem evenOdd_spec [Host] [FunDecls] [Embeds even] [Embeds odd]
     Program.WP.callSpec_of_triple hf fun t ra => ⟨fun t₀ ⟨h₀, hlt, hp⟩ => (hs t ra hlt).1 t₀ ⟨h₀, hp⟩⟩
   have hodd := hcall ho fun t ra hlt => (ih _ hlt t ra rfl).2
   have heven := hcall he fun t ra hlt => (ih _ hlt t ra rfl).1
+  clear hcall ih
   refine ⟨⟨fun s₀ ⟨h₀, _⟩ => ?_⟩, ⟨fun s₀ ⟨h₀, _⟩ => ?_⟩⟩ <;> subst h₀
   · refine Program.WP.cfg (fun
         | .entry, t | .label "even", t => t = s.pushRa ra

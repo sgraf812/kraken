@@ -86,13 +86,7 @@ variable [Host] [FunDecls] {Q : Unit → MachineData → Prop} {E : Int64 → Ma
     ⦃ fun s => (Mem.loadInt s.dmem (s.regs.get64 b + BitVec.ofInt 64 d.toInt) 8).isSome = true ∧
           let a := BitVec.ofInt 64 (Mem.loadInt s.dmem (s.regs.get64 b + BitVec.ofInt 64 d.toInt) 8).get!
           let bv := s.regs.get64 rd
-          let v := a + bv
-          Q () { s with
-            regs := s.regs.set64 rd v
-            status := StatusFlags.from_result v
-              { cf := v.unsigned != a.unsigned + bv.unsigned,
-                af := (v.take 4).unsigned != (a.take 4).unsigned + (bv.take 4).unsigned,
-                of := v.signed != a.signed + bv.signed } } ⦄
+          Q () { s with regs := s.regs.set64 rd (a + bv), status := StatusFlags.ofAdd a bv } ⦄
       (Directive.instr (.regular .W64 .W64
           (.add (.reg (.low rd .W64))
             (.regOrMem (.mem ⟨some (.reg b), none, .int64 d⟩)))))
@@ -124,13 +118,7 @@ local macro "run_step" : tactic =>
     ⦃ fun s =>
         let b := s.regs.get64 r
         let a := BitVec.setWidth 64 i.toBitVec
-        let v := b - a
-        Q () { s with
-          regs := s.regs.set64 r v
-          status := StatusFlags.from_result v
-            { cf := v.unsigned != b.unsigned - a.unsigned,
-              af := (v.take 4).unsigned != (b.take 4).unsigned - (a.take 4).unsigned,
-              of := v.signed != b.signed - a.signed } } ⦄
+        Q () { s with regs := s.regs.set64 r (b - a), status := StatusFlags.ofSub b a } ⦄
       (Directive.instr (.regular asz .W64 (.sub (.reg (.low r .W64)) (.imm (.int64 i)))))
     ⦃ Q; E ⦄ := by
   refine ⟨fun s hpre => ?_⟩
@@ -151,13 +139,7 @@ local macro "run_step" : tactic =>
     ⦃ fun s =>
         let a := BitVec.setWidth 64 i.toBitVec
         let b := s.regs.get64 r
-        let v := a + b
-        Q () { s with
-          regs := s.regs.set64 r v
-          status := StatusFlags.from_result v
-            { cf := v.unsigned != a.unsigned + b.unsigned,
-              af := (v.take 4).unsigned != (a.take 4).unsigned + (b.take 4).unsigned,
-              of := v.signed != a.signed + b.signed } } ⦄
+        Q () { s with regs := s.regs.set64 r (a + b), status := StatusFlags.ofAdd a b } ⦄
       (Directive.instr (.regular asz .W64 (.add (.reg (.low r .W64)) (.imm (.int64 i)))))
     ⦃ Q; E ⦄ := by
   refine ⟨fun s hpre => ?_⟩
@@ -189,13 +171,7 @@ local macro "run_step" : tactic =>
     ⦃ fun s =>
         let a := s.regs.get64 rs
         let b := s.regs.get64 rd
-        let v := a + b
-        Q () { s with
-          regs := s.regs.set64 rd v
-          status := StatusFlags.from_result v
-            { cf := v.unsigned != a.unsigned + b.unsigned,
-              af := (v.take 4).unsigned != (a.take 4).unsigned + (b.take 4).unsigned,
-              of := v.signed != a.signed + b.signed } } ⦄
+        Q () { s with regs := s.regs.set64 rd (a + b), status := StatusFlags.ofAdd a b } ⦄
       (Directive.instr (.regular asz .W64
           (.add (.reg (.low rd .W64)) (.regOrMem (.reg (.low rs .W64))))))
     ⦃ Q; E ⦄ := by
@@ -231,14 +207,7 @@ local macro "run_step" : tactic =>
 
 @[spec] public theorem cmp_reg_reg_spec (asz : Width) (ra rb : Reg64) :
     ⦃ fun s =>
-        let a := s.regs.get64 ra
-        let b := s.regs.get64 rb
-        let v := a - b
-        Q () { s with
-          status := StatusFlags.from_result v
-            { cf := v.unsigned != a.unsigned - b.unsigned,
-              af := (v.take 4).unsigned != (a.take 4).unsigned - (b.take 4).unsigned,
-              of := v.signed != a.signed - b.signed } } ⦄
+        Q () { s with status := StatusFlags.ofSub (s.regs.get64 ra) (s.regs.get64 rb) } ⦄
       (Directive.instr (.regular asz .W64
           (.cmp (.reg (.low ra .W64)) (.regOrMem (.reg (.low rb .W64))))))
     ⦃ Q; E ⦄ := by
@@ -249,9 +218,8 @@ local macro "run_step" : tactic =>
 
 @[spec] public theorem test_reg_reg_spec (asz : Width) (ra rb : Reg64) :
     ⦃ fun s =>
-        let v := s.regs.get64 ra &&& s.regs.get64 rb
         ∀ af : Bool, Q () { s with
-          status := StatusFlags.from_result v { cf := false, af, of := false } } ⦄
+          status := StatusFlags.ofLogic (s.regs.get64 ra &&& s.regs.get64 rb) af } ⦄
       (Directive.instr (.regular asz .W64
           (.test (.reg (.low ra .W64)) (.regOrMem (.reg (.low rb .W64))))))
     ⦃ Q; E ⦄ := by
@@ -297,9 +265,7 @@ local macro "run_step" : tactic =>
 @[spec] public theorem xor_reg_reg_spec (asz : Width) (rd rs : Reg64) :
     ⦃ fun s =>
         let v := s.regs.get64 rd ^^^ s.regs.get64 rs
-        ∀ af : Bool, Q () { s with
-          regs := s.regs.set64 rd v
-          status := StatusFlags.from_result v { cf := false, of := false, af } } ⦄
+        ∀ af : Bool, Q () { s with regs := s.regs.set64 rd v, status := StatusFlags.ofLogic v af } ⦄
       (Directive.instr (.regular asz .W64
           (.xor (.reg (.low rd .W64)) (.regOrMem (.reg (.low rs .W64))))))
     ⦃ Q; E ⦄ := by
@@ -312,19 +278,181 @@ local macro "run_step" : tactic =>
 @[spec] public theorem dec_reg_spec (asz : Width) (r : Reg64) :
     ⦃ fun s =>
         let a := s.regs.get64 r
-        let v := a - 1
-        Q () { s with
-          regs := s.regs.set64 r v
-          status := StatusFlags.from_result v
-            { cf := s.status.cf,
-              af := (v.take 4).unsigned != (a.take 4).unsigned - 1,
-              of := v.signed != a.signed - 1 } } ⦄
+        Q () { s with regs := s.regs.set64 r (a - 1), status := StatusFlags.ofDec a s.status.cf } ⦄
       (Directive.instr (.regular asz .W64 (.dec (.reg (.low r .W64)))))
     ⦃ Q; E ⦄ := by
   refine ⟨fun s hpre => ?_⟩
   refine Program.wp_single fun _ _ _ _ hn _ => ?_
   run_step
   exact hn _ hpre
+
+@[spec] public theorem cmp_reg_imm_spec (asz : Width) (r : Reg64) (i : Int64) :
+    ⦃ fun s =>
+        Q () { s with status := StatusFlags.ofSub (s.regs.get64 r) (BitVec.setWidth 64 i.toBitVec) } ⦄
+      (Directive.instr (.regular asz .W64 (.cmp (.reg (.low r .W64)) (.imm (.int64 i)))))
+    ⦃ Q; E ⦄ :=
+  ⟨fun _ hq => Program.wp_single fun _ _ _ _ hn _ => by run_step; exact hn _ hq⟩
+
+@[spec] public theorem and_reg_imm_spec (asz : Width) (r : Reg64) (i : Int64) :
+    ⦃ fun s =>
+        let v := s.regs.get64 r &&& BitVec.setWidth 64 i.toBitVec
+        ∀ af : Bool, Q () { s with regs := s.regs.set64 r v, status := StatusFlags.ofLogic v af } ⦄
+      (Directive.instr (.regular asz .W64 (.and (.reg (.low r .W64)) (.imm (.int64 i)))))
+    ⦃ Q; E ⦄ :=
+  ⟨fun _ hq => Program.wp_single fun _ _ _ _ hn _ => by run_step; exact fun af => hn _ (hq af)⟩
+
+@[spec] public theorem shl_reg32_imm_spec (asz : Width) (r : Reg64) (i : Int64) :
+    ⦃ fun s =>
+        let n := i.toBitVec.toNat % 32
+        n ≠ 0 ∧ ∀ st : StatusFlags, Q () { s with
+          regs := s.regs.set64 r ((((s.regs.get64 r).take 32) <<< n).zeroExtend 64)
+          status := st } ⦄
+      (Directive.instr (.regular asz .W32 (.shl (.reg (.low r .W32)) (.imm8 (.int64 i)))))
+    ⦃ Q; E ⦄ := by
+  refine ⟨fun s ⟨hz, hq⟩ => Program.wp_single fun _ _ _ _ hn _ => ?_⟩
+  have hc : ∀ (L : Labels) rng,
+      @ShiftCountExpr.interpMasked L (.imm8 (.int64 i)) s rng Width.W32
+        = i.toBitVec.toNat % 32 := fun _ _ => by
+    show (i.toBitVec.take 8).toNat &&& (2 ^ 5 - 1) = _
+    rw [BitVec.take, BitVec.extractLsb'_toNat, Nat.shiftRight_zero,
+      Nat.and_two_pow_sub_one_eq_mod, Nat.mod_mod_of_dvd _ (by decide)]
+  simp only [Directive.interp, Instr.interp, Operation.interp, RegOrMem.interp,
+    MachineData.set, MachineData.setReg, Reg64s.get_low_W32, Reg64s.set_low_W32, hc, hz,
+    beq_iff_eq, ite_false, Effects.All]
+  repeat (first | exact hn _ (hq _) | intro _ | split | simp only [Effects.All])
+
+local macro "run_avx" : tactic =>
+  `(tactic| simp only [Directive.interp, Instr.interp, AvxOperation.interp, AvxRegOrMem.interp,
+      MachineData.setAvx, MachineData.setAvxReg, Effects.All, ite_true])
+
+@[spec] public theorem vxorps_reg_spec {w : AvxWidth} (asz : Width) (dst src1 src2 : AvxReg w) :
+    ⦃ fun s => Q () { s with zmms := s.zmms.set dst (s.zmms.get src1 ^^^ s.zmms.get src2) } ⦄
+      (Directive.instr (.avx asz w (.vxorps dst src1 (.avx src2))))
+    ⦃ Q; E ⦄ :=
+  ⟨fun _ hq => Program.wp_single fun _ _ _ _ hn _ => by run_avx; exact hn _ hq⟩
+
+@[spec] public theorem vaddps_reg_spec {w : AvxWidth} (asz : Width) (dst src1 src2 : AvxReg w) :
+    ⦃ fun s => Q () { s with zmms := (s.zmms.set dst
+        (BitVec.packedBinOp 32 (sseBinOp (· + ·)) (s.zmms.get src1) (s.zmms.get src2))) } ⦄
+      (Directive.instr (.avx asz w (.vaddps dst src1 (.avx src2))))
+    ⦃ Q; E ⦄ :=
+  ⟨fun _ hq => Program.wp_single fun _ _ _ _ hn _ => by run_avx; exact hn _ hq⟩
+
+@[spec] public theorem vshufps_reg_spec {w : AvxWidth} (asz : Width) (dst src1 src2 : AvxReg w)
+    (imm : UInt8) :
+    ⦃ fun s => Q () { s with zmms := (s.zmms.set dst
+        (BitVec.packedBinOp 128 (BitVec.shufps128 imm) (s.zmms.get src1) (s.zmms.get src2))) } ⦄
+      (Directive.instr (.avx asz w (.vshufps dst src1 (.avx src2) imm)))
+    ⦃ Q; E ⦄ :=
+  ⟨fun _ hq => Program.wp_single fun _ _ _ _ hn _ => by run_avx; exact hn _ hq⟩
+
+@[spec] public theorem vextractf128_spec {w : AvxWidth} (asz : Width) (dst : AvxReg .W128)
+    (src : AvxReg .W256) (imm : UInt8) :
+    ⦃ fun s => Q () { s with zmms := (s.zmms.set dst
+        ((s.zmms.get src).extractLsb' (128 * (imm.toNat % 2)) 128)) } ⦄
+      (Directive.instr (.avx asz w (.vextractf128 dst src imm)))
+    ⦃ Q; E ⦄ :=
+  ⟨fun _ hq => Program.wp_single fun _ _ _ _ hn _ => by run_avx; exact hn _ hq⟩
+
+@[spec] public theorem vmovhlps_spec {w : AvxWidth} (asz : Width) (dst src1 src2 : AvxReg .W128) :
+    ⦃ fun s => Q () { s with zmms := (s.zmms.set dst
+        ((s.zmms.get src1).extractLsb' 64 64 ++ (s.zmms.get src2).extractLsb' 64 64)) } ⦄
+      (Directive.instr (.avx asz w (.vmovhlps dst src1 src2)))
+    ⦃ Q; E ⦄ :=
+  ⟨fun _ hq => Program.wp_single fun _ _ _ _ hn _ => by run_avx; exact hn _ hq⟩
+
+@[spec] public theorem vmovss_reg_spec {w : AvxWidth} (asz : Width) (dst src1 src2 : AvxReg .W128) :
+    ⦃ fun s => Q () { s with zmms := (s.zmms.set dst
+        ((s.zmms.get src1).extractLsb' 32 96 ++ (s.zmms.get src2).extractLsb' 0 32)) } ⦄
+      (Directive.instr (.avx asz w (.vmovss dst src1 src2)))
+    ⦃ Q; E ⦄ :=
+  ⟨fun _ hq => Program.wp_single fun _ _ _ _ hn _ => by run_avx; exact hn _ hq⟩
+
+@[spec] public theorem vaddss_spec {w : AvxWidth} (asz : Width) (dst src1 src2 : AvxReg .W128) :
+    ⦃ fun s => Q () { s with zmms := (s.zmms.set dst
+        ((s.zmms.get src1).extractLsb' 32 96
+          ++ sseBinOp (· + ·) ((s.zmms.get src1).extractLsb' 0 32)
+            ((s.zmms.get src2).extractLsb' 0 32))) } ⦄
+      (Directive.instr (.avx asz w (.vaddss dst src1 src2)))
+    ⦃ Q; E ⦄ :=
+  ⟨fun _ hq => Program.wp_single fun _ _ _ _ hn _ => by run_avx; exact hn _ hq⟩
+
+@[spec] public theorem vzeroupper_spec {w : AvxWidth} (asz : Width) :
+    ⦃ fun s => Q () { s with zmms := s.zmms.zeroUpper } ⦄
+      (Directive.instr (.avx asz w .vzeroupper))
+    ⦃ Q; E ⦄ :=
+  ⟨fun _ hq => Program.wp_single fun _ _ _ _ hn _ => by run_avx; exact hn _ hq⟩
+
+@[spec] public theorem vmovups_load_sib1_spec (y : AvxReg .W256) (b i : Reg64) (d : Int64) :
+    ⦃ fun s =>
+        let a := s.regs.get64 b + s.regs.get64 i + BitVec.ofInt 64 d.toInt
+        (Mem.loadInt s.dmem a 32).isSome = true
+          ∧ Q () { s with zmms := s.zmms.set y (BitVec.ofInt 256 (Mem.loadInt s.dmem a 32).get!) } ⦄
+      (Directive.instr (.avx .W64 .W256
+          (.vmovups (.avx y) (.mem ⟨some (.reg b), some ⟨i, .W8⟩, .int64 d⟩))))
+    ⦃ Q; E ⦄ := by
+  refine ⟨fun s ⟨hsome, hq⟩ => ?_⟩
+  obtain ⟨v, hv⟩ := Option.isSome_iff_exists.mp hsome
+  refine Program.wp_single fun _ _ _ _ hn _ => ?_
+  simp only [Directive.interp, Instr.interp, AvxOperation.interp, AvxRegOrMem.interp,
+    MachineData.setAvx, MachineData.setAvxReg, MachineData.loadAvx,
+    AddrExpr.zeroExtend_interp_sib1, hv, Bool.false_and, Bool.false_eq_true, ite_false,
+    Effects.All]
+  exact hn _ (by rwa [hv, Option.get!_some] at hq)
+
+@[spec] public theorem vfmadd231ps_load_sib1_spec (dst src1 : AvxReg .W256) (b i : Reg64)
+    (d : Int64) :
+    ⦃ fun s =>
+        let a := s.regs.get64 b + s.regs.get64 i + BitVec.ofInt 64 d.toInt
+        (Mem.loadInt s.dmem a 32).isSome = true
+          ∧ Q () { s with zmms := (s.zmms.set dst
+              (BitVec.packedTernOp 32 (sseTernOp fun d x y => Kraken.Float32.fma x y d)
+                (s.zmms.get dst) (s.zmms.get src1) (BitVec.ofInt 256 (Mem.loadInt s.dmem a 32).get!))) } ⦄
+      (Directive.instr (.avx .W64 .W256
+          (.vfmadd231ps dst src1 (.mem ⟨some (.reg b), some ⟨i, .W8⟩, .int64 d⟩))))
+    ⦃ Q; E ⦄ := by
+  refine ⟨fun s ⟨hsome, hq⟩ => ?_⟩
+  obtain ⟨v, hv⟩ := Option.isSome_iff_exists.mp hsome
+  refine Program.wp_single fun _ _ _ _ hn _ => ?_
+  simp only [Directive.interp, Instr.interp, AvxOperation.interp, AvxRegOrMem.interp,
+    MachineData.setAvxReg, MachineData.loadAvx, AddrExpr.zeroExtend_interp_sib1, hv,
+    Bool.false_and, Bool.false_eq_true, ite_false, Effects.All]
+  exact hn _ (by rwa [hv, Option.get!_some] at hq)
+
+@[spec] public theorem vmovaps_load_sib1_spec (x : AvxReg .W128) (b i : Reg64) (d : Int64) :
+    ⦃ fun s =>
+        let a := s.regs.get64 b + s.regs.get64 i + BitVec.ofInt 64 d.toInt
+        isAligned 16 a = true ∧ (Mem.loadInt s.dmem a 16).isSome = true
+          ∧ Q () { s with zmms := s.zmms.set x (BitVec.ofInt 128 (Mem.loadInt s.dmem a 16).get!) } ⦄
+      (Directive.instr (.avx .W64 .W128
+          (.vmovaps (.avx x) (.mem ⟨some (.reg b), some ⟨i, .W8⟩, .int64 d⟩))))
+    ⦃ Q; E ⦄ := by
+  refine ⟨fun s ⟨hal, hsome, hq⟩ => ?_⟩
+  obtain ⟨v, hv⟩ := Option.isSome_iff_exists.mp hsome
+  refine Program.wp_single fun _ _ _ _ hn _ => ?_
+  simp only [Directive.interp, Instr.interp, AvxOperation.interp, AvxRegOrMem.interp,
+    MachineData.setAvx, MachineData.setAvxReg, MachineData.loadAvx,
+    AddrExpr.zeroExtend_interp_sib1, hal, hv, AvxWidth.bytes, Bool.not_true, Bool.and_false,
+    Bool.false_eq_true, ite_false, Effects.All]
+  exact hn _ (by rwa [hv, Option.get!_some] at hq)
+
+@[spec] public theorem vmulps_load_sib1_spec (dst src1 : AvxReg .W128) (b i : Reg64) (d : Int64) :
+    ⦃ fun s =>
+        let a := s.regs.get64 b + s.regs.get64 i + BitVec.ofInt 64 d.toInt
+        (Mem.loadInt s.dmem a 16).isSome = true
+          ∧ Q () { s with zmms := (s.zmms.set dst
+              (BitVec.packedBinOp 32 (sseBinOp (· * ·)) (s.zmms.get src1)
+                (BitVec.ofInt 128 (Mem.loadInt s.dmem a 16).get!))) } ⦄
+      (Directive.instr (.avx .W64 .W128
+          (.vmulps dst src1 (.mem ⟨some (.reg b), some ⟨i, .W8⟩, .int64 d⟩))))
+    ⦃ Q; E ⦄ := by
+  refine ⟨fun s ⟨hsome, hq⟩ => ?_⟩
+  obtain ⟨v, hv⟩ := Option.isSome_iff_exists.mp hsome
+  refine Program.wp_single fun _ _ _ _ hn _ => ?_
+  simp only [Directive.interp, Instr.interp, AvxOperation.interp, AvxRegOrMem.interp,
+    MachineData.setAvxReg, MachineData.loadAvx, AddrExpr.zeroExtend_interp_sib1, hv,
+    Bool.false_and, Bool.false_eq_true, ite_false, Effects.All]
+  exact hn _ (by rwa [hv, Option.get!_some] at hq)
 
 public theorem MachineData.not_stackBelow_self (s : MachineData) : ¬ s.StackBelow s := by
   simp [MachineData.StackBelow]

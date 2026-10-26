@@ -248,6 +248,17 @@ inductive AvxOperation (w : AvxWidth)
   | movaps (_ : AvxDst w) (src : AvxRegOrMem w)
   | subps (_ : AvxDst w) (src : AvxRegOrMem w)
   | addps (_ : AvxDst w) (src : AvxRegOrMem w)
+  | vmovaps (_ : AvxDst w) (src : AvxRegOrMem w)
+  | vxorps (_ : AvxReg w) (src1 : AvxReg w) (src2 : AvxRegOrMem w)
+  | vaddps (_ : AvxReg w) (src1 : AvxReg w) (src2 : AvxRegOrMem w)
+  | vmulps (_ : AvxReg w) (src1 : AvxReg w) (src2 : AvxRegOrMem w)
+  | vfmadd231ps (_ : AvxReg w) (src1 : AvxReg w) (src2 : AvxRegOrMem w)
+  | vshufps (_ : AvxReg w) (src1 : AvxReg w) (src2 : AvxRegOrMem w) (imm : UInt8)
+  | vextractf128 (_ : AvxReg .W128) (src : AvxReg .W256) (imm : UInt8)
+  | vmovhlps (_ : AvxReg .W128) (src1 src2 : AvxReg .W128)
+  | vmovss (_ : AvxReg .W128) (src1 src2 : AvxReg .W128)
+  | vaddss (_ : AvxReg .W128) (src1 src2 : AvxReg .W128)
+  | vzeroupper
   deriving Repr, DecidableEq, Hashable, Lean.ToExpr
 
 inductive Instr

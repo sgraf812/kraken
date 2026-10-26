@@ -4,6 +4,7 @@ module
 -- which itself is just extracted from https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html
 
 import Kraken.Attribute
+public import Kraken.Float32Fma
 public import Kraken.Layout
 public import Kraken.Mem
 meta import Kraken.Mem
@@ -187,6 +188,14 @@ def RegZmms.setLegacy (s : RegZmms) {w} (r : AvxReg w) (v : w.type) : RegZmms :=
   | .ymm r => s.set512 r ((s.get512 r).replaceLow v)  -- impossible
   | .xmm r => s.set512 r ((s.get512 r).replaceLow v)
 
+def RegZmms.zeroUpper (s : RegZmms) : RegZmms :=
+  let z (v : ZmmValue) : ZmmValue := (BitVec.setWidth 128 v).setWidth 512
+  { s with
+    zmm0 := z s.zmm0, zmm1 := z s.zmm1, zmm2 := z s.zmm2, zmm3 := z s.zmm3,
+    zmm4 := z s.zmm4, zmm5 := z s.zmm5, zmm6 := z s.zmm6, zmm7 := z s.zmm7,
+    zmm8 := z s.zmm8, zmm9 := z s.zmm9, zmm10 := z s.zmm10, zmm11 := z s.zmm11,
+    zmm12 := z s.zmm12, zmm13 := z s.zmm13, zmm14 := z s.zmm14, zmm15 := z s.zmm15 }
+
 @[kstep]
 def BitVec.toAddressSize [address_size: AddressSize] (w: BitVec 64): BitVec address_size.address_size.bits :=
   w.take address_size.address_size.bits
@@ -228,6 +237,29 @@ def sseBinOp (op : Float32 → Float32 → Float32) (a b : BitVec 32) : BitVec 3
   if a.toFloat32.isNaN then a ||| 0x400000#32
   else if b.toFloat32.isNaN then b ||| 0x400000#32
   else let r := op a.toFloat32 b.toFloat32; if r.isNaN then 0xffc00000#32 else r.toBitVec
+
+def sseTernOp (op : Float32 → Float32 → Float32 → Float32) (a b c : BitVec 32) : BitVec 32 :=
+  if a.toFloat32.isNaN then a ||| 0x400000#32
+  else if b.toFloat32.isNaN then b ||| 0x400000#32
+  else if c.toFloat32.isNaN then c ||| 0x400000#32
+  else let r := op a.toFloat32 b.toFloat32 c.toFloat32
+    if r.isNaN then 0xffc00000#32 else r.toBitVec
+
+def BitVec.packedTernOp {w : Nat} (c : Nat) (op : BitVec c → BitVec c → BitVec c → BitVec c)
+    (a b d : BitVec w) : BitVec w :=
+  if _ : c = 0 ∨ w < c then
+    a
+  else
+    let res_low := op (a.take c) (b.take c) (d.take c)
+    let res_high := BitVec.packedTernOp c op (a.drop c) (b.drop c) (d.drop c)
+    (BitVec.append res_high res_low).setWidth _
+termination_by w
+decreasing_by omega
+
+def BitVec.shufps128 (imm : UInt8) (a b : BitVec 128) : BitVec 128 :=
+  let pick (x : BitVec 128) (k : Nat) : BitVec 32 :=
+    x.extractLsb' (32 * ((imm.toNat >>> k) % 4)) 32
+  pick b 6 ++ pick b 4 ++ pick a 2 ++ pick a 0
 
 structure StatusFlags where
   cf : Bool
@@ -778,6 +810,40 @@ match i with
     src.interp s p (checkAlign := true) (fun a s =>
     dst.interp s p (fun b s =>
       s.setAvxLegacy dst (BitVec.packedBinOp 32 (sseBinOp (· + ·)) b a) p next))
+  | .vmovaps dst src =>
+    src.interp s p (checkAlign := true)
+      (fun val s => s.setAvx dst val p (checkAlign := true) next)
+  | .vxorps dst src1 src2 =>
+    src2.interp s p (fun b s =>
+      next (s.setAvxReg dst (s.zmms.get src1 ^^^ b)))
+  | .vaddps dst src1 src2 =>
+    src2.interp s p (fun b s =>
+      next (s.setAvxReg dst (BitVec.packedBinOp 32 (sseBinOp (· + ·)) (s.zmms.get src1) b)))
+  | .vmulps dst src1 src2 =>
+    src2.interp s p (fun b s =>
+      next (s.setAvxReg dst (BitVec.packedBinOp 32 (sseBinOp (· * ·)) (s.zmms.get src1) b)))
+  | .vfmadd231ps dst src1 src2 =>
+    src2.interp s p (fun b s =>
+      next (s.setAvxReg dst
+        (BitVec.packedTernOp 32 (sseTernOp fun d x y => Kraken.Float32.fma x y d)
+          (s.zmms.get dst) (s.zmms.get src1) b)))
+  | .vshufps dst src1 src2 imm =>
+    src2.interp s p (fun b s =>
+      next (s.setAvxReg dst (BitVec.packedBinOp 128 (BitVec.shufps128 imm) (s.zmms.get src1) b)))
+  | .vextractf128 dst src imm =>
+    next (s.setAvxReg dst ((s.zmms.get src).extractLsb' (128 * (imm.toNat % 2)) 128))
+  | .vmovhlps dst src1 src2 =>
+    next (s.setAvxReg dst
+      ((s.zmms.get src1).extractLsb' 64 64 ++ (s.zmms.get src2).extractLsb' 64 64))
+  | .vmovss dst src1 src2 =>
+    next (s.setAvxReg dst
+      ((s.zmms.get src1).extractLsb' 32 96 ++ (s.zmms.get src2).extractLsb' 0 32))
+  | .vaddss dst src1 src2 =>
+    let a := s.zmms.get src1
+    let b := s.zmms.get src2
+    next (s.setAvxReg dst
+      (a.extractLsb' 32 96 ++ sseBinOp (· + ·) (a.extractLsb' 0 32) (b.extractLsb' 0 32)))
+  | .vzeroupper => next { s with zmms := s.zmms.zeroUpper }
 
 @[kstep]
 def Instr.interp [Labels]

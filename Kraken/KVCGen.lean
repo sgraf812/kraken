@@ -21,6 +21,9 @@ adjacent literals to `evalGround`. -/
 theorem BitVec.add_assoc_rev {w : Nat} (a b c : BitVec w) : a + (b + c) = a + b + c :=
   (BitVec.add_assoc a b c).symm
 
+theorem BitVec.add_ofNat_zero {w : Nat} (x : BitVec w) : x + (0 : BitVec w) = x :=
+  BitVec.add_zero x
+
 theorem MachineState.data_mk (d : MachineData) (pc : Int64) : (⟨d, pc⟩ : MachineState).data = d := rfl
 
 /-- `vcgen` with the register state folded. -/
@@ -116,12 +119,14 @@ macro_rules
         StatusFlags.cf_from_result,
         StatusFlags.from_result.Remaining.cf_mk,
         BitVec.add_zero,
+        BitVec.add_ofNat_zero,
         BitVec.unsigned_eq,
         BitVec.toNat_ofNat,
         Nat.zero_mod,
         Int.add_zero,
         Int.cast_ofNat_Int,
         bne_self_eq_false,
+        BitVec.xor_self,
         Bool.toNat_false,
         ite_true,
         ite_false] $[with $d]?)

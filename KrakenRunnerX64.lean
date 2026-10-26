@@ -108,6 +108,7 @@ instance : Gen AddrIndex := ⟨gen_ctors% AddrIndex⟩
 -- No nop lengths or alignments; other control flow is rejected by `stepDeterministic`.
 instance : Gen Nat := ⟨failure⟩
 instance : Gen Int64 := ⟨genInt64 #[3, 8, 16, 32, 64]⟩
+instance : Gen UInt8 := ⟨UInt8.ofNat <$> nextNat 256⟩
 -- Code addresses differ between Kraken's layout and the hardware binary, so no labels, nor
 -- `before/after_current_instruction`, nor rip-relative addressing.
 instance : Gen ConstExpr := ⟨.int64 <$> gen⟩

@@ -46,3 +46,5 @@ import Kraken.X64.Examples.WP.Jumps
 import Kraken.X64.Examples.WP.Surprises
 import Kraken.X64.Examples.WP.EventuallySurprises
 import Kraken.X64.Examples.WP.PushPopLoop
+import Kraken.X64.Examples.WP.EvenOdd
+import Kraken.X64.Examples.WP.FfScalarproductFloatFma3
