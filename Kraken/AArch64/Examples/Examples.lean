@@ -144,7 +144,8 @@ theorem move_2_regs_to_heap_correct [layout : Layout] (s₀ : MachineData)
   kstep
   tactic =>
   apply Eventually.done
-  rw [BitVec.ofInt_ofBytes_toBytes 64 8 rfl, BitVec.ofInt_ofBytes_toBytes 64 8 rfl]
+  rw [BitVec.ofInt_ofBytes_toBytes 64 8 rfl, BitVec.ofInt_ofBytes_toBytes 64 8 rfl, BitVec.ofInt_toInt,
+    BitVec.ofInt_toInt]
   exact ⟨rfl, rfl, rfl⟩
 
 -- Example 6: Memory access with shifted register offset [x1, x2, lsl #3]

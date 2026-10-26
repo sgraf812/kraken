@@ -80,13 +80,13 @@ def MachineData.pushRa (s : MachineData) (ra : Int64) : MachineData :=
 
 @[grind =] theorem Int64.ofBitVec_ofBytes_toBytes (ra : Int64) :
     Int64.ofBitVec (BitVec.ofInt 64 (Int.ofBytes (Int.toBytes 8 ra.toBitVec.toInt))) = ra := by
-  rw [BitVec.ofInt_ofBytes_toBytes 64 8 rfl, Int64.ofBitVec_toBitVec]
+  rw [BitVec.ofInt_ofBytes_toBytes 64 8 rfl, BitVec.ofInt_toInt, Int64.ofBitVec_toBitVec]
 
 @[grind =] theorem MachineData.retAddr_pushRa (s : MachineData) (ra : Int64) :
     (s.pushRa ra).retAddr = some ra := by
   simp only [MachineData.retAddr, MachineData.pushRa, Reg64s.get64_set64, reduceIte,
     Mem.loadInt_storeInt _ _ _ _ (by decide : 8 ≤ 2 ^ 64), Option.map_some,
-    BitVec.ofInt_ofBytes_toBytes 64 8 rfl, Int64.ofBitVec_toBitVec]
+    BitVec.ofInt_ofBytes_toBytes 64 8 rfl, BitVec.ofInt_toInt, Int64.ofBitVec_toBitVec]
 
 /-- The registers and memory blocks a callee may change. -/
 structure Modifies where

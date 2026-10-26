@@ -270,7 +270,7 @@ theorem p6_correct [layout : Layout] (s₀ : MachineData)
   kstep
   tactic =>
   apply Eventually.done
-  rw [BitVec.ofInt_ofBytes_toBytes 64 8 rfl]
+  rw [BitVec.ofInt_ofBytes_toBytes 64 8 rfl, BitVec.ofInt_toInt]
   simp (config := { zetaDelta := true }) only [show (OfNat.ofNat 8 : UInt64) = 8 from rfl]
   bv_decide
 
@@ -350,7 +350,8 @@ theorem move_2_regs_to_heap_correct [layout : Layout] (s₀ : MachineData)
   kstep
   tactic =>
   apply Eventually.done
-  rw [BitVec.ofInt_ofBytes_toBytes 64 8 rfl, BitVec.ofInt_ofBytes_toBytes 64 8 rfl]
+  rw [BitVec.ofInt_ofBytes_toBytes 64 8 rfl, BitVec.ofInt_ofBytes_toBytes 64 8 rfl, BitVec.ofInt_toInt,
+    BitVec.ofInt_toInt]
   exact ⟨rfl, rfl, rfl⟩
 
 def sib_example := parse("
@@ -414,7 +415,7 @@ theorem alu_mem_example_correct [layout : Layout] (s₀ : MachineData)
   apply Eventually.done
   dsimp [UInt64.toBitVec]
   change (100 : UInt64) + { toBitVec := BitVec.ofInt 64 (Int.ofBytes (Int.toBytes 8 (42#64).toInt)) } = (142 : UInt64)
-  rw [BitVec.ofInt_ofBytes_toBytes 64 8 rfl]
+  rw [BitVec.ofInt_ofBytes_toBytes 64 8 rfl, BitVec.ofInt_toInt]
   rfl
 
 def dynamic_stack_example := parse("
