@@ -262,9 +262,9 @@ def Blocks.Inside {w : Nat} (addr : BitVec w) (n : Nat) : List (BitVec w × Nat)
   | (a, len) :: bs => (addr - a).toNat + n ≤ len ∨ Blocks.Inside addr n bs
 
 /-- An access inside a later block is inside the list. -/
-theorem Blocks.Inside.tail {w : Nat} {addr : BitVec w} {n : Nat} {p : BitVec w × Nat}
-    {bs : List (BitVec w × Nat)} (h : Blocks.Inside addr n bs) :
-    Blocks.Inside addr n (p :: bs) := by
+theorem Blocks.Inside.tail {w : Nat} {addr : BitVec w} {n : Nat} {p q : BitVec w × Nat}
+    {bs : List (BitVec w × Nat)} (h : Blocks.Inside addr n (q :: bs)) :
+    Blocks.Inside addr n (p :: q :: bs) := by
   obtain ⟨a, len⟩ := p
   exact Or.inr h
 
@@ -290,14 +290,31 @@ theorem Blocks.Inside.base_add_sub {w : Nat} {a x y : BitVec w} {n len : Nat}
 /-- An access at two offsets `c` and `x` from a block's base, such as a pointer
 into the block plus an index. -/
 theorem Blocks.Inside.base_add_add {w : Nat} {a c x : BitVec w} {n len : Nat}
-    {bs : List (BitVec w × Nat)} (h : (c + x).toNat + n ≤ len) :
+    {bs : List (BitVec w × Nat)} (h : c.toNat + x.toNat + n ≤ len) :
     Blocks.Inside (a + c + x) n ((a, len) :: bs) :=
-  Or.inl (by rw [BitVec.add_assoc, BitVec.add_comm, BitVec.add_sub_cancel]; exact h)
+  Or.inl (by
+    rw [BitVec.add_assoc, BitVec.add_comm, BitVec.add_sub_cancel, BitVec.toNat_add]
+    have := Nat.mod_le (c.toNat + x.toNat) (2 ^ w)
+    omega)
 
 /-- An access at offsets `c` and `x` around a block's base, as `c + a + x`: an
 operand whose index register holds the pointer to the block, such as
 `16(%rcx,%rsi,1)` for the block at `rsi`. -/
 theorem Blocks.Inside.add_base_add {w : Nat} {a c x : BitVec w} {n len : Nat}
+    {bs : List (BitVec w × Nat)} (h : c.toNat + x.toNat + n ≤ len) :
+    Blocks.Inside (c + a + x) n ((a, len) :: bs) :=
+  Or.inl (by
+    rw [BitVec.add_comm c a, BitVec.add_assoc, BitVec.add_comm, BitVec.add_sub_cancel,
+      BitVec.toNat_add]
+    have := Nat.mod_le (c.toNat + x.toNat) (2 ^ w)
+    omega)
+
+theorem Blocks.Inside.base_add_add_wrap {w : Nat} {a c x : BitVec w} {n len : Nat}
+    {bs : List (BitVec w × Nat)} (h : (c + x).toNat + n ≤ len) :
+    Blocks.Inside (a + c + x) n ((a, len) :: bs) :=
+  Or.inl (by rw [BitVec.add_assoc, BitVec.add_comm, BitVec.add_sub_cancel]; exact h)
+
+theorem Blocks.Inside.add_base_add_wrap {w : Nat} {a c x : BitVec w} {n len : Nat}
     {bs : List (BitVec w × Nat)} (h : (c + x).toNat + n ≤ len) :
     Blocks.Inside (c + a + x) n ((a, len) :: bs) :=
   Or.inl (by
@@ -389,7 +406,7 @@ theorem Blocks.storeInt {w : Nat} {bs : List (BitVec w × Nat)} {F : Mem w → P
       · rw [sep_comm_l] at h' ⊢
         exact ih h' hin
 
-grind_pattern Blocks.Inside.tail => Blocks.Inside addr n (p :: bs)
+grind_pattern Blocks.Inside.tail => Blocks.Inside addr n (p :: q :: bs)
 grind_pattern Blocks.Inside.base => Blocks.Inside a n ((a, len) :: bs)
 grind_pattern Blocks.Inside.base_add => Blocks.Inside (a + x) n ((a, len) :: bs)
 grind_pattern Blocks.Inside.base_add_sub => Blocks.Inside (a + x - y) n ((a, len) :: bs)
@@ -398,6 +415,8 @@ grind_pattern Blocks.Inside.sub => Blocks.Inside (p - x) n ((a, len) :: bs), p -
 grind_pattern Blocks.Inside.sub_sub => Blocks.Inside (p - x - y) n ((a, len) :: bs), p - a
 grind_pattern Blocks.Inside.mono => Blocks.Inside addr n ((a, len) :: bs), Blocks.Inside addr n ((a, len') :: bs)
 grind_pattern Blocks.Inside.add_base_add => Blocks.Inside (c + a + x) n ((a, len) :: bs)
+grind_pattern Blocks.Inside.base_add_add_wrap => Blocks.Inside (a + c + x) n ((a, len) :: bs)
+grind_pattern Blocks.Inside.add_base_add_wrap => Blocks.Inside (c + a + x) n ((a, len) :: bs)
 -- The pointer rule also needs the offset `p - a` among the terms, which an
 -- invariant about the pointer puts there. Otherwise any pointer into any block
 -- would match, and ruling out the wrong blocks swamps the arithmetic.
