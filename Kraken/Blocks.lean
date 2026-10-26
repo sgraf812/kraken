@@ -525,6 +525,14 @@ elab "cfg_view" " as " n:ident : tactic => withMainContext do
   let (_, g) ← (← getMainGoal).note n.getId pf stmt
   replaceMainGoal [g]
 
+open Lean Meta Simp in
+simproc_decl cfgMatch (_) := fun e => do
+  let .const declName _ := e.getAppFn | return .continue
+  let some info ← getMatcherInfo? declName | return .continue
+  let discrs := e.getAppArgs.extract (info.numParams + 1) (info.numParams + 1 + info.numDiscrs)
+  unless ← discrs.anyM fun d => return (← isConstructorApp? d).isSome do return .continue
+  simpMatchCore declName e
+
 macro "cfg_cases" : tactic =>
   `(tactic|
     (cfg_view as hview
@@ -532,8 +540,10 @@ macro "cfg_cases" : tactic =>
      simp only [List.map_cons, List.map_nil] at hlabels
      rw [Program.ForallBlocks, hview]
      clear hview
-     simp only [Program.forallBlocksFrom, hlabels]
+     rw [hlabels]
+     dsimp only [Program.forallBlocksFrom]
      clear hlabels
      repeat' apply And.intro
      all_goals intro t ht
+     all_goals try simp -iota only [cfgMatch, CfgLabel.label.injEq] at ht
      all_goals try exact ht.elim))
