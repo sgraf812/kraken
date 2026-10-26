@@ -326,34 +326,48 @@ open Lean.Order in
 
 end Executable.StepIn
 
+public def BitVec.SerialLt {w : Nat} (a b : BitVec w) : Prop :=
+  0 < (b - a).toInt
+
+@[grind .] public theorem BitVec.not_serialLt_self {w : Nat} (a : BitVec w) : ¬ a.SerialLt a := by
+  simp [BitVec.SerialLt]
+
+@[grind .] public theorem BitVec.serialLt_add {w : Nat} (a k : BitVec w) (h : 0 < k.toInt) :
+    a.SerialLt (a + k) := by
+  rwa [BitVec.SerialLt, show a + k - a = k by grind]
+
+@[grind .] public theorem BitVec.serialLt_add_left {w : Nat} (a k : BitVec w) (h : 0 < k.toInt) :
+    a.SerialLt (k + a) := by
+  rw [BitVec.add_comm]
+  exact BitVec.serialLt_add a k h
+
+@[grind .] public theorem BitVec.serialLt_sub {w : Nat} (a k : BitVec w) (h : 0 < k.toInt) :
+    (a - k).SerialLt a := by
+  rwa [BitVec.SerialLt, show a - (a - k) = k by grind]
+
+public theorem BitVec.SerialLt.asymm {w : Nat} {a b : BitVec w} (h : a.SerialLt b) :
+    ¬ b.SerialLt a := by
+  rw [BitVec.SerialLt] at h ⊢
+  rw [show a - b = -(b - a) by grind, BitVec.toInt_neg_of_ne_intMin]
+  · omega
+  · intro he
+    have := BitVec.toInt_intMin_le (0#w)
+    rw [he] at h
+    simp at this
+    omega
+
+public theorem BitVec.lt_toNat_sub_of_serialLt {a b : BitVec 64} (h : a.SerialLt b) :
+    2 ^ 63 < (a - b).toNat := by
+  revert h
+  simp only [BitVec.SerialLt, BitVec.toInt_eq_toNat_cond]
+  split <;> bv_omega
+
 -- the stack pointer of `s'` lies below that of the reference state `s`
-@[expose] public def MachineData.StackBelow (s' s : MachineData) : Prop :=
-  0 < (s.regs.get64 .rsp - s'.regs.get64 .rsp).toInt
+public abbrev MachineData.StackBelow (s' s : MachineData) : Prop :=
+  (s'.regs.get64 .rsp).SerialLt (s.regs.get64 .rsp)
 
 -- the stack pointer of `s'` lies at or below that of the reference state `s`
 public abbrev MachineData.StackAtOrBelow (s' s : MachineData) : Prop := ¬ s.StackBelow s'
-
-@[grind ←] public theorem MachineData.stackBelow_of_add_eight {s s' : MachineData}
-    (h : s'.regs.get64 .rsp + 8#64 = s.regs.get64 .rsp) : s'.StackBelow s := by
-  show 0 < (s.regs.get64 .rsp - s'.regs.get64 .rsp).toInt
-  rw [← h]
-  generalize s'.regs.get64 .rsp = x
-  rw [show x + 8#64 - x = 8#64 by bv_omega]
-  decide
-
-@[grind ←] public theorem MachineData.stackAtOrBelow_of_rsp_eq {s s' : MachineData}
-    (h : s'.regs.get64 .rsp = s.regs.get64 .rsp) : s'.StackAtOrBelow s := by
-  show ¬ 0 < (s'.regs.get64 .rsp - s.regs.get64 .rsp).toInt
-  rw [h]
-  simp
-
-@[grind ←] public theorem MachineData.stackAtOrBelow_of_toNat_lt {s s' : MachineData}
-    (h : (s.regs.get64 .rsp - s'.regs.get64 .rsp).toNat < 2 ^ 63) : s'.StackAtOrBelow s := by
-  show ¬ 0 < (s'.regs.get64 .rsp - s.regs.get64 .rsp).toInt
-  generalize s.regs.get64 .rsp = a at h
-  generalize s'.regs.get64 .rsp = b at h
-  rw [BitVec.toInt_eq_toNat_cond]
-  split <;> bv_omega
 
 open Classical in
 @[expose] public def Executable.StepOut (e : Executable)

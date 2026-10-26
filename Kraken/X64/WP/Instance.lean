@@ -454,15 +454,13 @@ local macro "run_avx" : tactic =>
     Bool.false_and, Bool.false_eq_true, ite_false, Effects.All]
   exact hn _ (by rwa [hv, Option.get!_some] at hq)
 
-public theorem MachineData.not_stackBelow_self (s : MachineData) : ¬ s.StackBelow s := by
-  simp [MachineData.StackBelow]
+public theorem MachineData.not_stackBelow_self (s : MachineData) : ¬ s.StackBelow s :=
+  BitVec.not_serialLt_self _
 
 public theorem MachineData.not_stackBelow_pop (s : MachineData) :
     ¬ ({ s with regs := s.regs.set64 .rsp (s.regs.get64 .rsp + 8#64) } : MachineData).StackBelow s := by
-  simp only [MachineData.StackBelow, Reg64s.set64_rsp, Reg64s.get64_rsp, Int64.toBitVec_ofBitVec]
-  generalize s.regs.rsp.toBitVec = x
-  rw [show x - (x + 8#64) = -8#64 by bv_omega]
-  decide
+  simp only [MachineData.StackBelow, Reg64s.set64_rsp, Reg64s.get64_rsp, Reg64s.rsp_mk, UInt64.toBitVec_ofBitVec]
+  exact (BitVec.serialLt_add _ _ (by decide)).asymm
 
 @[spec] public theorem jmp_label_spec (asz osz : Width) (l : Label) :
     ⦃ fun s => E (label l) s ⦄

@@ -98,13 +98,9 @@ attribute [grind =] Width.bytes
 
 A register holds a `UInt64` whose payload is a `BitVec 64`, and the instruction
 semantics moves between the two spellings and back through `Nat`. Each equation
-below is one crossing that `grind` cannot take on its own: the payload bridge,
-the range fact every word carries, and the three reductions a wrapping
-subtraction and a double-width product need once the result is known to fit. -/
-
-@[grind =] theorem UInt64.toNat_payload (x : UInt64) : x.toBitVec.toNat = x.toNat := rfl
-
-@[grind .] theorem UInt64.lt_size (x : UInt64) : x.toNat < 2 ^ 64 := x.toNat_lt
+below is one crossing that `grind` cannot take on its own: the three reductions
+a wrapping subtraction and a double-width product need once the result is known
+to fit. -/
 
 @[grind =] theorem BitVec.toNat_sub_le {a b : BitVec 64} (h : b.toNat ≤ a.toNat) :
     (a - b).toNat = a.toNat - b.toNat :=

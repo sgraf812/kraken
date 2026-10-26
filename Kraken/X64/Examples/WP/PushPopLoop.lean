@@ -13,6 +13,8 @@ set_option experimental.vcgen true
 
 namespace State
 
+attribute [local grind →] BitVec.lt_toNat_sub_of_serialLt
+
 def pushPop : Program := parse("
 fill:
   push %rax

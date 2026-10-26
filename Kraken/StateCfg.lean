@@ -145,11 +145,9 @@ abbrev CallSpec (f : Label) (Pre : MachineData → Prop) (Post : MachineData →
     ⦃ Q; E ⦄
 
 theorem MachineData.stackBelow_pushRa (s : MachineData) (ra : Int64) : (s.pushRa ra).StackBelow s := by
-  simp only [MachineData.StackBelow, MachineData.pushRa, Reg64s.set64_rsp, Reg64s.get64_rsp,
-    Int64.toBitVec_ofBitVec]
-  generalize s.regs.rsp.toBitVec = x
-  rw [show x - (x - 8#64) = 8#64 by bv_omega]
-  decide
+  simp only [MachineData.StackBelow, MachineData.pushRa, Reg64s.set64_rsp, Reg64s.get64_rsp, Reg64s.rsp_mk,
+    UInt64.toBitVec_ofBitVec]
+  exact BitVec.serialLt_sub _ _ (by decide)
 
 theorem callSpec_of_triple {f : Label} {g : Fragment} (hg : FunDecls.at (label f) = some g)
     {Pre : MachineData → Prop} {Post : MachineData → MachineData → Prop} {m : MachineData → Modifies}
