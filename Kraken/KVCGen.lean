@@ -7,8 +7,7 @@ and a read of a named register from a literal is the field. The projections
 of the machine record, the `UInt64` round trip and reassociation present
 adjacent literals to `evalGround`, so a chain of ground arithmetic and its
 flags fold while `vcgen` steps. The rewrite set is the explicit list below:
-nothing else changes what `kvcgen64` rewrites with. Both the state wp and the
-separation wp use it.
+nothing else changes what `kvcgen64` rewrites with.
 -/
 public import Kraken.X64.Registers
 public import Std.Tactic.Do.Syntax
