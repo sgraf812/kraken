@@ -109,7 +109,7 @@ private abbrev MMBwd (bs : List UInt8) (s : MachineData) (ra : Int64)
 
 /-- The contract of `memmove`, in every linked program. -/
 theorem memmove_spec [Host] [FunDecls] (bs : List UInt8) (s : MachineData) (ra : Int64) :
-    ⦃ fun t => t = s.pushRa ra
+    ⦃ fun t => t = s.push64 ra
       ∧ (bs.length = (s.regs.get64 .rdx).toNat
         ∧ (s.regs.get64 .rsi).toNat + bs.length < 2 ^ 64
         ∧ (s.regs.get64 .rdi).toNat + bs.length < 2 ^ 64
@@ -124,7 +124,7 @@ theorem memmove_spec [Host] [FunDecls] (bs : List UInt8) (s : MachineData) (ra :
   refine ⟨fun s₀ ⟨h₀, _⟩ => ?_⟩
   subst h₀
   refine Program.WP.cfg (fun
-      | .entry, t | .label "memmove", t => t = s.pushRa ra
+      | .entry, t | .label "memmove", t => t = s.push64 ra
       | .label "bwd", t => MMBwd bs s ra t
       | .label "bdone", t => MMBwd bs s ra t ∧ t.regs.get64 .rdx = 0
       | .label "fwd", t => MMFwd bs s ra t

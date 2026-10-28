@@ -643,6 +643,12 @@ def UnchangedOutside {w : Nat} (bs : List (BitVec w × Nat)) (m m' : Mem w) : Pr
 @[grind =] theorem unchangedOutside_iff {w : Nat} (bs : List (BitVec w × Nat)) (m m' : Mem w) :
     UnchangedOutside bs m m' ↔ ∀ b, ¬ Blocks.Inside b 1 bs → m'.get? b = m.get? b := Iff.rfl
 
+def SameDomain {w : Nat} (m m' : Mem w) : Prop :=
+  ∀ b, (m.get? b).isSome ↔ (m'.get? b).isSome
+
+def WritesOnly {w : Nat} (bs : List (BitVec w × Nat)) (m m' : Mem w) : Prop :=
+  UnchangedOutside bs m m' ∧ SameDomain m m'
+
 def Mapped {w : Nat} (bs : List (BitVec w × Nat)) (m : Mem w) : Prop :=
   ∀ b, Blocks.Inside b 1 bs → (m.get? b).isSome
 
@@ -752,5 +758,131 @@ grind_pattern Contains.loadInt_eq => Contains m a bs, Mem.loadInt m a n
 grind_pattern Contains.storeInt_self => Mem.storeInt m a n v
 grind_pattern Contains.storeInt_of_disjoint => Contains m a bs, Mem.storeInt m addr n v, Blocks.Disjoint bs₁ bs₂
 grind_pattern Contains.storeInt_of_disjoint' => Contains m a bs, Mem.storeInt m addr n v, Blocks.Disjoint bs₂ bs₁
+
+theorem Blocks.Inside.singleton_mono {w : Nat} {x a b : BitVec w} {k len len' : Nat}
+    (h : Blocks.Inside x k [(b, len')]) (hs : (b - a).toNat + len' ≤ len) :
+    Blocks.Inside x k [(a, len)] := by
+  refine Or.inl ?_
+  rcases h with h | h
+  · have hx : x - a = (x - b) + (b - a) := by
+      rw [BitVec.sub_eq_add_neg, BitVec.sub_eq_add_neg, BitVec.sub_eq_add_neg, BitVec.add_assoc,
+        ← BitVec.add_assoc (-b), BitVec.add_comm (-b) b, ← BitVec.sub_eq_add_neg b b, BitVec.sub_self,
+        BitVec.zero_add]
+    rw [hx, BitVec.toNat_add]
+    have := Nat.mod_le ((x - b).toNat + (b - a).toNat) (2 ^ w)
+    omega
+  · exact h.elim
+
+theorem loadInt_isSome_get? {w : Nat} {m : Mem w} {a : BitVec w} {n : Nat}
+    (h : (m.loadInt a n).isSome = true) {i : Nat} (hi : i < n) :
+    (m.get? (a + BitVec.ofNat w i)).isSome = true := by
+  obtain ⟨xs, hxs⟩ := Option.isSome_iff_exists.mp
+    (by simpa only [Mem.loadInt, Option.isSome_map] using h : (m.loadBytes a n).isSome = true)
+  have hl := congrArg (·[i]?) (List.allSome_eq_map_some hxs)
+  simp only [List.getElem?_map, List.getElem?_range hi, Option.map_some] at hl
+  cases hx : xs[i]? <;> simp_all
+
+theorem SameDomain.storeInt {w : Nat} {m : Mem w} {a : BitVec w} {n : Nat}
+    (h : (m.loadInt a n).isSome = true) (v : Int) : SameDomain m (m.storeInt a n v) := fun b => by
+  by_cases hb : ∃ i < n, b = a + BitVec.ofNat w i
+  · obtain ⟨i, hi, rfl⟩ := hb
+    have hm := loadInt_isSome_get? h hi
+    refine iff_of_true hm ?_
+    rw [Mem.storeInt, Mem.storeBytes, get?_eq_getElem?, ExtHashMap.union_eq, ExtHashMap.getElem?_union]
+    rw [get?_eq_getElem?] at hm
+    cases ((Int.toBytes n v).At a)[a + BitVec.ofNat w i]? <;> simp_all
+  · rw [Mem.get?_storeInt_of_ne _ _ _ _ _ fun i hi he => hb ⟨i, hi, he⟩]
+
+theorem WritesOnly.refl {w : Nat} (bs : List (BitVec w × Nat)) (m : Mem w) : WritesOnly bs m m :=
+  ⟨fun _ _ => rfl, fun _ => Iff.rfl⟩
+
+theorem WritesOnly.trans {w : Nat} {bs : List (BitVec w × Nat)} {m₁ m₂ m₃ : Mem w}
+    (h₁ : WritesOnly bs m₁ m₂) (h₂ : WritesOnly bs m₂ m₃) : WritesOnly bs m₁ m₃ :=
+  ⟨fun b hb => (h₂.1 b hb).trans (h₁.1 b hb), fun b => (h₁.2 b).trans (h₂.2 b)⟩
+
+theorem WritesOnly.mono_singleton {w : Nat} {m m' : Mem w} {a b : BitVec w} {len len' : Nat}
+    (h : WritesOnly [(b, len')] m m') (hs : (b - a).toNat + len' ≤ len) : WritesOnly [(a, len)] m m' :=
+  ⟨fun x hx => h.1 x fun hin => hx (hin.singleton_mono hs), h.2⟩
+
+theorem WritesOnly.storeInt {w : Nat} {bs : List (BitVec w × Nat)} {m : Mem w} {a : BitVec w} {n : Nat}
+    (hin : Blocks.Inside a n bs) (h : (m.loadInt a n).isSome = true) (v : Int) :
+    WritesOnly bs m (m.storeInt a n v) :=
+  ⟨fun _ hb => hin.get?_storeInt hb v, SameDomain.storeInt h v⟩
+
+def Block.ofStackSlots (rsp : UInt64) (k : Nat) : BitVec 64 × Nat :=
+  (rsp.toBitVec - BitVec.ofNat 64 (8 * (k + 1)), 8 * (k + 1))
+
+theorem Blocks.Inside.ofStackSlots {rsp : UInt64} {x : BitVec 64} {n k : Nat} {bs : List (BitVec 64 × Nat)}
+    (hn : n ≤ x.toNat) (hx : x.toNat ≤ 8 * (k + 1)) (hk : 8 * (k + 1) < 2 ^ 64) :
+    Blocks.Inside (rsp.toBitVec - x) n (Block.ofStackSlots rsp k :: bs) := by
+  unfold Block.ofStackSlots
+  have hy : rsp.toBitVec - (rsp.toBitVec - BitVec.ofNat 64 (8 * (k + 1))) = BitVec.ofNat 64 (8 * (k + 1)) := by
+    rw [BitVec.sub_eq_add_neg rsp.toBitVec (rsp.toBitVec - _), BitVec.neg_sub, BitVec.add_comm (-rsp.toBitVec),
+      ← BitVec.sub_eq_add_neg, BitVec.add_comm, BitVec.sub_add_cancel]
+  have hd : (BitVec.ofNat 64 (8 * (k + 1))).toNat = 8 * (k + 1) := by
+    rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hk]
+  exact Blocks.Inside.sub (by rw [hy, hd]; exact hx) (by rw [hy, hd]; omega)
+
+theorem Blocks.Disjoint.ofStackSlots {a : BitVec 64} {n k : Nat} (h : 8 * (k + 1) + n ≤ 2 ^ 64) :
+    Blocks.Disjoint [(a, n)] [Block.ofStackSlots (UInt64.ofBitVec a) k] := by
+  unfold Block.ofStackSlots
+  intro x hx hx'
+  rcases hx with hx | hx
+  · rcases hx' with hx' | hx'
+    · have hd : (BitVec.ofNat 64 (8 * (k + 1))).toNat = 8 * (k + 1) := by
+        rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega)]
+      have he : x - ((UInt64.ofBitVec a).toBitVec - BitVec.ofNat 64 (8 * (k + 1)))
+          = (x - a) + BitVec.ofNat 64 (8 * (k + 1)) := by
+        rw [UInt64.toBitVec_ofBitVec]; grind
+      rw [he, BitVec.toNat_add, hd, Nat.mod_eq_of_lt (by omega)] at hx'
+      omega
+    · exact hx'
+  · exact hx
+
+theorem WritesOnly.ofStackSlots_push64 {m m' : Mem 64} {rsp : UInt64} {k : Nat} {v : Int}
+    (hl : (m.loadInt (rsp.toBitVec - 8) 8).isSome = true) (hk : 8 * (k + 1) < 2 ^ 64)
+    (h : WritesOnly [Block.ofStackSlots rsp k] (m.storeInt (rsp.toBitVec - 8) 8 v) m') :
+    WritesOnly [Block.ofStackSlots rsp k] m m' :=
+  (WritesOnly.storeInt (Blocks.Inside.ofStackSlots (by decide) (by simp; omega) hk) hl v).trans h
+
+theorem WritesOnly.ofStackSlots_mono {m m' : Mem 64} {rsp : UInt64} {k k' : Nat}
+    (hs : k' + 1 ≤ k) (hk : 8 * (k + 1) < 2 ^ 64)
+    (h : WritesOnly [Block.ofStackSlots (UInt64.ofBitVec (rsp.toBitVec - 8)) k'] m m') :
+    WritesOnly [Block.ofStackSlots rsp k] m m' := by
+  unfold Block.ofStackSlots at h ⊢
+  rw [UInt64.toBitVec_ofBitVec] at h
+  have hz : (BitVec.ofNat 64 (8 * (k + 1))).toNat = 8 * (k + 1) := by
+    rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hk]
+  have hy : (BitVec.ofNat 64 (8 * (k' + 1))).toNat = 8 * (k' + 1) := by
+    rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega)]
+  have h1 : ((8 : BitVec 64) + BitVec.ofNat 64 (8 * (k' + 1))).toNat = 8 + 8 * (k' + 1) := by
+    rw [BitVec.toNat_add, hy, Nat.mod_eq_of_lt (by simp; omega)]; rfl
+  have he : (rsp.toBitVec - 8 - BitVec.ofNat 64 (8 * (k' + 1)) - (rsp.toBitVec - BitVec.ofNat 64 (8 * (k + 1)))).toNat
+      = 8 * (k + 1) - 8 - 8 * (k' + 1) := by
+    rw [show rsp.toBitVec - 8 - BitVec.ofNat 64 (8 * (k' + 1)) - (rsp.toBitVec - BitVec.ofNat 64 (8 * (k + 1)))
+        = BitVec.ofNat 64 (8 * (k + 1)) - (8 + BitVec.ofNat 64 (8 * (k' + 1))) by grind,
+      BitVec.toNat_sub_of_le (by rw [BitVec.le_def, h1, hz]; omega), h1, hz]
+    omega
+  exact h.mono_singleton (by rw [he]; omega)
+
+theorem WritesOnly.mapped {w : Nat} {bs cs : List (BitVec w × Nat)} {m m' : Mem w}
+    (h : WritesOnly bs m m') (hc : Mapped cs m) : Mapped cs m' :=
+  fun b hb => (h.2 b).mp (hc b hb)
+
+theorem WritesOnly.loadInt {w : Nat} {bs : List (BitVec w × Nat)} {m m' : Mem w} {a : BitVec w} {n : Nat}
+    (h : WritesOnly bs m m') (hd : Blocks.Disjoint [(a, n)] bs) : m'.loadInt a n = m.loadInt a n :=
+  Mem.loadInt_congr fun _ hi => h.1 _ (hd _ ((Blocks.Inside.base (Nat.le_refl n)).add_ofNat hi))
+
+grind_pattern Blocks.Inside.ofStackSlots => Blocks.Inside (UInt64.toBitVec rsp - x) n (Block.ofStackSlots rsp k :: bs)
+grind_pattern Blocks.Disjoint.ofStackSlots => Blocks.Disjoint [(a, n)] [Block.ofStackSlots (UInt64.ofBitVec a) k]
+grind_pattern WritesOnly.refl => WritesOnly bs m m
+grind_pattern WritesOnly.storeInt => WritesOnly bs m (Mem.storeInt m a n v)
+grind_pattern WritesOnly.ofStackSlots_push64 =>
+  WritesOnly [Block.ofStackSlots rsp k] m m', Mem.storeInt m (UInt64.toBitVec rsp - 8) 8 v
+grind_pattern WritesOnly.ofStackSlots_mono =>
+  WritesOnly [Block.ofStackSlots (UInt64.ofBitVec (UInt64.toBitVec rsp - 8)) k'] m m',
+  WritesOnly [Block.ofStackSlots rsp k] m m'
+grind_pattern WritesOnly.mapped => WritesOnly bs m m', Mapped cs m
+grind_pattern WritesOnly.loadInt => WritesOnly bs m m', Mem.loadInt m' a n
 
 end Mem

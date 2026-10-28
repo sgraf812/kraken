@@ -49,7 +49,7 @@ abbrev mod (base : BitVec 64) (s : MachineData) : Modifies :=
 
 abbrev Spec [Host] [FunDecls] (p : Program) (base : BitVec 64) (sz r : Nat) (s : MachineData)
     (ra : Int64) : Prop :=
-  ⦃ fun t => t = s.pushRa ra ∧ Pre base sz s ⦄ p
+  ⦃ fun t => t = s.push64 ra ∧ Pre base sz s ⦄ p
     ⦃ (fun _ _ => False); fun a t => a = ra ∧ Post base sz r s t ∧ (mod base s).Agree s t ⦄
 
 theorem evenOdd_spec [Host] [FunDecls] [Embeds even] [Embeds odd]
@@ -68,15 +68,15 @@ theorem evenOdd_spec [Host] [FunDecls] [Embeds even] [Embeds odd]
   clear hcall ih
   refine ⟨⟨fun s₀ ⟨h₀, _⟩ => ?_⟩, ⟨fun s₀ ⟨h₀, _⟩ => ?_⟩⟩ <;> subst h₀
   · refine Program.WP.cfg (fun
-        | .entry, t | .label "even", t => t = s.pushRa ra
-        | .label _, t => t.regs = (s.pushRa ra).regs ∧ t.dmem = (s.pushRa ra).dmem ∧ n = 0
+        | .entry, t | .label "even", t => t = s.push64 ra
+        | .label _, t => t.regs = (s.push64 ra).regs ∧ t.dmem = (s.push64 ra).dmem ∧ n = 0
         | _, _ => False)
       (fun _ _ => 0) ?_ rfl
     cfg_cases
     all_goals kvcgen64 [hodd] with finish
   · refine Program.WP.cfg (fun
-        | .entry, t | .label "odd", t => t = s.pushRa ra
-        | .label _, t => t.regs = (s.pushRa ra).regs ∧ t.dmem = (s.pushRa ra).dmem ∧ n = 0
+        | .entry, t | .label "odd", t => t = s.push64 ra
+        | .label _, t => t.regs = (s.push64 ra).regs ∧ t.dmem = (s.push64 ra).dmem ∧ n = 0
         | _, _ => False)
       (fun _ _ => 0) ?_ rfl
     cfg_cases

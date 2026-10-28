@@ -64,15 +64,15 @@ theorem Program.drop_fromLabel (p : Program) (l : Label) :
 
 /-! ## Calls -/
 
-def MachineData.pushRa (s : MachineData) (ra : Int64) : MachineData :=
+def MachineData.push64 (s : MachineData) (v : Int64) : MachineData :=
   { s with regs := s.regs.set64 .rsp (s.regs.get64 .rsp - 8#64),
-           dmem := Mem.storeInt s.dmem (s.regs.get64 .rsp - 8#64) 8 ra.toBitVec.toInt }
+           dmem := Mem.storeInt s.dmem (s.regs.get64 .rsp - 8#64) 8 v.toBitVec.toInt }
 
-@[grind =] theorem MachineData.regs_pushRa (s : MachineData) (ra : Int64) :
-    (s.pushRa ra).regs = s.regs.set64 .rsp (s.regs.get64 .rsp - 8#64) := rfl
+@[grind =] theorem MachineData.regs_push64 (s : MachineData) (v : Int64) :
+    (s.push64 v).regs = s.regs.set64 .rsp (s.regs.get64 .rsp - 8#64) := rfl
 
-@[grind =] theorem MachineData.dmem_pushRa (s : MachineData) (ra : Int64) :
-    (s.pushRa ra).dmem = Mem.storeInt s.dmem (s.regs.get64 .rsp - 8#64) 8 ra.toBitVec.toInt := rfl
+@[grind =] theorem MachineData.dmem_push64 (s : MachineData) (v : Int64) :
+    (s.push64 v).dmem = Mem.storeInt s.dmem (s.regs.get64 .rsp - 8#64) 8 v.toBitVec.toInt := rfl
 
 @[grind =] theorem Mem.loadInt_storeInt_64 (m : DataMem) (a : BitVec 64) (v : Int) :
     (m.storeInt a 8 v).loadInt a 8 = some (Int.ofBytes (Int.toBytes 8 v)) :=
@@ -82,9 +82,9 @@ def MachineData.pushRa (s : MachineData) (ra : Int64) : MachineData :=
     Int64.ofBitVec (BitVec.ofInt 64 (Int.ofBytes (Int.toBytes 8 ra.toBitVec.toInt))) = ra := by
   rw [BitVec.ofInt_ofBytes_toBytes 64 8 rfl, BitVec.ofInt_toInt, Int64.ofBitVec_toBitVec]
 
-@[grind =] theorem MachineData.retAddr_pushRa (s : MachineData) (ra : Int64) :
-    (s.pushRa ra).retAddr = some ra := by
-  simp only [MachineData.retAddr, MachineData.pushRa, Reg64s.get64_set64, reduceIte,
+@[grind =] theorem MachineData.retAddr_push64 (s : MachineData) (ra : Int64) :
+    (s.push64 ra).retAddr = some ra := by
+  simp only [MachineData.retAddr, MachineData.push64, Reg64s.get64_set64, reduceIte,
     Mem.loadInt_storeInt _ _ _ _ (by decide : 8 ≤ 2 ^ 64), Option.map_some,
     BitVec.ofInt_ofBytes_toBytes 64 8 rfl, BitVec.ofInt_toInt, Int64.ofBitVec_toBitVec]
 
@@ -144,14 +144,14 @@ abbrev CallSpec (f : Label) (Pre : MachineData → Prop) (Post : MachineData →
       (Directive.instr (.regular asz osz (.call (.rel (.sub (.label f) .after_current_instruction)))))
     ⦃ Q; E ⦄
 
-theorem MachineData.stackBelow_pushRa (s : MachineData) (ra : Int64) : (s.pushRa ra).StackBelow s := by
-  simp only [MachineData.StackBelow, MachineData.pushRa, Reg64s.set64_rsp, Reg64s.get64_rsp, Reg64s.rsp_mk,
+theorem MachineData.stackBelow_push64 (s : MachineData) (ra : Int64) : (s.push64 ra).StackBelow s := by
+  simp only [MachineData.StackBelow, MachineData.push64, Reg64s.set64_rsp, Reg64s.get64_rsp, Reg64s.rsp_mk,
     UInt64.toBitVec_ofBitVec]
   exact BitVec.serialLt_sub _ _ (by decide)
 
 theorem callSpec_of_triple {f : Label} {g : Fragment} (hg : FunDecls.at (label f) = some g)
     {Pre : MachineData → Prop} {Post : MachineData → MachineData → Prop} {m : MachineData → Modifies}
-    (hbody : ∀ s ra, ⦃ fun t => t = s.pushRa ra ∧ Pre s ⦄ g.prog
+    (hbody : ∀ s ra, ⦃ fun t => t = s.push64 ra ∧ Pre s ⦄ g.prog
       ⦃ (fun _ _ => False); fun a t => a = ra ∧ Post s t ∧ (m s).Agree s t ⦄) :
     CallSpec f Pre Post m := by
   intro asz osz Q E
@@ -160,9 +160,9 @@ theorem callSpec_of_triple {f : Label} {g : Fragment} (hg : FunDecls.at (label f
   simp only [Directive.interp, Instr.interp, Operation.interp, RelRegOrMem.interp,
     ConstExpr.interp, MachineData.store, hload, Effects.All]
   rw [Int64.ofBitVec_toBitVec, Int64.add_sub_self_left]
-  refine hj (label f) (s.pushRa h.embedding.endAddr) ?_
+  refine hj (label f) (s.push64 h.embedding.endAddr) ?_
   unfold Executable.StepOut
-  simp only [hg, Option.map_some, MachineData.stackBelow_pushRa, ite_true]
+  simp only [hg, Option.map_some, MachineData.stackBelow_push64, ite_true]
   have hk := h.embedding.isInfixAt
   have hd := Host.exe_getElem? h.embedding.start
   rw [hk.cons.1, Option.map_some] at hd
@@ -175,6 +175,116 @@ theorem callSpec_of_triple {f : Label} {g : Fragment} (hg : FunDecls.at (label f
   rintro u ⟨hpc, hpost, hagree⟩
   simp only [hpc, ite_true]
   exact ⟨by trivial, hcont _ hpost hagree⟩
+
+def _root_.FunDecls.body (f : Label) : Program := ((FunDecls.at (label f)).map Fragment.prog).getD []
+
+theorem _root_.FunDecls.body_eq {f : Label} {g : Fragment} (hg : FunDecls.at (label f) = some g) :
+    FunDecls.body f = g.prog := by
+  simp [FunDecls.body, hg]
+
+open Classical in
+theorem wp_call_iff {f : Label} {g : Fragment} (hg : FunDecls.at (label f) = some g) {asz osz : Width}
+    {Q : Unit → MachineData → Prop} {E : Int64 → MachineData → Prop} {s : MachineData} :
+    WP.wp (Directive.instr (.regular asz osz (.call (.rel (.sub (.label f) .after_current_instruction))))) Q E s ↔
+      ∀ [h : Embeds [Directive.instr (.regular asz osz (.call (.rel (.sub (.label f) .after_current_instruction))))]],
+        (Mem.loadInt s.dmem (s.regs.get64 .rsp - 8#64) 8).isSome = true ∧
+        WP.wp (FunDecls.body f) (fun _ _ => False)
+          (fun a t => if a = h.embedding.endAddr then Q () t else E a t) (s.push64 h.embedding.endAddr) := by
+  rw [FunDecls.body_eq hg]
+  have nd := Program.noInternal_of_noLabels
+    (p := [Directive.instr (.regular asz osz (.call (.rel (.sub (.label f) .after_current_instruction))))]) rfl
+  constructor
+  · intro hw H
+    have hw : Program.wp _ (fun st => Q () st.data) (fun st => E st.pc st.data) s := hw
+    rw [Program.wp_eq] at hw
+    have hw := @hw H
+    simp only [Program.continueOnInternalExit_of_noInternal nd] at hw
+    have hk := H.embedding.isInfixAt
+    have hd := Host.exe_getElem? H.embedding.start
+    rw [hk.cons.1, Option.map_some] at hd
+    have hz : 0 < Kraken.Layout.size Directive H.embedding.start :=
+      Host.instr_size_pos _ _ hk.cons.1 (by rintro ⟨⟩)
+    have hft : Host.exe.fallthrough H.embedding.startAddr = H.embedding.endAddr :=
+      Host.fallthrough_addrOf hd hz
+    have hne : H.embedding.startAddr ≠ H.embedding.endAddr := Host.addrOf_succ_ne hd hz
+    unfold While at hw
+    cases hw with
+    | done _ h => exact absurd hne h.1
+    | step _ mid ht hrest =>
+      have hst := ht.2
+      let probe : Prop → Effects := fun c => if c then .done ⟨s, 0⟩ else .unimplemented ""
+      have hprobe : ∀ c, (probe c).All (fun _ => True) ↔ c := fun c => by
+        by_cases hc : c <;> simp [probe, hc, Effects.All]
+      have t := Host.stepIn_elim hd hz hst (P := fun _ => True) (ret := fun u => probe (mid u))
+        (jmp := fun u => probe (Host.exe.StepOut (fun a => (FunDecls.at a).map fun f => f.prog.wp (fun _ => False))
+          ⟨s, H.embedding.startAddr⟩ mid (fun st => E st.pc st.data) u))
+        (fun _ h => (hprobe _).mpr h) (fun _ h => (hprobe _).mpr h)
+      cases hload : Mem.loadInt s.dmem (s.regs.get64 .rsp - 8#64) 8 with
+      | none =>
+        simp only [Directive.interp, Instr.interp, Operation.interp, RelRegOrMem.interp,
+          ConstExpr.interp, MachineData.store, hload, Effects.All] at t
+      | some i =>
+        refine ⟨rfl, ?_⟩
+        simp only [Directive.interp, Instr.interp, Operation.interp, RelRegOrMem.interp,
+          ConstExpr.interp, MachineData.store, hload, Effects.All] at t
+        rw [Int64.ofBitVec_toBitVec, Int64.add_sub_self_left] at t
+        have t := (hprobe (Host.exe.StepOut (fun a => (FunDecls.at a).map fun f => f.prog.wp (fun _ => False))
+          ⟨s, H.embedding.startAddr⟩ mid (fun st => E st.pc st.data)
+          ⟨s.push64 H.embedding.endAddr, label f⟩)).mp t
+        unfold Executable.StepOut at t
+        simp only [hg, Option.map_some, MachineData.stackBelow_push64, ite_true] at t
+        rw [hft] at t
+        refine Program.wp_mono (fun _ h => h) ?_ t
+        intro u hu
+        by_cases hpc : u.pc = H.embedding.endAddr
+        · simp only [hpc, ite_true] at hu ⊢
+          have hr := hrest u hu
+          unfold While at hr
+          cases hr with
+          | done _ h => exact h.2
+          | step _ _ ht' _ => exact absurd hpc ht'.1
+        · simp only [hpc, ite_false] at hu ⊢
+          exact hu
+  · intro hr
+    refine Program.wp_single fun h _ _ _ _ hj => ?_
+    obtain ⟨hmapped, hbody⟩ := @hr h
+    obtain ⟨i, hload⟩ := Option.isSome_iff_exists.mp hmapped
+    simp only [Directive.interp, Instr.interp, Operation.interp, RelRegOrMem.interp,
+      ConstExpr.interp, MachineData.store, hload, Effects.All]
+    rw [Int64.ofBitVec_toBitVec, Int64.add_sub_self_left]
+    refine hj (label f) (s.push64 h.embedding.endAddr) ?_
+    unfold Executable.StepOut
+    simp only [hg, Option.map_some, MachineData.stackBelow_push64, ite_true]
+    have hk := h.embedding.isInfixAt
+    have hd := Host.exe_getElem? h.embedding.start
+    rw [hk.cons.1, Option.map_some] at hd
+    have hz : 0 < Kraken.Layout.size Directive h.embedding.start :=
+      Host.instr_size_pos _ _ hk.cons.1 (by rintro ⟨⟩)
+    have hft : Host.exe.fallthrough h.embedding.startAddr = h.embedding.endAddr :=
+      Host.fallthrough_addrOf hd hz
+    rw [hft]
+    refine Program.wp_mono (fun _ h => h) ?_ hbody
+    intro u hu
+    by_cases hpc : u.pc = h.embedding.endAddr
+    · simp only [hpc, ite_true] at hu ⊢
+      exact ⟨trivial, hu⟩
+    · simp only [hpc, ite_false] at hu ⊢
+      exact hu
+
+theorem call_spec {f : Label} {g : Fragment} (hg : FunDecls.at (label f) = some g) (asz osz : Width)
+    {Q : Unit → MachineData → Prop} {E : Int64 → MachineData → Prop} :
+    ⦃ fun s => (Mem.loadInt s.dmem (s.regs.get64 .rsp - 8#64) 8).isSome = true
+        ∧ ∀ ra, WP.wp (FunDecls.body f) (fun _ _ => False)
+          (fun a t => (a = ra → Q () t) ∧ (a ≠ ra → E a t)) (s.push64 ra) ⦄
+      (Directive.instr (.regular asz osz (.call (.rel (.sub (.label f) .after_current_instruction)))))
+    ⦃ Q; E ⦄ := by
+  refine ⟨fun s ⟨hmapped, hbody⟩ => (wp_call_iff hg).mpr fun [h : Embeds _] => ⟨hmapped, ?_⟩⟩
+  refine Program.wp_mono (fun _ h => h) (fun u hu => ?_) (hbody h.embedding.endAddr)
+  by_cases hpc : u.pc = h.embedding.endAddr
+  · simp only [hpc, ite_true]
+    exact hu.1 hpc
+  · simp only [hpc, ite_false]
+    exact hu.2 hpc
 
 
 end Program.WP

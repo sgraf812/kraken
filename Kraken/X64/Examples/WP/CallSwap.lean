@@ -35,7 +35,7 @@ done:
 private abbrev swapMod (s : MachineData) : Modifies := ⟨[.rax, .rbx], [(s.regs.get64 .rsp - 8#64, 8)]⟩
 
 theorem swap_spec [Host] [FunDecls] (s : MachineData) (ra : Int64) :
-    ⦃ fun t => t = s.pushRa ra ∧ Mem.Mapped [(s.regs.get64 .rsp - 8#64, 8)] s.dmem ⦄
+    ⦃ fun t => t = s.push64 ra ∧ Mem.Mapped [(s.regs.get64 .rsp - 8#64, 8)] s.dmem ⦄
       swap
     ⦃ (fun _ _ => False); fun a s' => a = ra
       ∧ (s'.regs.get64 .rax = s.regs.get64 .rbx ∧ s'.regs.get64 .rbx = s.regs.get64 .rax
@@ -44,7 +44,7 @@ theorem swap_spec [Host] [FunDecls] (s : MachineData) (ra : Int64) :
   refine ⟨fun s₀ ⟨h₀, _⟩ => ?_⟩
   subst h₀
   refine Program.WP.cfg (fun
-      | .entry, t | .label "swap", t => t = s.pushRa ra
+      | .entry, t | .label "swap", t => t = s.push64 ra
       | _, _ => False)
     (fun _ _ => 0) ?_ rfl
   cfg_cases
