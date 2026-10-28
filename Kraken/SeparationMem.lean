@@ -640,7 +640,7 @@ grind_pattern Blocks.of_contains => sep (sep (Bytes p ys) (Blocks [(a, n)])) F m
 def UnchangedOutside {w : Nat} (bs : List (BitVec w × Nat)) (m m' : Mem w) : Prop :=
   ∀ b, ¬ Blocks.Inside b 1 bs → m'.get? b = m.get? b
 
-@[grind =] theorem unchangedOutside_iff {w : Nat} (bs : List (BitVec w × Nat)) (m m' : Mem w) :
+theorem unchangedOutside_iff {w : Nat} (bs : List (BitVec w × Nat)) (m m' : Mem w) :
     UnchangedOutside bs m m' ↔ ∀ b, ¬ Blocks.Inside b 1 bs → m'.get? b = m.get? b := Iff.rfl
 
 def SameDomain {w : Nat} (m m' : Mem w) : Prop :=
@@ -809,6 +809,11 @@ theorem WritesOnly.storeInt {w : Nat} {bs : List (BitVec w × Nat)} {m : Mem w} 
     WritesOnly bs m (m.storeInt a n v) :=
   ⟨fun _ hb => hin.get?_storeInt hb v, SameDomain.storeInt h v⟩
 
+theorem WritesOnly.trans_storeInt {w : Nat} {bs : List (BitVec w × Nat)} {m m' : Mem w} {a : BitVec w}
+    {n : Nat} (h : WritesOnly bs m m') (hin : Blocks.Inside a n bs) (hl : (m'.loadInt a n).isSome = true)
+    (v : Int) : WritesOnly bs m (m'.storeInt a n v) :=
+  h.trans (WritesOnly.storeInt hin hl v)
+
 def Block.ofStackSlots (rsp : UInt64) (k : Nat) : BitVec 64 × Nat :=
   (rsp.toBitVec - BitVec.ofNat 64 (8 * (k + 1)), 8 * (k + 1))
 
@@ -877,6 +882,7 @@ grind_pattern Blocks.Inside.ofStackSlots => Blocks.Inside (UInt64.toBitVec rsp -
 grind_pattern Blocks.Disjoint.ofStackSlots => Blocks.Disjoint [(a, n)] [Block.ofStackSlots (UInt64.ofBitVec a) k]
 grind_pattern WritesOnly.refl => WritesOnly bs m m
 grind_pattern WritesOnly.storeInt => WritesOnly bs m (Mem.storeInt m a n v)
+grind_pattern WritesOnly.trans_storeInt => WritesOnly bs m m', WritesOnly bs m (Mem.storeInt m' a n v)
 grind_pattern WritesOnly.ofStackSlots_push64 =>
   WritesOnly [Block.ofStackSlots rsp k] m m', Mem.storeInt m (UInt64.toBitVec rsp - 8) 8 v
 grind_pattern WritesOnly.ofStackSlots_mono =>

@@ -4,8 +4,8 @@ module
 The control-flow rule of the state wp. `Program.WP.cfg` proves the wp of a
 program from one obligation per block of `Program.ForallBlocks`: an invariant
 `I` gives the assertion at each `CfgLabel`, and a variant `var` orders the
-edges between labelled blocks. A call steps by the callee's `CallSpec`, which
-`callSpec_of_triple` derives from its body.
+edges between labelled blocks. `call_spec` steps a call by the wp of the
+callee's body `FunDecls.body`.
 -/
 public import Kraken.X64.WP.Instance
 public import Kraken.Blocks
@@ -88,93 +88,14 @@ def MachineData.push64 (s : MachineData) (v : Int64) : MachineData :=
     Mem.loadInt_storeInt _ _ _ _ (by decide : 8 ≤ 2 ^ 64), Option.map_some,
     BitVec.ofInt_ofBytes_toBytes 64 8 rfl, BitVec.ofInt_toInt, Int64.ofBitVec_toBitVec]
 
-/-- The registers and memory blocks a callee may change. -/
-structure Modifies where
-  regs : List Reg64
-  mem : List (BitVec 64 × Nat)
-
-/-- `s'` agrees with `s` on the registers and the memory outside `m`. -/
-def Modifies.Agree (m : Modifies) (s s' : MachineData) : Prop :=
-  (∀ r, r ∉ m.regs → s'.regs.get64 r = s.regs.get64 r) ∧ Mem.UnchangedOutside m.mem s.dmem s'.dmem
-
-theorem Modifies.Agree.reg {m : Modifies} {s s' : MachineData} (h : m.Agree s s') (r : Reg64)
-    (hr : r ∉ m.regs) : s'.regs.get64 r = s.regs.get64 r := h.1 r hr
-grind_pattern Modifies.Agree.reg => m.Agree s s', s'.regs.get64 r
-
-@[grind =] theorem Modifies.agree_iff (m : Modifies) (s s' : MachineData) :
-    m.Agree s s' ↔
-      ((.rax ∈ m.regs ∨ s'.regs.get64 .rax = s.regs.get64 .rax)
-      ∧ (.rbx ∈ m.regs ∨ s'.regs.get64 .rbx = s.regs.get64 .rbx)
-      ∧ (.rcx ∈ m.regs ∨ s'.regs.get64 .rcx = s.regs.get64 .rcx)
-      ∧ (.rdx ∈ m.regs ∨ s'.regs.get64 .rdx = s.regs.get64 .rdx)
-      ∧ (.rsi ∈ m.regs ∨ s'.regs.get64 .rsi = s.regs.get64 .rsi)
-      ∧ (.rdi ∈ m.regs ∨ s'.regs.get64 .rdi = s.regs.get64 .rdi)
-      ∧ (.rsp ∈ m.regs ∨ s'.regs.get64 .rsp = s.regs.get64 .rsp)
-      ∧ (.rbp ∈ m.regs ∨ s'.regs.get64 .rbp = s.regs.get64 .rbp)
-      ∧ (.r8 ∈ m.regs ∨ s'.regs.get64 .r8 = s.regs.get64 .r8)
-      ∧ (.r9 ∈ m.regs ∨ s'.regs.get64 .r9 = s.regs.get64 .r9)
-      ∧ (.r10 ∈ m.regs ∨ s'.regs.get64 .r10 = s.regs.get64 .r10)
-      ∧ (.r11 ∈ m.regs ∨ s'.regs.get64 .r11 = s.regs.get64 .r11)
-      ∧ (.r12 ∈ m.regs ∨ s'.regs.get64 .r12 = s.regs.get64 .r12)
-      ∧ (.r13 ∈ m.regs ∨ s'.regs.get64 .r13 = s.regs.get64 .r13)
-      ∧ (.r14 ∈ m.regs ∨ s'.regs.get64 .r14 = s.regs.get64 .r14)
-      ∧ (.r15 ∈ m.regs ∨ s'.regs.get64 .r15 = s.regs.get64 .r15))
-      ∧ Mem.UnchangedOutside m.mem s.dmem s'.dmem := by
-  refine and_congr_left' ⟨fun h => ?_, fun h r hr => ?_⟩
-  ·
-    exact ⟨Classical.or_iff_not_imp_left.mpr (h _), Classical.or_iff_not_imp_left.mpr (h _),
-      Classical.or_iff_not_imp_left.mpr (h _), Classical.or_iff_not_imp_left.mpr (h _),
-      Classical.or_iff_not_imp_left.mpr (h _), Classical.or_iff_not_imp_left.mpr (h _),
-      Classical.or_iff_not_imp_left.mpr (h _), Classical.or_iff_not_imp_left.mpr (h _),
-      Classical.or_iff_not_imp_left.mpr (h _), Classical.or_iff_not_imp_left.mpr (h _),
-      Classical.or_iff_not_imp_left.mpr (h _), Classical.or_iff_not_imp_left.mpr (h _),
-      Classical.or_iff_not_imp_left.mpr (h _), Classical.or_iff_not_imp_left.mpr (h _),
-      Classical.or_iff_not_imp_left.mpr (h _), Classical.or_iff_not_imp_left.mpr (h _)⟩
-  · cases r <;> simp_all
-
 namespace Program.WP
 
 variable [Host] [FunDecls]
-
-abbrev CallSpec (f : Label) (Pre : MachineData → Prop) (Post : MachineData → MachineData → Prop)
-    (m : MachineData → Modifies) : Prop :=
-  ∀ asz osz (Q : Unit → MachineData → Prop) (E : Int64 → MachineData → Prop),
-    ⦃ fun s => (Mem.loadInt s.dmem (s.regs.get64 .rsp - 8#64) 8).isSome = true ∧ Pre s
-        ∧ (∀ s', Post s s' → (m s).Agree s s' → Q () s') ⦄
-      (Directive.instr (.regular asz osz (.call (.rel (.sub (.label f) .after_current_instruction)))))
-    ⦃ Q; E ⦄
 
 theorem MachineData.stackBelow_push64 (s : MachineData) (ra : Int64) : (s.push64 ra).StackBelow s := by
   simp only [MachineData.StackBelow, MachineData.push64, Reg64s.set64_rsp, Reg64s.get64_rsp, Reg64s.rsp_mk,
     UInt64.toBitVec_ofBitVec]
   exact BitVec.serialLt_sub _ _ (by decide)
-
-theorem callSpec_of_triple {f : Label} {g : Fragment} (hg : FunDecls.at (label f) = some g)
-    {Pre : MachineData → Prop} {Post : MachineData → MachineData → Prop} {m : MachineData → Modifies}
-    (hbody : ∀ s ra, ⦃ fun t => t = s.push64 ra ∧ Pre s ⦄ g.prog
-      ⦃ (fun _ _ => False); fun a t => a = ra ∧ Post s t ∧ (m s).Agree s t ⦄) :
-    CallSpec f Pre Post m := by
-  intro asz osz Q E
-  refine ⟨fun s ⟨hmapped, hpre, hcont⟩ => Program.wp_single fun h _ _ _ _ hj => ?_⟩
-  obtain ⟨i, hload⟩ := Option.isSome_iff_exists.mp hmapped
-  simp only [Directive.interp, Instr.interp, Operation.interp, RelRegOrMem.interp,
-    ConstExpr.interp, MachineData.store, hload, Effects.All]
-  rw [Int64.ofBitVec_toBitVec, Int64.add_sub_self_left]
-  refine hj (label f) (s.push64 h.embedding.endAddr) ?_
-  unfold Executable.StepOut
-  simp only [hg, Option.map_some, MachineData.stackBelow_push64, ite_true]
-  have hk := h.embedding.isInfixAt
-  have hd := Host.exe_getElem? h.embedding.start
-  rw [hk.cons.1, Option.map_some] at hd
-  have hz : 0 < Kraken.Layout.size Directive h.embedding.start :=
-    Host.instr_size_pos _ _ hk.cons.1 (by rintro ⟨⟩)
-  have hft : Host.exe.fallthrough h.embedding.startAddr = h.embedding.endAddr :=
-    Host.fallthrough_addrOf hd hz
-  rw [hft]
-  refine Program.wp_mono (fun _ h => h) ?_ ((hbody s h.embedding.endAddr).1 _ ⟨rfl, hpre⟩)
-  rintro u ⟨hpc, hpost, hagree⟩
-  simp only [hpc, ite_true]
-  exact ⟨by trivial, hcont _ hpost hagree⟩
 
 def _root_.FunDecls.body (f : Label) : Program := ((FunDecls.at (label f)).map Fragment.prog).getD []
 
