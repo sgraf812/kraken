@@ -48,12 +48,10 @@ funspec even_spec "even" [Host] [FunDecls] [Embeds even] [Embeds odd]
   ensures s' => s'.regs.rax.toBitVec.toNat = (s.regs.rdi.toBitVec.toNat + 1) % 2
   autoframes calling_conv SysV reserve s.regs.rdi.toBitVec.toNat
     preserves rcx rdx rsi r8 r9 r10 r11 := by
-  intro s ra
-  refine ⟨fun _ ⟨h₀, _⟩ => ?_⟩
-  subst h₀
+  refine ⟨fun s₀ ⟨h₀, _⟩ => ?_⟩
   refine Program.WP.cfg (fun
-      | .entry, s' | .label "even", s' => s' = s.push64 ra
-      | .label _, s' => s'.regs = (s.push64 ra).regs ∧ s'.dmem = (s.push64 ra).dmem
+      | .entry, s' | .label "even", s' => s' = s₀
+      | .label _, s' => s'.regs = s₀.regs ∧ s'.dmem = s₀.dmem
           ∧ s.regs.rdi.toBitVec.toNat = 0
       | .exit, _ => False)
     (fun _ _ => 0) ?_ rfl
@@ -69,12 +67,10 @@ funspec odd_spec "odd" [Host] [FunDecls] [Embeds even] [Embeds odd]
   ensures s' => s'.regs.rax.toBitVec.toNat = s.regs.rdi.toBitVec.toNat % 2
   autoframes calling_conv SysV reserve s.regs.rdi.toBitVec.toNat
     preserves rcx rdx rsi r8 r9 r10 r11 := by
-  intro s ra
-  refine ⟨fun _ ⟨h₀, _⟩ => ?_⟩
-  subst h₀
+  refine ⟨fun s₀ ⟨h₀, _⟩ => ?_⟩
   refine Program.WP.cfg (fun
-      | .entry, s' | .label "odd", s' => s' = s.push64 ra
-      | .label _, s' => s'.regs = (s.push64 ra).regs ∧ s'.dmem = (s.push64 ra).dmem
+      | .entry, s' | .label "odd", s' => s' = s₀
+      | .label _, s' => s'.regs = s₀.regs ∧ s'.dmem = s₀.dmem
           ∧ s.regs.rdi.toBitVec.toNat = 0
       | .exit, _ => False)
     (fun _ _ => 0) ?_ rfl

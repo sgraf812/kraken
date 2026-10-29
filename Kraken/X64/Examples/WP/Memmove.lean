@@ -77,21 +77,19 @@ funspec memmove_spec "memmove" [Host] [FunDecls] [Embeds memmove]
     = s.dmem.loadBytes s.regs.rsi.toBitVec s.regs.rdx.toBitVec.toNat
   autoframes calling_conv SysV preserves rcx r8 r9 r10 r11
     writes s.regs.rdi.toBitVec[*...<s.regs.rdx.toBitVec.toNat] := by
-  intro s ra
-  refine ⟨fun _ ⟨h₀, _⟩ => ?_⟩
-  subst h₀
+  refine ⟨fun s₀ ⟨h₀, _⟩ => ?_⟩
   refine Program.WP.cfg (fun
-      | .entry, s' | .label "memmove", s' => s' = s.push64 ra
-      | .label "bwd", s' => MMBwd s ra s'
-      | .label "bdone", s' => MMBwd s ra s' ∧ s'.regs.rdx.toBitVec = 0
-      | .label "fwd", s' => MMFwd s ra s'
-      | .label "fdone", s' => MMFwd s ra s' ∧ s'.regs.rdx.toBitVec = 0
+      | .entry, s' | .label "memmove", s' => s' = s₀
+      | .label "bwd", s' => MMBwd s s₀ s'
+      | .label "bdone", s' => MMBwd s s₀ s' ∧ s'.regs.rdx.toBitVec = 0
+      | .label "fwd", s' => MMFwd s s₀ s'
+      | .label "fdone", s' => MMFwd s s₀ s' ∧ s'.regs.rdx.toBitVec = 0
       | _, _ => False)
     (fun _ s' => s'.regs.rdx.toBitVec.toNat) ?_ rfl
   cfg_cases
   all_goals kvcgen64 with finish
 where
-  MMFwd (s : MachineData) (ra : Int64) (s' : MachineData) : Prop :=
+  MMFwd (s s₀ s' : MachineData) : Prop :=
     s.regs.rdi.toBitVec.toNat ≤ s.regs.rsi.toBitVec.toNat
       ∧ s'.regs.rdx.toBitVec.toNat ≤ s.regs.rdx.toBitVec.toNat
       ∧ s'.regs.rsi.toBitVec
@@ -103,8 +101,8 @@ where
           (s.regs.rdx.toBitVec.toNat - s'.regs.rdx.toBitVec.toNat))
       ∧ Mem.Contains s'.dmem s'.regs.rsi.toBitVec ((s.dmem.loadBytes s.regs.rsi.toBitVec s.regs.rdx.toBitVec.toNat).get!.drop
           (s.regs.rdx.toBitVec.toNat - s'.regs.rdx.toBitVec.toNat))
-      ∧ Mem.WritesOnly [(s.regs.rdi.toBitVec, s.regs.rdx.toBitVec.toNat)] (s.push64 ra).dmem s'.dmem
-  MMBwd (s : MachineData) (ra : Int64) (s' : MachineData) : Prop :=
+      ∧ Mem.WritesOnly [(s.regs.rdi.toBitVec, s.regs.rdx.toBitVec.toNat)] s₀.dmem s'.dmem
+  MMBwd (s s₀ s' : MachineData) : Prop :=
     s.regs.rsi.toBitVec.toNat < s.regs.rdi.toBitVec.toNat
       ∧ s'.regs.rdx.toBitVec.toNat ≤ s.regs.rdx.toBitVec.toNat
       ∧ s'.regs.rsi.toBitVec = s.regs.rsi.toBitVec + s'.regs.rdx.toBitVec
@@ -114,7 +112,7 @@ where
           s'.regs.rdx.toBitVec.toNat)
       ∧ Mem.Contains s'.dmem s.regs.rsi.toBitVec ((s.dmem.loadBytes s.regs.rsi.toBitVec s.regs.rdx.toBitVec.toNat).get!.take
           s'.regs.rdx.toBitVec.toNat)
-      ∧ Mem.WritesOnly [(s.regs.rdi.toBitVec, s.regs.rdx.toBitVec.toNat)] (s.push64 ra).dmem s'.dmem
+      ∧ Mem.WritesOnly [(s.regs.rdi.toBitVec, s.regs.rdx.toBitVec.toNat)] s₀.dmem s'.dmem
 
 theorem memmove_correct [Host] (hp : memmoveProg.IsInfix Host.prog)
     (s : MachineData) (bs : List UInt8)
