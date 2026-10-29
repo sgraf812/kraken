@@ -24,18 +24,18 @@ variable [Host] [FunDecls]
 public theorem autoframes {f : Label} {g : Fragment} (h : FunDecls.at (label f) = some g)
     {P : MachineData → Prop} {Q : MachineData → MachineData → Prop}
     {X : MachineData → Int64 → MachineData → Prop} {Fr : MachineData → MachineData → Prop}
-    (hp : ∀ c ra, ⦃ fun s => s = c.push64 ra ∧ P c ⦄ g.prog
-      ⦃ fun _ _ => False; fun a t => (a = ra → Q c t ∧ t.regs.rsp = c.regs.rsp ∧ Fr c t)
-        ∧ (a ≠ ra → X c a t ∧ Fr c t) ⦄) :
-    ∀ c ra (Q' : Unit → MachineData → Prop) (E' : Int64 → MachineData → Prop),
-      ⦃ fun s => s = c.push64 ra ∧ P c
-          ∧ (∀ t, Q c t ∧ t.regs.rsp = c.regs.rsp ∧ Fr c t → E' ra t)
-          ∧ (∀ a t, a ≠ ra → X c a t ∧ Fr c t → E' a t) ⦄
+    (hp : ∀ s ra, ⦃ fun s₀ => s₀ = s.push64 ra ∧ P s ⦄ g.prog
+      ⦃ fun _ _ => False; fun a s' => (a = ra → Q s s' ∧ s'.regs.rsp = s.regs.rsp ∧ Fr s s')
+        ∧ (a ≠ ra → X s a s' ∧ Fr s s') ⦄) :
+    ∀ s ra (Q' : Unit → MachineData → Prop) (E' : Int64 → MachineData → Prop),
+      ⦃ fun s₀ => s₀ = s.push64 ra ∧ P s
+          ∧ (∀ s', Q s s' ∧ s'.regs.rsp = s.regs.rsp ∧ Fr s s' → E' ra s')
+          ∧ (∀ a s', a ≠ ra → X s a s' ∧ Fr s s' → E' a s') ⦄
         FunDecls.body f
       ⦃ Q'; E' ⦄ := by
-  refine fun c ra Q' E' => ⟨fun s ⟨h₀, hpre, hok, hexit⟩ => ?_⟩
+  refine fun s ra Q' E' => ⟨fun s₀ ⟨h₀, hpre, hok, hexit⟩ => ?_⟩
   rw [FunDecls.body_eq h]
-  refine Program.wp_mono (fun _ h => False.elim h) (fun u hu => ?_) ((hp c ra).1 s ⟨h₀, hpre⟩)
+  refine Program.wp_mono (fun _ h => False.elim h) (fun u hu => ?_) ((hp s ra).1 s₀ ⟨h₀, hpre⟩)
   by_cases ha : u.pc = ra
   · exact ha ▸ hok u.data (hu.1 ha)
   · exact hexit u.pc u.data ha (hu.2 ha)
@@ -43,25 +43,25 @@ public theorem autoframes {f : Label} {g : Fragment} (h : FunDecls.at (label f) 
 public theorem autoframes_of_ret {f : Label} {g : Fragment} (h : FunDecls.at (label f) = some g)
     {P : MachineData → Prop} {Q : MachineData → MachineData → Prop}
     {Fr : MachineData → MachineData → Prop}
-    (hp : ∀ c ra, ⦃ fun s => s = c.push64 ra ∧ P c ⦄ g.prog
-      ⦃ fun _ _ => False; fun a t => a = ra ∧ Q c t ∧ t.regs.rsp = c.regs.rsp ∧ Fr c t ⦄) :
-    ∀ c ra (Q' : Unit → MachineData → Prop) (E' : Int64 → MachineData → Prop),
-      ⦃ fun s => s = c.push64 ra ∧ P c
-          ∧ (∀ t, Q c t ∧ t.regs.rsp = c.regs.rsp ∧ Fr c t → E' ra t) ⦄
+    (hp : ∀ s ra, ⦃ fun s₀ => s₀ = s.push64 ra ∧ P s ⦄ g.prog
+      ⦃ fun _ _ => False; fun a s' => a = ra ∧ Q s s' ∧ s'.regs.rsp = s.regs.rsp ∧ Fr s s' ⦄) :
+    ∀ s ra (Q' : Unit → MachineData → Prop) (E' : Int64 → MachineData → Prop),
+      ⦃ fun s₀ => s₀ = s.push64 ra ∧ P s
+          ∧ (∀ s', Q s s' ∧ s'.regs.rsp = s.regs.rsp ∧ Fr s s' → E' ra s') ⦄
         FunDecls.body f
       ⦃ Q'; E' ⦄ := by
-  refine fun c ra Q' E' => ⟨fun s ⟨h₀, hpre, hok⟩ => ?_⟩
+  refine fun s ra Q' E' => ⟨fun s₀ ⟨h₀, hpre, hok⟩ => ?_⟩
   rw [FunDecls.body_eq h]
   exact Program.wp_mono (fun _ h => False.elim h) (fun u hu => hu.1 ▸ hok u.data hu.2)
-    ((hp c ra).1 s ⟨h₀, hpre⟩)
+    ((hp s ra).1 s₀ ⟨h₀, hpre⟩)
 
 public theorem plain {f : Label} {g : Fragment} (h : FunDecls.at (label f) = some g)
     {P : MachineData → Prop} {Q : MachineData → MachineData → Prop}
     {X : MachineData → Int64 → MachineData → Prop}
-    (hp : ∀ c ra, ⦃ fun s => s = c.push64 ra ∧ P c ⦄ g.prog
-      ⦃ fun _ _ => False; fun a t => (a = ra → Q c t) ∧ (a ≠ ra → X c a t) ⦄) :
-    ∀ c ra, ⦃ fun s => s = c.push64 ra ∧ P c ⦄ FunDecls.body f
-      ⦃ fun _ _ => False; fun a t => (a = ra → Q c t) ∧ (a ≠ ra → X c a t) ⦄ :=
+    (hp : ∀ s ra, ⦃ fun s₀ => s₀ = s.push64 ra ∧ P s ⦄ g.prog
+      ⦃ fun _ _ => False; fun a s' => (a = ra → Q s s') ∧ (a ≠ ra → X s a s') ⦄) :
+    ∀ s ra, ⦃ fun s₀ => s₀ = s.push64 ra ∧ P s ⦄ FunDecls.body f
+      ⦃ fun _ _ => False; fun a s' => (a = ra → Q s s') ∧ (a ≠ ra → X s a s') ⦄ :=
   FunDecls.body_eq h ▸ hp
 
 end FunSpec
@@ -183,8 +183,7 @@ meta def elabWhere (name : Ident) (ds : Array Syntax) : CommandElabM Unit := do
     | some cc => calleeSaved cc
     | none => pure []
   let kept := regOrder.filter fun r => r != `rsp && (saved.contains r || kept₀.any (·.getId == r))
-  let t := mkIdent `t
-  let eqs ← kept.toArray.mapM fun r => `($(regField t r) = $(regField c r))
+  let eqs ← kept.toArray.mapM fun r => `($(regField tQ r) = $(regField c r))
   let rsp := regField c `rsp
   let mut blocks : Array Term := #[← `(Mem.Block.ofStackSlots $rsp $rsv)]
   if let some cc := cc? then
@@ -194,10 +193,10 @@ meta def elabWhere (name : Ident) (ds : Array Syntax) : CommandElabM Unit := do
       blocks := blocks.push (← `(($base, $(Syntax.mkNumLit (toString n)))))
   blocks := blocks ++ written
   let mem ← `(Mem.WritesOnly [$blocks,*] $(mkIdent (c.getId ++ `dmem))
-    $(mkIdent (t.getId ++ `dmem)))
+    $(mkIdent (tQ.getId ++ `dmem)))
   let frame := mkIdent (name.getId ++ `Frame)
   elabCommand (← `(command|
-    abbrev $frame:ident ($c:ident $t:ident : MachineData) : Prop := $(← conj eqs mem)))
+    abbrev $frame:ident ($c:ident $tQ:ident : MachineData) : Prop := $(← conj eqs mem)))
   let tRsp := regField tQ `rsp
   elabWhere name wdecls
   let ok ← `(∀ $tQ:ident, $Q ∧ $tRsp = $rsp ∧ $frame $c $tQ → E' ra $tQ)

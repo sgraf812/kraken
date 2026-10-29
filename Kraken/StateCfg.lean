@@ -110,7 +110,7 @@ theorem wp_call_iff {f : Label} {g : Fragment} (hg : FunDecls.at (label f) = som
       ∀ [h : Embeds [Directive.instr (.regular asz osz (.call (.rel (.sub (.label f) .after_current_instruction))))]],
         (Mem.loadInt s.dmem (s.regs.get64 .rsp - 8#64) 8).isSome = true ∧
         WP.wp (FunDecls.body f) (fun _ _ => False)
-          (fun a t => if a = h.embedding.endAddr then Q () t else E a t) (s.push64 h.embedding.endAddr) := by
+          (fun a s' => if a = h.embedding.endAddr then Q () s' else E a s') (s.push64 h.embedding.endAddr) := by
   rw [FunDecls.body_eq hg]
   have nd := Program.noInternal_of_noLabels
     (p := [Directive.instr (.regular asz osz (.call (.rel (.sub (.label f) .after_current_instruction))))]) rfl
@@ -196,7 +196,7 @@ theorem call_spec {f : Label} {g : Fragment} (hg : FunDecls.at (label f) = some 
     {Q : Unit → MachineData → Prop} {E : Int64 → MachineData → Prop} :
     ⦃ fun s => (Mem.loadInt s.dmem (s.regs.get64 .rsp - 8#64) 8).isSome = true
         ∧ ∀ ra, WP.wp (FunDecls.body f) (fun _ _ => False)
-          (fun a t => (a = ra → Q () t) ∧ (a ≠ ra → E a t)) (s.push64 ra) ⦄
+          (fun a s' => (a = ra → Q () s') ∧ (a ≠ ra → E a s')) (s.push64 ra) ⦄
       (Directive.instr (.regular asz osz (.call (.rel (.sub (.label f) .after_current_instruction)))))
     ⦃ Q; E ⦄ := by
   refine ⟨fun s ⟨hmapped, hbody⟩ => (wp_call_iff hg).mpr fun [h : Embeds _] => ⟨hmapped, ?_⟩⟩

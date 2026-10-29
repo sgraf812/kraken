@@ -33,27 +33,27 @@ done:
 ")
 
 funspec swap_spec "swap" [Host] [FunDecls] [Embeds swap]
-    (hs : FunDecls.at (label "swap") = some ⟨swap⟩) at c
-  requires Mem.Mapped [(c.regs.rsp.toBitVec - 8#64, 8)] c.dmem;
-  ensures t => t.regs.rax.toBitVec = c.regs.rbx.toBitVec ∧ t.regs.rbx.toBitVec = c.regs.rax.toBitVec
+    (hs : FunDecls.at (label "swap") = some ⟨swap⟩) at s
+  requires Mem.Mapped [(s.regs.rsp.toBitVec - 8#64, 8)] s.dmem;
+  ensures s' => s'.regs.rax.toBitVec = s.regs.rbx.toBitVec ∧ s'.regs.rbx.toBitVec = s.regs.rax.toBitVec
   autoframes preserves rcx rdx rsi rdi rbp r8 r9 r10 r11 r12 r13 r14 r15 := by
-  intro c ra
+  intro s ra
   refine ⟨fun _ ⟨h₀, _⟩ => ?_⟩
   subst h₀
   refine Program.WP.cfg (fun
-      | .entry, t | .label "swap", t => t = c.push64 ra
+      | .entry, s' | .label "swap", s' => s' = s.push64 ra
       | _, _ => False)
     (fun _ _ => 0) ?_ rfl
   cfg_cases
   all_goals kvcgen64 with finish
 
 theorem pswap_correct [Host] (hp : pswap.IsInfix Host.prog)
-    (d : MachineData)
-    (hmem : Mem.Mapped [(d.regs.rsp.toBitVec - 8#64, 8)] d.dmem) :
+    (s : MachineData)
+    (hmem : Mem.Mapped [(s.regs.rsp.toBitVec - 8#64, 8)] s.dmem) :
     Eventually (step1 Host.exe)
-      (fun s => s.data.regs.rax.toBitVec = d.regs.rax.toBitVec ∧ s.data.regs.rbx.toBitVec = d.regs.rbx.toBitVec
-        ∧ s.data.regs.rsp.toBitVec = d.regs.rsp.toBitVec)
-      ⟨d, startAddr hp⟩ := by
+      (fun st => st.data.regs.rax.toBitVec = s.regs.rax.toBitVec ∧ st.data.regs.rbx.toBitVec = s.regs.rbx.toBitVec
+        ∧ st.data.regs.rsp.toBitVec = s.regs.rsp.toBitVec)
+      ⟨s, startAddr hp⟩ := by
   have hk := List.isInfixAt_infixIdx hp
   generalize pswap.infixIdx Host.prog hp = k at hk
   have hsp : swap.IsInfixAt pswap 4 := ⟨_, rfl⟩
@@ -67,9 +67,9 @@ theorem pswap_correct [Host] (hp : pswap.IsInfix Host.prog)
   have hcall := Program.WP.call_spec hg
   apply Program.WP.step1_of_wp hp
   refine Program.WP.cfg (fun
-      | .entry, s | .label "start", s => s = d
-      | .label "done", s | .exit, s => s.regs.rax.toBitVec = d.regs.rax.toBitVec
-          ∧ s.regs.rbx.toBitVec = d.regs.rbx.toBitVec ∧ s.regs.rsp.toBitVec = d.regs.rsp.toBitVec
+      | .entry, s' | .label "start", s' => s' = s
+      | .label "done", s' | .exit, s' => s'.regs.rax.toBitVec = s.regs.rax.toBitVec
+          ∧ s'.regs.rbx.toBitVec = s.regs.rbx.toBitVec ∧ s'.regs.rsp.toBitVec = s.regs.rsp.toBitVec
       | _, _ => False)
     (fun _ _ => 0) ?_ rfl
   cfg_cases
