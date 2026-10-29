@@ -3,13 +3,14 @@ module
 /-
 A caller that moves a byte range onto an overlapping range through a call to `memmove`, after
 Erbsen et al., "Foundational Integration Verification of a Cryptographic Server" (PLDI 2024,
-§2.3). `memmove_spec` proves the callee on its own: the source holds the bytes `bs`, the
-destination is mapped, and on return the destination holds `bs` and the memory outside the
-destination and the return slot is unchanged. The source can overlap the destination. `memmove_correct` proves the caller from
-`memmove_spec` alone.
+§2.3). `memmove_spec` proves the callee on its own: the `rdx` bytes at `rsi` are mapped, the
+destination is mapped, and on return the destination holds those bytes and the memory outside
+the destination and the return slot is unchanged. The source can overlap the destination.
+`memmove_correct` proves the caller from `memmove_spec` alone.
 -/
 public import Kraken.StateCfg
 public import Kraken.SeparationMem
+import Kraken.FunSpec
 import Kraken.X64.Parser
 
 open Kraken.X64.Parser
@@ -63,70 +64,57 @@ done:
   nop
 ")
 
-abbrev memmove_spec.Frame (c t : MachineData) : Prop :=
-  t.regs.rbx = c.regs.rbx ∧ t.regs.rcx = c.regs.rcx ∧ t.regs.rbp = c.regs.rbp
-    ∧ t.regs.r8 = c.regs.r8 ∧ t.regs.r9 = c.regs.r9 ∧ t.regs.r10 = c.regs.r10 ∧ t.regs.r11 = c.regs.r11
-    ∧ t.regs.r12 = c.regs.r12 ∧ t.regs.r13 = c.regs.r13 ∧ t.regs.r14 = c.regs.r14 ∧ t.regs.r15 = c.regs.r15
-    ∧ Mem.WritesOnly [Mem.Block.ofStackSlots c.regs.rsp 0, (c.regs.rdi.toBitVec, c.regs.rdx.toBitVec.toNat)]
-        c.dmem t.dmem
-
-private abbrev MMFwd (bs : List UInt8) (c : MachineData) (ra : Int64) (t : MachineData) : Prop :=
-  c.regs.rdi.toBitVec.toNat ≤ c.regs.rsi.toBitVec.toNat ∧ t.regs.rdx.toBitVec.toNat ≤ bs.length
-    ∧ t.regs.rsi.toBitVec = c.regs.rsi.toBitVec + .ofNat 64 (bs.length - t.regs.rdx.toBitVec.toNat)
-    ∧ t.regs.rdi.toBitVec = c.regs.rdi.toBitVec + .ofNat 64 (bs.length - t.regs.rdx.toBitVec.toNat)
-    ∧ memmove_spec.Frame c t ∧ t.regs.rsp.toBitVec = c.regs.rsp.toBitVec - 8#64
-    ∧ Mem.Contains t.dmem (c.regs.rsp.toBitVec - 8#64) (Int.toBytes 8 ra.toBitVec.toInt)
-    ∧ Mem.Contains t.dmem c.regs.rdi.toBitVec (bs.take (bs.length - t.regs.rdx.toBitVec.toNat))
-    ∧ Mem.Contains t.dmem t.regs.rsi.toBitVec (bs.drop (bs.length - t.regs.rdx.toBitVec.toNat))
-
-private abbrev MMBwd (bs : List UInt8) (c : MachineData) (ra : Int64) (t : MachineData) : Prop :=
-  c.regs.rsi.toBitVec.toNat < c.regs.rdi.toBitVec.toNat ∧ t.regs.rdx.toBitVec.toNat ≤ bs.length
-    ∧ t.regs.rsi.toBitVec = c.regs.rsi.toBitVec + t.regs.rdx.toBitVec
-    ∧ t.regs.rdi.toBitVec = c.regs.rdi.toBitVec + t.regs.rdx.toBitVec
-    ∧ memmove_spec.Frame c t ∧ t.regs.rsp.toBitVec = c.regs.rsp.toBitVec - 8#64
-    ∧ Mem.Contains t.dmem (c.regs.rsp.toBitVec - 8#64) (Int.toBytes 8 ra.toBitVec.toInt)
-    ∧ Mem.Contains t.dmem t.regs.rdi.toBitVec (bs.drop t.regs.rdx.toBitVec.toNat)
-    ∧ Mem.Contains t.dmem c.regs.rsi.toBitVec (bs.take t.regs.rdx.toBitVec.toNat)
-
-theorem memmove_spec [Host] [FunDecls] [Embeds memmove]
-    (hm : FunDecls.at (label "memmove") = some ⟨memmove⟩) (bs : List UInt8) :
-    ∀ c ra (Q' : Unit → MachineData → Prop) (E' : Int64 → MachineData → Prop),
-      ⦃ fun s => s = c.push64 ra
-          ∧ (bs.length = c.regs.rdx.toBitVec.toNat
-            ∧ c.regs.rsi.toBitVec.toNat + bs.length < 2 ^ 64
-            ∧ c.regs.rdi.toBitVec.toNat + bs.length < 2 ^ 64
-            ∧ Mem.Contains c.dmem c.regs.rsi.toBitVec bs
-            ∧ Mem.Mapped [(c.regs.rsp.toBitVec - 8#64, 8), (c.regs.rdi.toBitVec, bs.length)] c.dmem
-            ∧ Mem.Blocks.Disjoint [(c.regs.rsi.toBitVec, bs.length), (c.regs.rdi.toBitVec, bs.length)]
-                [(c.regs.rsp.toBitVec - 8#64, 8)])
-          ∧ (∀ t, Mem.Contains t.dmem c.regs.rdi.toBitVec bs ∧ t.regs.rsp = c.regs.rsp ∧ memmove_spec.Frame c t → E' ra t)
-          ∧ (∀ a t, a ≠ ra → False ∧ memmove_spec.Frame c t → E' a t) ⦄
-        FunDecls.body "memmove"
-      ⦃ Q'; E' ⦄ := by
-  have k : ∀ c ra, bs.length = c.regs.rdx.toBitVec.toNat
-        ∧ c.regs.rsi.toBitVec.toNat + bs.length < 2 ^ 64
-        ∧ c.regs.rdi.toBitVec.toNat + bs.length < 2 ^ 64
-        ∧ Mem.Contains c.dmem c.regs.rsi.toBitVec bs
-        ∧ Mem.Mapped [(c.regs.rsp.toBitVec - 8#64, 8), (c.regs.rdi.toBitVec, bs.length)] c.dmem
-        ∧ Mem.Blocks.Disjoint [(c.regs.rsi.toBitVec, bs.length), (c.regs.rdi.toBitVec, bs.length)]
-            [(c.regs.rsp.toBitVec - 8#64, 8)]
-      → WP.wp memmove (fun _ _ => False) (fun a t => a = ra
-        ∧ Mem.Contains t.dmem c.regs.rdi.toBitVec bs ∧ t.regs.rsp = c.regs.rsp ∧ memmove_spec.Frame c t) (c.push64 ra) := by
-    intro c ra _
-    refine Program.WP.cfg (fun
-        | .entry, t | .label "memmove", t => t = c.push64 ra
-        | .label "bwd", t => MMBwd bs c ra t
-        | .label "bdone", t => MMBwd bs c ra t ∧ t.regs.rdx.toBitVec = 0
-        | .label "fwd", t => MMFwd bs c ra t
-        | .label "fdone", t => MMFwd bs c ra t ∧ t.regs.rdx.toBitVec = 0
-        | _, _ => False)
-      (fun _ t => t.regs.rdx.toBitVec.toNat) ?_ rfl
-    cfg_cases
-    all_goals kvcgen64 with finish
-  refine fun c ra Q' E' => ⟨fun s₀ ⟨h₀, hpre, hok, _⟩ => ?_⟩
+funspec memmove_spec "memmove" [Host] [FunDecls] [Embeds memmove]
+    (hm : FunDecls.at (label "memmove") = some ⟨memmove⟩) at c
+  requires c.regs.rsi.toBitVec.toNat + c.regs.rdx.toBitVec.toNat < 2 ^ 64
+    ∧ c.regs.rdi.toBitVec.toNat + c.regs.rdx.toBitVec.toNat < 2 ^ 64
+    ∧ Mem.Mapped [(c.regs.rsi.toBitVec, c.regs.rdx.toBitVec.toNat), (c.regs.rsp.toBitVec - 8#64, 8),
+        (c.regs.rdi.toBitVec, c.regs.rdx.toBitVec.toNat)] c.dmem
+    ∧ Mem.Blocks.Disjoint
+        [(c.regs.rsi.toBitVec, c.regs.rdx.toBitVec.toNat), (c.regs.rdi.toBitVec, c.regs.rdx.toBitVec.toNat)]
+        [(c.regs.rsp.toBitVec - 8#64, 8)];
+  ensures t => Mem.Contains t.dmem c.regs.rdi.toBitVec
+    (c.dmem.loadBytes c.regs.rsi.toBitVec c.regs.rdx.toBitVec.toNat).get!
+  autoframes calling_conv SysV preserves rcx r8 r9 r10 r11
+    writes c.regs.rdi.toBitVec[*...<c.regs.rdx.toBitVec.toNat] := by
+  intro c ra
+  refine ⟨fun _ ⟨h₀, _⟩ => ?_⟩
   subst h₀
-  rw [FunDecls.body_eq hm]
-  exact Program.wp_mono (fun _ h => False.elim h) (fun u hu => hu.1 ▸ hok u.data hu.2) (k c ra hpre)
+  refine Program.WP.cfg (fun
+      | .entry, t | .label "memmove", t => t = c.push64 ra
+      | .label "bwd", t => MMBwd c ra t
+      | .label "bdone", t => MMBwd c ra t ∧ t.regs.rdx.toBitVec = 0
+      | .label "fwd", t => MMFwd c ra t
+      | .label "fdone", t => MMFwd c ra t ∧ t.regs.rdx.toBitVec = 0
+      | _, _ => False)
+    (fun _ t => t.regs.rdx.toBitVec.toNat) ?_ rfl
+  cfg_cases
+  all_goals kvcgen64 with finish
+where
+  bytes (c : MachineData) : List UInt8 :=
+    (c.dmem.loadBytes c.regs.rsi.toBitVec c.regs.rdx.toBitVec.toNat).get!
+  MMFwd (c : MachineData) (ra : Int64) (t : MachineData) : Prop :=
+    c.regs.rdi.toBitVec.toNat ≤ c.regs.rsi.toBitVec.toNat
+      ∧ t.regs.rdx.toBitVec.toNat ≤ c.regs.rdx.toBitVec.toNat
+      ∧ t.regs.rsi.toBitVec
+        = c.regs.rsi.toBitVec + .ofNat 64 (c.regs.rdx.toBitVec.toNat - t.regs.rdx.toBitVec.toNat)
+      ∧ t.regs.rdi.toBitVec
+        = c.regs.rdi.toBitVec + .ofNat 64 (c.regs.rdx.toBitVec.toNat - t.regs.rdx.toBitVec.toNat)
+      ∧ Frame c t ∧ t.regs.rsp.toBitVec = c.regs.rsp.toBitVec - 8#64
+      ∧ Mem.Contains t.dmem (c.regs.rsp.toBitVec - 8#64) (Int.toBytes 8 ra.toBitVec.toInt)
+      ∧ Mem.Contains t.dmem c.regs.rdi.toBitVec
+          ((bytes c).take (c.regs.rdx.toBitVec.toNat - t.regs.rdx.toBitVec.toNat))
+      ∧ Mem.Contains t.dmem t.regs.rsi.toBitVec
+          ((bytes c).drop (c.regs.rdx.toBitVec.toNat - t.regs.rdx.toBitVec.toNat))
+  MMBwd (c : MachineData) (ra : Int64) (t : MachineData) : Prop :=
+    c.regs.rsi.toBitVec.toNat < c.regs.rdi.toBitVec.toNat
+      ∧ t.regs.rdx.toBitVec.toNat ≤ c.regs.rdx.toBitVec.toNat
+      ∧ t.regs.rsi.toBitVec = c.regs.rsi.toBitVec + t.regs.rdx.toBitVec
+      ∧ t.regs.rdi.toBitVec = c.regs.rdi.toBitVec + t.regs.rdx.toBitVec
+      ∧ Frame c t ∧ t.regs.rsp.toBitVec = c.regs.rsp.toBitVec - 8#64
+      ∧ Mem.Contains t.dmem (c.regs.rsp.toBitVec - 8#64) (Int.toBytes 8 ra.toBitVec.toInt)
+      ∧ Mem.Contains t.dmem t.regs.rdi.toBitVec ((bytes c).drop t.regs.rdx.toBitVec.toNat)
+      ∧ Mem.Contains t.dmem c.regs.rsi.toBitVec ((bytes c).take t.regs.rdx.toBitVec.toNat)
 
 theorem memmove_correct [Host] (hp : memmoveProg.IsInfix Host.prog)
     (d : MachineData) (bs : List UInt8)
@@ -153,7 +141,6 @@ theorem memmove_correct [Host] (hp : memmoveProg.IsInfix Host.prog)
     show List.find? _ [_] = _
     simp [hstart]
   have hcall := Program.WP.call_spec hg
-  have hmemmove := memmove_spec hg bs
   apply Program.WP.step1_of_wp hp
   refine Program.WP.cfg (fun
       | .entry, s | .label "start", s => s = d
@@ -166,6 +153,6 @@ theorem memmove_correct [Host] (hp : memmoveProg.IsInfix Host.prog)
       | _, _ => False)
     (fun _ _ => 0) ?_ rfl
   cfg_cases
-  all_goals kvcgen64 [hcall, hmemmove] with finish
+  all_goals kvcgen64 [hcall] with finish
 
 end State
