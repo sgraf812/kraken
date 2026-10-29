@@ -64,7 +64,6 @@ theorem pswap_correct [Host] (hp : pswap.IsInfix Host.prog)
   have hg : FunDecls.at (label "swap") = some (Fragment.mk swap) := by
     show List.find? _ [_] = _
     simp [hstart]
-  have hcall := Program.WP.call_spec hg
   apply Program.WP.step1_of_wp hp
   refine Program.WP.cfg (fun
       | .entry, s' | .label "start", s' => s' = s
@@ -73,6 +72,6 @@ theorem pswap_correct [Host] (hp : pswap.IsInfix Host.prog)
       | _, _ => False)
     (fun _ _ => 0) ?_ rfl
   cfg_cases
-  all_goals kvcgen64 [hcall] with finish
+  all_goals kvcgen64 with finish
 
 end State

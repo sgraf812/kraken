@@ -22,47 +22,70 @@ namespace FunSpec
 variable [Host] [FunDecls]
 
 public theorem autoframes {f : Label} {g : Fragment} (h : FunDecls.at (label f) = some g)
+    (s : MachineData) (ra : Int64)
     {P : MachineData → Prop} {Q : MachineData → MachineData → Prop}
     {X : MachineData → Int64 → MachineData → Prop} {Fr : MachineData → MachineData → Prop}
-    (hp : ∀ s ra, ⦃ fun s₀ => s₀ = s.push64 ra ∧ P s ⦄ g.prog
+    (hp : ⦃ fun s₀ => s₀ = s.push64 ra ∧ P s ⦄ g.prog
       ⦃ fun _ _ => False; fun a s' => (a = ra → Q s s' ∧ s'.regs.rsp = s.regs.rsp ∧ Fr s s')
-        ∧ (a ≠ ra → X s a s' ∧ Fr s s') ⦄) :
-    ∀ s ra (Q' : Unit → MachineData → Prop) (E' : Int64 → MachineData → Prop),
-      ⦃ fun s₀ => s₀ = s.push64 ra ∧ P s
-          ∧ (∀ s', Q s s' ∧ s'.regs.rsp = s.regs.rsp ∧ Fr s s' → E' ra s')
-          ∧ (∀ a s', a ≠ ra → X s a s' ∧ Fr s s' → E' a s') ⦄
-        FunDecls.body f
-      ⦃ Q'; E' ⦄ := by
-  refine fun s ra Q' E' => ⟨fun s₀ ⟨h₀, hpre, hok, hexit⟩ => ?_⟩
+        ∧ (a ≠ ra → X s a s' ∧ Fr s s') ⦄)
+    (Q' : Unit → MachineData → Prop) (E' : Int64 → MachineData → Prop) :
+    ⦃ fun s₀ => s₀ = s.push64 ra ∧ P s
+        ∧ (∀ s', Q s s' ∧ s'.regs.rsp = s.regs.rsp ∧ Fr s s' → E' ra s')
+        ∧ (∀ a s', a ≠ ra → X s a s' ∧ Fr s s' → E' a s') ⦄
+      FunDecls.body f
+    ⦃ Q'; E' ⦄ := by
+  refine ⟨fun s₀ ⟨h₀, hpre, hok, hexit⟩ => ?_⟩
   rw [FunDecls.body_eq h]
-  refine Program.wp_mono (fun _ h => False.elim h) (fun u hu => ?_) ((hp s ra).1 s₀ ⟨h₀, hpre⟩)
+  refine Program.wp_mono (fun _ h => False.elim h) (fun u hu => ?_) (hp.1 s₀ ⟨h₀, hpre⟩)
   by_cases ha : u.pc = ra
   · exact ha ▸ hok u.data (hu.1 ha)
   · exact hexit u.pc u.data ha (hu.2 ha)
 
 public theorem autoframes_of_ret {f : Label} {g : Fragment} (h : FunDecls.at (label f) = some g)
+    (s : MachineData) (ra : Int64)
     {P : MachineData → Prop} {Q : MachineData → MachineData → Prop}
     {Fr : MachineData → MachineData → Prop}
-    (hp : ∀ s ra, ⦃ fun s₀ => s₀ = s.push64 ra ∧ P s ⦄ g.prog
-      ⦃ fun _ _ => False; fun a s' => a = ra ∧ Q s s' ∧ s'.regs.rsp = s.regs.rsp ∧ Fr s s' ⦄) :
-    ∀ s ra (Q' : Unit → MachineData → Prop) (E' : Int64 → MachineData → Prop),
-      ⦃ fun s₀ => s₀ = s.push64 ra ∧ P s
-          ∧ (∀ s', Q s s' ∧ s'.regs.rsp = s.regs.rsp ∧ Fr s s' → E' ra s') ⦄
-        FunDecls.body f
-      ⦃ Q'; E' ⦄ := by
-  refine fun s ra Q' E' => ⟨fun s₀ ⟨h₀, hpre, hok⟩ => ?_⟩
+    (hp : ⦃ fun s₀ => s₀ = s.push64 ra ∧ P s ⦄ g.prog
+      ⦃ fun _ _ => False; fun a s' => a = ra ∧ Q s s' ∧ s'.regs.rsp = s.regs.rsp ∧ Fr s s' ⦄)
+    (Q' : Unit → MachineData → Prop) (E' : Int64 → MachineData → Prop) :
+    ⦃ fun s₀ => s₀ = s.push64 ra ∧ P s
+        ∧ (∀ s', Q s s' ∧ s'.regs.rsp = s.regs.rsp ∧ Fr s s' → E' ra s') ⦄
+      FunDecls.body f
+    ⦃ Q'; E' ⦄ := by
+  refine ⟨fun s₀ ⟨h₀, hpre, hok⟩ => ?_⟩
   rw [FunDecls.body_eq h]
   exact Program.wp_mono (fun _ h => False.elim h) (fun u hu => hu.1 ▸ hok u.data hu.2)
-    ((hp s ra).1 s₀ ⟨h₀, hpre⟩)
+    (hp.1 s₀ ⟨h₀, hpre⟩)
 
 public theorem plain {f : Label} {g : Fragment} (h : FunDecls.at (label f) = some g)
+    (s : MachineData) (ra : Int64)
     {P : MachineData → Prop} {Q : MachineData → MachineData → Prop}
     {X : MachineData → Int64 → MachineData → Prop}
-    (hp : ∀ s ra, ⦃ fun s₀ => s₀ = s.push64 ra ∧ P s ⦄ g.prog
+    (hp : ⦃ fun s₀ => s₀ = s.push64 ra ∧ P s ⦄ g.prog
       ⦃ fun _ _ => False; fun a s' => (a = ra → Q s s') ∧ (a ≠ ra → X s a s') ⦄) :
-    ∀ s ra, ⦃ fun s₀ => s₀ = s.push64 ra ∧ P s ⦄ FunDecls.body f
+    ⦃ fun s₀ => s₀ = s.push64 ra ∧ P s ⦄ FunDecls.body f
       ⦃ fun _ _ => False; fun a s' => (a = ra → Q s s') ∧ (a ≠ ra → X s a s') ⦄ :=
   FunDecls.body_eq h ▸ hp
+
+public def Guarded (f : Label)
+    (pre : MachineData → Int64 → (Unit → MachineData → Prop) → (Int64 → MachineData → Prop)
+      → MachineData → Prop)
+    (m : MachineData → Nat) (n : Nat) : Prop :=
+  ∀ s ra Q' E', ⦃ fun s₀ => pre s ra Q' E' s₀ ∧ m s < n ⦄ FunDecls.body f ⦃ Q'; E' ⦄
+
+public theorem guarded {f : Label}
+    {pre : MachineData → Int64 → (Unit → MachineData → Prop) → (Int64 → MachineData → Prop)
+      → MachineData → Prop}
+    (m : MachineData → Nat) (n : Nat)
+    (h : ∀ s ra Q' E', m s < n → ⦃ pre s ra Q' E' ⦄ FunDecls.body f ⦃ Q'; E' ⦄) :
+    Guarded f pre m n :=
+  fun s ra Q' E' => ⟨fun s₀ ⟨hp, hlt⟩ => (h s ra Q' E' hlt).1 s₀ hp⟩
+
+public theorem Guarded.spec {f : Label}
+    {pre : MachineData → Int64 → (Unit → MachineData → Prop) → (Int64 → MachineData → Prop)
+      → MachineData → Prop}
+    {m : MachineData → Nat} {n : Nat} (h : Guarded f pre m n) :
+    ∀ s ra Q' E', ⦃ fun s₀ => pre s ra Q' E' s₀ ∧ m s < n ⦄ FunDecls.body f ⦃ Q'; E' ⦄ := h
 
 end FunSpec
 
@@ -78,10 +101,17 @@ syntax "reserve " term : funspecClause
 syntax "preserves" (ppSpace ident)+ : funspecClause
 syntax "writes " term,+ : funspecClause
 
-syntax (name := funspecCmd) "funspec " ident ppSpace str (ppSpace bracketedBinder)* " at " ident
+declare_syntax_cat funspecSig
+
+syntax ident ppSpace str (ppSpace bracketedBinder)* " at " ident
   (" requires " term ";")? " ensures " ident " => " term
   (";" " exits " ident ident " => " term)?
-  (" autoframes" (ppSpace funspecClause)*)? " := " term (Lean.Parser.Term.whereDecls)? : command
+  (" autoframes" (ppSpace funspecClause)*)? " := " term Lean.Parser.Termination.suffix
+  (Lean.Parser.Term.whereDecls)? : funspecSig
+
+syntax (name := funspecCmd) "funspec " funspecSig : command
+
+syntax (name := funspecPrelude) "funspec_prelude " funspecSig : command
 
 meta def regOrder : List Name :=
   [`rax, `rbx, `rcx, `rdx, `rsi, `rdi, `rsp, `rbp, `r8, `r9, `r10, `r11, `r12, `r13, `r14, `r15]
@@ -134,36 +164,160 @@ meta def elabWhere (name : Ident) (ds : Array Syntax) : CommandElabM Unit := do
     | _ => throwErrorAt d "funspec expects `where` declarations `x binders* : type := value`"
   elabCommand (← `(command| end $name:ident))
 
-@[command_elab funspecCmd] public meta def elabFunspec : CommandElab := fun stx => do
-  let `(funspec $name $f $binders* at $c $[requires $P? ;]? ensures $tQ => $Q
-      $[; exits $aX? $tX? => $X?]? $[autoframes $clauses?*]? := $proof $[$wds?]?) := stx
+meta def measure? (sfx : Syntax) : Option Term :=
+  let t := sfx[0][0]
+  if t.isOfKind ``Lean.Parser.Termination.terminationBy && t[1].isNone && t[2].isNone then
+    some ⟨t[3]⟩
+  else none
+
+meta def forwardArgs (binders : TSyntaxArray ``Lean.Parser.Term.bracketedBinder) :
+    MacroM (Array Syntax) := do
+  let mut args : Array Syntax := #[]
+  for b in binders do
+    match b with
+    | `(bracketedBinder| ($xs:ident* : $_)) => args := args ++ xs.map (·.raw)
+    | `(bracketedBinder| {$xs:ident* : $_}) | `(bracketedBinder| ⦃$xs:ident* : $_⦄) =>
+      for x in xs do
+        args := args.push (← `(Lean.Parser.Term.namedArgument| ($x:ident := $x)))
+    | _ => pure ()
+  return args
+
+meta def mkApp' (f : Term) (args : Array Syntax) : Term :=
+  if args.isEmpty then f else ⟨mkNode ``Lean.Parser.Term.app #[f, mkNullNode args]⟩
+
+structure Parts where
+  name : Ident
+  f : TSyntax `str
+  binders : TSyntaxArray ``Lean.Parser.Term.bracketedBinder
+  c : Ident
+  h : Ident
+  p : Term
+  P : Term
+  tQ : Ident
+  Q : Term
+  aX : Ident
+  X? : Option Term
+  auto : Bool
+  proof : Term
+  sfx : TSyntax ``Lean.Parser.Termination.suffix
+  hasWhere : Bool
+
+meta def parts (sig : TSyntax `funspecSig) : MacroM Parts := do
+  let `(funspecSig| $name:ident $f:str $binders* at $c $[requires $P? ;]? ensures $tQ => $Q
+      $[; exits $aX? $tX? => $X?]? $[autoframes $clauses?*]? := $proof $sfx:suffix $[$wds?]?) := sig
+    | Macro.throwUnsupported
+  let some (h, p) ← binders.findSomeM? fun b => do
+      match b with
+      | `(bracketedBinder| ($h:ident : FunDecls.at (label $l:str) = some ⟨$p⟩)) =>
+        pure (if l.getString == f.getString then some (h, p) else none)
+      | _ => pure none
+    | Macro.throwErrorAt sig s!"funspec expects a binder `(h : FunDecls.at (label {f}) = some ⟨p⟩)`"
+  if let some tX := tX? then
+    unless tX.getId == tQ.getId do
+      Macro.throwErrorAt tX s!"exits must bind the state as {tQ.getId}, the binder of ensures"
+  let P ← P?.getDM `(True)
+  let aX : Ident := aX?.getD (mkIdent `a)
+  return ⟨name, f, binders, c, h, p, P, tQ, Q, aX, X?, clauses?.isSome, proof, sfx, wds?.isSome⟩
+
+meta def ra : MacroM Ident := return ⟨(← `(ra)).raw⟩
+meta def qk : MacroM Ident := return ⟨(← `(Q')).raw⟩
+meta def ek : MacroM Ident := return ⟨(← `(E')).raw⟩
+
+meta def autoPre (x : Parts) : MacroM Term := do
+  let (c, tQ, aX, P, Q) := (x.c, x.tQ, x.aX, x.P, x.Q)
+  let frame := mkIdent (x.name.getId ++ `Frame)
+  let ok ← `(∀ $tQ:ident, $Q ∧ $(regField tQ `rsp) = $(regField c `rsp) ∧ $frame $c $tQ
+    → E' ra $tQ)
+  match x.X? with
+  | some X => `(fun s => s = MachineData.push64 $c ra ∧ $P ∧ $ok
+      ∧ (∀ ($aX : Int64) ($tQ : MachineData), $aX ≠ ra → $X ∧ $frame $c $tQ → E' $aX $tQ))
+  | none => `(fun s => s = MachineData.push64 $c ra ∧ $P ∧ $ok)
+
+meta def guardOf (μc : Term) (g : Parts) : MacroM (Option (Ident × Term × Term)) := do
+  let some μ := measure? g.sfx | return none
+  unless g.auto do Macro.throwErrorAt g.name "a recursive funspec needs `autoframes`"
+  let (r, q, e) := (← ra, ← qk, ← ek)
+  let ty ← `(FunSpec.Guarded $g.f (fun $g.c:ident $r:ident $q:ident $e:ident => $(← autoPre g))
+    (fun $g.c:ident => $μ) $μc)
+  let app := mkApp' g.name ((← forwardArgs g.binders) ++ #[g.c, r, q, e])
+  let pf ← `(FunSpec.guarded (fun $g.c:ident => $μ) $μc
+    (fun $g.c:ident $r:ident $q:ident $e:ident _ => $app))
+  return some (g.name, ty, pf)
+
+meta partial def guardProof (gs : Array Ident) : Term → MacroM Term
+  | `(($p)) => guardProof gs p
+  | proof => do
+    let (x, y, rest) ← match proof with
+      | `(by intro $x:ident $y:ident; $rest;*) => pure (x, y, rest.getElems)
+      | `(by intro $x:ident $y:ident) => pure (x, y, #[])
+      | _ => Macro.throwErrorAt proof "the proof of a recursive funspec starts with `by intro s ra`"
+    let haves ← gs.mapM fun g => `(tactic| have $g:ident := FunSpec.Guarded.spec $g)
+    let tacs : Syntax.TSepArray `tactic ";" := .ofElems (haves ++ rest)
+    `(by intro $x:ident $y:ident $gs*; $tacs;*)
+
+meta def funspecTheorem (sig : TSyntax `funspecSig) (group : Array (TSyntax `funspecSig)) :
+    MacroM (Array (TSyntax `command) × TSyntax `command) := do
+  let x ← parts sig
+  let (name, f, binders, c, h, p, P, tQ, Q, aX, sfx) :=
+    (x.name, x.f, x.binders, x.c, x.h, x.p, x.P, x.tQ, x.Q, x.aX, x.sfx)
+  let X ← x.X?.getDM `(False)
+  if !x.auto then
+    let proof ← if x.hasWhere then `(open $name:ident in $x.proof) else pure x.proof
+    return (#[], ← `(command|
+      @[spec] theorem $name:ident $binders* ($c : MachineData) (ra : Int64) :
+          Std.WP.Triple (FunDecls.body $f) (fun s => s = MachineData.push64 $c ra ∧ $P)
+            (fun _ _ => False) (fun $aX $tQ => ($aX = ra → $Q) ∧ ($aX ≠ ra → $X)) :=
+        FunSpec.plain $h $c ra (P := fun $c => $P) (Q := fun $c $tQ => $Q)
+          (X := fun $c $aX $tQ => $X)
+          (($proof : ∀ ($c : MachineData) (ra : Int64),
+            Std.WP.Triple $p (fun s => s = MachineData.push64 $c ra ∧ $P)
+              (fun _ _ => False) (fun $aX $tQ => ($aX = ra → $Q) ∧ ($aX ≠ ra → $X))) $c ra)
+      $sfx:suffix))
+  let frame := mkIdent (name.getId ++ `Frame)
+  let rsp := regField c `rsp
+  let tRsp := regField tQ `rsp
+  let pre ← autoPre x
+  let post ← if x.X?.isSome then
+      `(fun $aX $tQ => ($aX = ra → $Q ∧ $tRsp = $rsp ∧ $frame $c $tQ)
+        ∧ ($aX ≠ ra → $X ∧ $frame $c $tQ))
+    else `(fun a $tQ => a = ra ∧ $Q ∧ $tRsp = $rsp ∧ $frame $c $tQ)
+  let triple ← `(Std.WP.Triple $p (fun s => s = MachineData.push64 $c ra ∧ $P) (fun _ _ => False)
+    $post)
+  let mkPf (body : Term) : MacroM Term := if x.X?.isSome then
+      `(FunSpec.autoframes $h $c ra (P := fun $c => $P) (Q := fun $c $tQ => $Q)
+          (X := fun $c $aX $tQ => $X) (Fr := $frame) $body Q' E')
+    else
+      `(FunSpec.autoframes_of_ret $h $c ra (P := fun $c => $P) (Q := fun $c $tQ => $Q)
+          (Fr := $frame) $body Q' E')
+  let thm (pf : Term) : MacroM (TSyntax `command) := `(command|
+    @[spec] theorem $name:ident $binders* ($c : MachineData) (ra : Int64)
+        (Q' : Unit → MachineData → Prop) (E' : Int64 → MachineData → Prop) :
+        Std.WP.Triple (FunDecls.body $f) $pre Q' E' := $pf
+    $sfx:suffix)
+  let some μ := measure? sfx | do
+    let body ← `((open $name:ident in $x.proof : ∀ ($c : MachineData) (ra : Int64), $triple) $c ra)
+    return (#[], ← thm (← mkPf body))
+  let guards ← (← group.mapM parts).filterMapM (guardOf μ)
+  let goTy ← guards.foldrM (fun (_, ty, _) acc => `($ty → $acc)) triple
+  let go := mkIdent (name.getId ++ `go)
+  let goPf ← guardProof (guards.map (·.1)) x.proof
+  let goCmd ← `(command|
+    theorem $go:ident $binders* : ∀ ($c : MachineData) (ra : Int64), $goTy :=
+      open $name:ident in $goPf)
+  let call := mkApp' go
+    ((← forwardArgs binders) ++ #[c.raw, (← `(ra)).raw] ++ guards.map (·.2.2.raw))
+  return (#[goCmd], ← thm (← mkPf call))
+
+@[command_elab funspecPrelude] public meta def elabFunspecPrelude : CommandElab := fun stx => do
+  let `(funspec_prelude $sig:funspecSig) := stx | throwUnsupportedSyntax
+  let `(funspecSig| $name:ident $_f:str $_binders* at $c $[requires $_P? ;]? ensures $tQ => $_Q
+      $[; exits $_aX? $_tX? => $_X?]? $[autoframes $clauses?*]? := $_proof $_sfx:suffix
+      $[$wds?]?) := sig
     | throwUnsupportedSyntax
   let wdecls := match wds? with
     | some wd => wd.raw[1].getSepArgs
     | none => #[]
-  let P ← P?.getDM `(True)
-  let some (h, p) ← binders.findSomeM? fun b => do
-      match b with
-      | `(bracketedBinder| ($h:ident : FunDecls.at (label $_) = some ⟨$p⟩)) => pure (some (h, p))
-      | _ => pure none
-    | throwErrorAt stx "funspec expects a binder `(h : FunDecls.at (label {f}) = some ⟨p⟩)`"
-  let aX : Ident := aX?.getD (mkIdent `a)
-  if let some tX := tX? then
-    unless tX.getId == tQ.getId do
-      throwErrorAt tX "exits must bind the state as {tQ}, the binder of ensures"
-  let X ← X?.getDM `(False)
-  let some clauses := clauses? | do
-    elabWhere name wdecls
-    let proof ← if wdecls.isEmpty then pure proof else `(open $name:ident in $proof)
-    elabCommand (← `(command|
-      open scoped Program.WP in
-      @[spec] theorem $name:ident $binders* : ∀ ($c : MachineData) (ra : Int64),
-          Std.WP.Triple (FunDecls.body $f) (fun s => s = MachineData.push64 $c ra ∧ $P)
-            (fun _ _ => False) (fun $aX $tQ => ($aX = ra → $Q) ∧ ($aX ≠ ra → $X)) :=
-        FunSpec.plain $h (P := fun $c => $P) (Q := fun $c $tQ => $Q) (X := fun $c $aX $tQ => $X)
-          (show ∀ ($c : MachineData) (ra : Int64),
-            Std.WP.Triple $p (fun s => s = MachineData.push64 $c ra ∧ $P)
-              (fun _ _ => False) (fun $aX $tQ => ($aX = ra → $Q) ∧ ($aX ≠ ra → $X)) from $proof)))
+  let some clauses := clauses? | elabWhere name wdecls
   let mut cc? : Option Term := none
   let mut slots : Term ← `(0)
   let mut rsv : Term ← `(0)
@@ -197,30 +351,31 @@ meta def elabWhere (name : Ident) (ds : Array Syntax) : CommandElabM Unit := do
   let frame := mkIdent (name.getId ++ `Frame)
   elabCommand (← `(command|
     abbrev $frame:ident ($c:ident $tQ:ident : MachineData) : Prop := $(← conj eqs mem)))
-  let tRsp := regField tQ `rsp
   elabWhere name wdecls
-  let ok ← `(∀ $tQ:ident, $Q ∧ $tRsp = $rsp ∧ $frame $c $tQ → E' ra $tQ)
-  let pre ← if X?.isSome then
-      `(fun s => s = MachineData.push64 $c ra ∧ $P ∧ $ok
-        ∧ (∀ ($aX : Int64) ($tQ : MachineData), $aX ≠ ra → $X ∧ $frame $c $tQ → E' $aX $tQ))
-    else `(fun s => s = MachineData.push64 $c ra ∧ $P ∧ $ok)
-  let stmt ← `(∀ ($c : MachineData) (ra : Int64) (Q' : Unit → MachineData → Prop)
-      (E' : Int64 → MachineData → Prop), Std.WP.Triple (FunDecls.body $f) $pre Q' E')
-  let pf ← if X?.isSome then
-      `(FunSpec.autoframes $h (P := fun $c => $P) (Q := fun $c $tQ => $Q)
-          (X := fun $c $aX $tQ => $X) (Fr := $frame)
-          (show ∀ ($c : MachineData) (ra : Int64),
-            Std.WP.Triple $p (fun s => s = MachineData.push64 $c ra ∧ $P) (fun _ _ => False)
-              (fun $aX $tQ => ($aX = ra → $Q ∧ $tRsp = $rsp ∧ $frame $c $tQ)
-                ∧ ($aX ≠ ra → $X ∧ $frame $c $tQ)) from open $name:ident in $proof))
-    else
-      `(FunSpec.autoframes_of_ret $h (P := fun $c => $P) (Q := fun $c $tQ => $Q) (Fr := $frame)
-          (show ∀ ($c : MachineData) (ra : Int64),
-            Std.WP.Triple $p (fun s => s = MachineData.push64 $c ra ∧ $P) (fun _ _ => False)
-              (fun a $tQ => a = ra ∧ $Q ∧ $tRsp = $rsp ∧ $frame $c $tQ)
-            from open $name:ident in $proof))
-  elabCommand (← `(command|
-    open scoped Program.WP in
-    @[spec] theorem $name:ident $binders* : $stmt := $pf))
+
+macro_rules
+  | `(funspec $sig:funspecSig) => do
+    let (aux, thm) ← funspecTheorem sig #[sig]
+    return mkNullNode (#[← `(funspec_prelude $sig:funspecSig)] ++ aux.map (·.raw) |>.push thm)
+
+macro_rules
+  | `(mutual $elems* end) => do
+    unless elems.any (·.raw.isOfKind ``funspecCmd) do Macro.throwUnsupported
+    let group : Array (TSyntax `funspecSig) :=
+      elems.filterMap fun e => if e.raw.isOfKind ``funspecCmd then some ⟨e.raw[1]⟩ else none
+    let mut pre : Array Syntax := #[]
+    let mut inner : Array Syntax := #[]
+    let mut auxs : Array Syntax := #[]
+    for e in elems do
+      if e.raw.isOfKind ``funspecCmd then
+        let sig : TSyntax `funspecSig := ⟨e.raw[1]⟩
+        pre := pre.push (← `(funspec_prelude $sig:funspecSig))
+        let (aux, thm) ← funspecTheorem sig group
+        auxs := auxs ++ aux.map (·.raw)
+        inner := inner.push thm
+      else
+        inner := inner.push e
+    let stx ← getRef
+    return mkNullNode ((pre ++ auxs).push (stx.setArg 1 (mkNullNode inner)))
 
 end FunSpec

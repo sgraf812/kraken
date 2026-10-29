@@ -192,13 +192,14 @@ theorem wp_call_iff {f : Label} {g : Fragment} (hg : FunDecls.at (label f) = som
     · simp only [hpc, ite_false] at hu ⊢
       exact hu
 
-theorem call_spec {f : Label} {g : Fragment} (hg : FunDecls.at (label f) = some g) (asz osz : Width)
+@[spec] theorem call_spec {f : Label} (hf : (FunDecls.at (label f)).isSome = true) (asz osz : Width)
     {Q : Unit → MachineData → Prop} {E : Int64 → MachineData → Prop} :
     ⦃ fun s => (Mem.loadInt s.dmem (s.regs.get64 .rsp - 8#64) 8).isSome = true
         ∧ ∀ ra, WP.wp (FunDecls.body f) (fun _ _ => False)
           (fun a s' => (a = ra → Q () s') ∧ (a ≠ ra → E a s')) (s.push64 ra) ⦄
       (Directive.instr (.regular asz osz (.call (.rel (.sub (.label f) .after_current_instruction)))))
     ⦃ Q; E ⦄ := by
+  obtain ⟨g, hg⟩ := Option.isSome_iff_exists.mp hf
   refine ⟨fun s ⟨hmapped, hbody⟩ => (wp_call_iff hg).mpr fun [h : Embeds _] => ⟨hmapped, ?_⟩⟩
   refine Program.wp_mono (fun _ h => h) (fun u hu => ?_) (hbody h.embedding.endAddr)
   by_cases hpc : u.pc = h.embedding.endAddr

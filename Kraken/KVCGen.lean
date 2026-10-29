@@ -26,7 +26,7 @@ theorem BitVec.add_ofNat_zero {w : Nat} (x : BitVec w) : x + (0 : BitVec w) = x 
 theorem MachineState.data_mk (d : MachineData) (pc : Int64) : (⟨d, pc⟩ : MachineState).data = d := rfl
 
 /-- `vcgen` with the register state folded. -/
-syntax (name := kvcgen64) "kvcgen64" (" [" ident,* "]")? (" with " vcgenDischarge)? : tactic
+syntax (name := kvcgen64) "kvcgen64" (" [" term,* "]")? (" with " vcgenDischarge)? : tactic
 
 syntax (name := cfgExit) "cfg_exit" : grind
 
@@ -36,7 +36,7 @@ macro_rules
 macro_rules
   | `(tactic| kvcgen64 $[[$ids,*]]? $[with $d]?) => do
     let lemmas ← (ids.map (·.getElems) |>.getD #[]).mapM fun i =>
-      `(Lean.Parser.Tactic.simpLemma| $i:ident)
+      `(Lean.Parser.Tactic.simpLemma| $i:term)
     let d ← d.mapM fun (d₀ : Lean.TSyntax `vcgenDischarge) => match d₀ with
       | `(vcgenDischarge| $g:grind) =>
         `(vcgenDischarge| (cfg_exit; $g:grind))
