@@ -204,13 +204,6 @@ meta def parts (sig : TSyntax `funspecSig) : MacroM Parts := do
   let aX : Ident := aX?.getD (mkIdent `a)
   return ⟨name, f, binders, c, h, p, P, tQ, Q, aX, X?, clauses?.isSome, proof, sfx, wds?.isSome⟩
 
-syntax (name := funspecBeta) "funspec_beta% " term : term
-
-@[term_elab funspecBeta] public meta def elabFunspecBeta : TermElab := fun stx expectedType? => do
-  let e ← elabTerm stx[1] expectedType?
-  synthesizeSyntheticMVarsNoPostponing
-  return (← instantiateMVars e).headBeta
-
 syntax (name := funspecFrame) "funspec_frame% " ident : term
 
 @[term_elab funspecFrame] public meta def elabFunspecFrame : TermElab := fun stx expectedType? => do
@@ -247,12 +240,22 @@ meta def specStmt (x : Parts) (guard? : Option Term) :
   return (#[], ← `(Std.WP.Triple (FunDecls.body $x.f) (fun $s₀ => $pre) (fun _ _ => False)
     $(← plainPost x)))
 
+meta def renameState (old : Name) (new : Name) (t : Term) : Term :=
+  ⟨Id.run <| t.raw.replaceM fun
+    | stx@(.ident _ _ id _) =>
+      pure <| if old.isPrefixOf id then
+        some (mkIdentFrom stx (new ++ id.replacePrefix old .anonymous))
+      else none
+    | _ => pure none⟩
+
 meta def guardOf (μc : Term) (g : Parts) : MacroM (Option (Ident × Term × Term)) := do
   let some μ := measure? g.sfx | return none
-  let n : Ident := ⟨(← `(n)).raw⟩
-  let (bs, t) ← specStmt g (some (← `($μ < $n)))
+  let c ← withFreshMacroScope (MonadQuotation.addMacroScope g.c.getId)
+  let r := renameState g.c.getId c
+  let g' := { g with c := mkIdentFrom g.c c, P := r g.P, Q := r g.Q, X? := g.X?.map r }
+  let (bs, t) ← specStmt g' (some (← `($(r μ) < $μc)))
   let t ← bs.foldrM (fun b acc => `(∀ $b, $acc)) t
-  let ty ← `(funspec_beta% ((fun ($n : Nat) => ∀ ($g.c : MachineData) (ra : Int64), $t) $μc))
+  let ty ← `(∀ ($g'.c : MachineData) (ra : Int64), $t)
   let args := bs.filterMap fun b => match b with
     | `(bracketedBinder| ($x:ident : $_)) => some x.raw
     | _ => none
