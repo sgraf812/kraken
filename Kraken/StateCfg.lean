@@ -74,11 +74,7 @@ def MachineData.push64 (s : MachineData) (v : Int64) : MachineData :=
 @[grind =] theorem MachineData.dmem_push64 (s : MachineData) (v : Int64) :
     (s.push64 v).dmem = Mem.storeInt s.dmem (s.regs.get64 .rsp - 8#64) 8 v.toBitVec.toInt := rfl
 
-@[grind =, vcgen_simp] theorem Mem.loadInt_storeInt_64 (m : DataMem) (a : BitVec 64) (v : Int) :
-    (m.storeInt a 8 v).loadInt a 8 = some (Int.ofBytes (Int.toBytes 8 v)) :=
-  Mem.loadInt_storeInt m a _ v (by decide)
-
-@[grind =, vcgen_simp] theorem Int64.ofBitVec_ofBytes_toBytes (ra : Int64) :
+@[grind =] theorem Int64.ofBitVec_ofBytes_toBytes (ra : Int64) :
     Int64.ofBitVec (BitVec.ofInt 64 (Int.ofBytes (Int.toBytes 8 ra.toBitVec.toInt))) = ra := by
   rw [BitVec.ofInt_ofBytes_toBytes 64 8 rfl, BitVec.ofInt_toInt, Int64.ofBitVec_toBitVec]
 

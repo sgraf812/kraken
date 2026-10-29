@@ -16,9 +16,6 @@ open scoped Program.WP
 
 set_option experimental.vcgen true
 
-attribute [local grind =] UInt64.toBytes_length BitVec.ofInt_ofBytes_toBytes ofBytes_toBytes
-  Mem.loadInt_storeInt
-
 namespace State
 
 /-- The statement of the baseline's `alu_mem_example_correct`. -/

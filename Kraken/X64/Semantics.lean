@@ -272,6 +272,44 @@ structure StatusFlags where
 
 abbrev DataMem := Mem 64
 instance : Repr DataMem where reprPrec _ _ := "<opaque memory>"
+
+@[grind =, vcgen_simp] theorem Mem.loadInt_storeInt_8 (m : DataMem) (a : BitVec 64) (v : Int) :
+    (m.storeInt a 1 v).loadInt a 1 = some (Int.ofBytes (Int.toBytes 1 v)) :=
+  Mem.loadInt_storeInt m a 1 v (by decide)
+
+@[vcgen_simp] theorem BitVec.ofInt_ofBytes_toBytes_8 (v : Int) :
+    BitVec.ofInt 8 (Int.ofBytes (Int.toBytes 1 v)) = BitVec.ofInt 8 v :=
+  BitVec.ofInt_ofBytes_toBytes 8 1 rfl v
+
+@[grind =, vcgen_simp] theorem Mem.loadInt_storeInt_16 (m : DataMem) (a : BitVec 64) (v : Int) :
+    (m.storeInt a 2 v).loadInt a 2 = some (Int.ofBytes (Int.toBytes 2 v)) :=
+  Mem.loadInt_storeInt m a 2 v (by decide)
+
+@[vcgen_simp] theorem BitVec.ofInt_ofBytes_toBytes_16 (v : Int) :
+    BitVec.ofInt 16 (Int.ofBytes (Int.toBytes 2 v)) = BitVec.ofInt 16 v :=
+  BitVec.ofInt_ofBytes_toBytes 16 2 rfl v
+
+@[grind =, vcgen_simp] theorem Mem.loadInt_storeInt_32 (m : DataMem) (a : BitVec 64) (v : Int) :
+    (m.storeInt a 4 v).loadInt a 4 = some (Int.ofBytes (Int.toBytes 4 v)) :=
+  Mem.loadInt_storeInt m a 4 v (by decide)
+
+@[vcgen_simp] theorem BitVec.ofInt_ofBytes_toBytes_32 (v : Int) :
+    BitVec.ofInt 32 (Int.ofBytes (Int.toBytes 4 v)) = BitVec.ofInt 32 v :=
+  BitVec.ofInt_ofBytes_toBytes 32 4 rfl v
+
+@[grind =, vcgen_simp] theorem Mem.loadInt_storeInt_64 (m : DataMem) (a : BitVec 64) (v : Int) :
+    (m.storeInt a 8 v).loadInt a 8 = some (Int.ofBytes (Int.toBytes 8 v)) :=
+  Mem.loadInt_storeInt m a 8 v (by decide)
+
+@[vcgen_simp] theorem BitVec.ofInt_ofBytes_toBytes_64 (v : Int) :
+    BitVec.ofInt 64 (Int.ofBytes (Int.toBytes 8 v)) = BitVec.ofInt 64 v :=
+  BitVec.ofInt_ofBytes_toBytes 64 8 rfl v
+
+grind_pattern BitVec.ofInt_ofBytes_toBytes_8 => Option.get! (some (Int.ofBytes (Int.toBytes 1 v)))
+grind_pattern BitVec.ofInt_ofBytes_toBytes_16 => Option.get! (some (Int.ofBytes (Int.toBytes 2 v)))
+grind_pattern BitVec.ofInt_ofBytes_toBytes_32 => Option.get! (some (Int.ofBytes (Int.toBytes 4 v)))
+grind_pattern BitVec.ofInt_ofBytes_toBytes_64 => Option.get! (some (Int.ofBytes (Int.toBytes 8 v)))
+
 structure MachineData where -- does not include code or program position
   regs : Reg64s := {}
   zmms : RegZmms := {}

@@ -30,6 +30,7 @@ adjacent literals to `evalGround`. -/
 attribute [scoped vcgen_simp] UInt64.toBitVec_ofBitVec Int64.toBitVec_ofNat BitVec.ofNat_eq_ofNat
   BitVec.setWidth_eq BitVec.add_zero BitVec.toNat_ofNat Nat.zero_mod Int.add_zero Int.cast_ofNat_Int
   bne_self_eq_false BitVec.xor_self Bool.toNat_false Option.map_some Option.get!_some Option.isSome_some
+  BitVec.ofInt_toInt Int64.ofBitVec_toBitVec
 
 end KVCGen
 

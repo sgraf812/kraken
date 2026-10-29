@@ -893,4 +893,54 @@ grind_pattern Blocks.Disjoint.of_inside => Blocks.Disjoint [(x, n)] [(d, k)], Bl
 grind_pattern Blocks.Disjoint.of_inside' => Blocks.Disjoint [(x, n)] [(d, k)], Blocks.Disjoint bs₁ bs₂ where
   guard Blocks.Disjoint bs₁ bs₂
 
+theorem loadInt_storeInt_of_disjoint {w : Nat} {m : Mem w} {a x : BitVec w} {n k : Nat}
+    (hd : Blocks.Disjoint [(x, k)] [(a, n)]) (v : Int) :
+    (m.storeInt a n v).loadInt x k = m.loadInt x k :=
+  Mem.loadInt_congr fun _ hi =>
+    (Blocks.Inside.base (Nat.le_refl n)).get?_storeInt
+      (hd _ ((Blocks.Inside.base (Nat.le_refl k)).add_ofNat hi)) v
+
+theorem Blocks.Disjoint.of_sub {w : Nat} {x a : BitVec w} {k n : Nat}
+    (h₁ : n ≤ (x - a).toNat) (h₂ : k ≤ (a - x).toNat) : Blocks.Disjoint [(x, k)] [(a, n)] := by
+  intro y hy hy'
+  rcases hy with hy | hy
+  · rcases hy' with hy' | hy'
+    · have hneg : (a - x).toNat = (2 ^ w - (x - a).toNat) % 2 ^ w := by
+        rw [show a - x = -(x - a) by grind, BitVec.toNat_neg]
+      have he : y - a = (y - x) + (x - a) := by grind
+      have hlt := (x - a).isLt
+      rw [he, BitVec.toNat_add] at hy'
+      by_cases hq : (x - a).toNat = 0
+      · rw [hq, Nat.sub_zero, Nat.mod_self] at hneg
+        omega
+      · rw [Nat.mod_eq_of_lt (by omega)] at hneg
+        rw [Nat.mod_eq_of_lt (by omega)] at hy'
+        omega
+    · exact hy'
+  · exact hy
+
+theorem loadInt_storeInt_add {w : Nat} {m : Mem w} {b c d : BitVec w} {n k : Nat}
+    (h₁ : n ≤ (d - c).toNat) (h₂ : k ≤ (c - d).toNat) (v : Int) :
+    (m.storeInt (b + c) n v).loadInt (b + d) k = m.loadInt (b + d) k :=
+  loadInt_storeInt_of_disjoint
+    (Blocks.Disjoint.of_sub (by rwa [show b + d - (b + c) = d - c by grind])
+      (by rwa [show b + c - (b + d) = c - d by grind])) v
+
+grind_pattern loadInt_storeInt_add => Mem.loadInt (Mem.storeInt m (b + c) n v) (b + d) k
+
+theorem loadInt_storeInt_of_inside {w : Nat} {m : Mem w} {a x : BitVec w} {n k : Nat}
+    {bs₁ bs₂ : List (BitVec w × Nat)} (hd : Blocks.Disjoint bs₁ bs₂) (hx : Blocks.Inside x k bs₁)
+    (ha : Blocks.Inside a n bs₂) (v : Int) : (m.storeInt a n v).loadInt x k = m.loadInt x k :=
+  loadInt_storeInt_of_disjoint (hd.of_inside hx ha) v
+
+theorem loadInt_storeInt_of_inside' {w : Nat} {m : Mem w} {a x : BitVec w} {n k : Nat}
+    {bs₁ bs₂ : List (BitVec w × Nat)} (hd : Blocks.Disjoint bs₁ bs₂) (hx : Blocks.Inside x k bs₂)
+    (ha : Blocks.Inside a n bs₁) (v : Int) : (m.storeInt a n v).loadInt x k = m.loadInt x k :=
+  loadInt_storeInt_of_disjoint (hd.of_inside' hx ha) v
+
+grind_pattern loadInt_storeInt_of_inside => Mem.loadInt (Mem.storeInt m a n v) x k, Blocks.Disjoint bs₁ bs₂ where
+  guard Blocks.Disjoint bs₁ bs₂
+grind_pattern loadInt_storeInt_of_inside' => Mem.loadInt (Mem.storeInt m a n v) x k, Blocks.Disjoint bs₁ bs₂ where
+  guard Blocks.Disjoint bs₁ bs₂
+
 end Mem
