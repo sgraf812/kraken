@@ -34,7 +34,7 @@ public theorem autoframes {f : Label} {g : Fragment} (h : FunDecls.at (label f) 
         ∧ (∀ a s', a ≠ ra → X s a s' ∧ Fr s s' → E' a s') ⦄
       FunDecls.body f
     ⦃ Q'; E' ⦄ := by
-  refine ⟨fun s₀ ⟨h₀, hpre, hok, hexit⟩ => ?_⟩
+  refine Triple.intro fun s₀ ⟨h₀, hpre, hok, hexit⟩ => ?_
   rw [FunDecls.body_eq h]
   refine Program.wp_mono (fun _ h => False.elim h) (fun u hu => ?_) (hp.1 s₀ ⟨h₀, hpre⟩)
   by_cases ha : u.pc = ra
@@ -52,7 +52,7 @@ public theorem autoframes_of_ret {f : Label} {g : Fragment} (h : FunDecls.at (la
         ∧ (∀ s', Q s s' ∧ s'.regs.rsp = s.regs.rsp ∧ Fr s s' → E' ra s') ⦄
       FunDecls.body f
     ⦃ Q'; E' ⦄ := by
-  refine ⟨fun s₀ ⟨h₀, hpre, hok⟩ => ?_⟩
+  refine Triple.intro fun s₀ ⟨h₀, hpre, hok⟩ => ?_
   rw [FunDecls.body_eq h]
   exact Program.wp_mono (fun _ h => False.elim h) (fun u hu => hu.1 ▸ hok u.data hu.2)
     (hp.1 s₀ ⟨h₀, hpre⟩)
@@ -70,7 +70,7 @@ public theorem plain {f : Label} {g : Fragment} (h : FunDecls.at (label f) = som
 public theorem guarded {prog : Program} {pre : MachineData → Prop} {p : Prop}
     {Q : Unit → MachineData → Prop} {E : Int64 → MachineData → Prop}
     (h : p → ⦃ pre ⦄ prog ⦃ Q; E ⦄) : ⦃ fun s₀ => pre s₀ ∧ p ⦄ prog ⦃ Q; E ⦄ :=
-  ⟨fun s₀ ⟨hp, hlt⟩ => (h hlt).1 s₀ hp⟩
+  Triple.intro fun s₀ ⟨hp, hlt⟩ => (h hlt).1 s₀ hp
 
 end FunSpec
 

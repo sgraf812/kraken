@@ -200,7 +200,7 @@ theorem wp_call_iff {f : Label} {g : Fragment} (hg : FunDecls.at (label f) = som
       (Directive.instr (.regular asz osz (.call (.rel (.sub (.label f) .after_current_instruction)))))
     ⦃ Q; E ⦄ := by
   obtain ⟨g, hg⟩ := Option.isSome_iff_exists.mp hf
-  refine ⟨fun s ⟨hmapped, hbody⟩ => (wp_call_iff hg).mpr fun [h : Embeds _] => ⟨hmapped, ?_⟩⟩
+  refine Triple.intro fun s ⟨hmapped, hbody⟩ => (wp_call_iff hg).mpr fun [h : Embeds _] => ⟨hmapped, ?_⟩
   refine Program.wp_mono (fun _ h => h) (fun u hu => ?_) (hbody h.embedding.endAddr)
   by_cases hpc : u.pc = h.embedding.endAddr
   · simp only [hpc, ite_true]
@@ -446,5 +446,15 @@ theorem cfg {p : Program} {E : Int64 → MachineData → Prop} {s₀ : MachineDa
     have hsome' := Program.isSome_blockAt_of_mem (List.mem_of_getElem? hl')
     rw [Host.label_eq hlink (hcellOf l' (hne_of l' hsome'))]
     exact key (l', d) hsome' hI'.1
+
+theorem _root_.Program.Triple.cfg {p : Program} {P : MachineData → Prop}
+    {Q : Unit → MachineData → Prop} {E : Int64 → MachineData → Prop}
+    (I : MachineData → Label → MachineData → Prop) (var : MachineData → Label → MachineData → Nat)
+    (h : ∀ s₀, P s₀ → p.ForallBlocks fun blk => ∀ t, Program.Triple.cfg.Table (I s₀) Q s₀ blk.label t →
+      let I' (b : CfgLabel) (j : Nat) (_ : Unit) (s : MachineData) :=
+        Program.Triple.cfg.Table (I s₀) Q s₀ b s ∧ Program.Decreases (var s₀) blk.label blk.idx t b j s
+      WP.wp blk.body (I' blk.next (blk.idx + 1)) (Program.Intercept (Program.labels p) s₀ I' E) t) :
+    ⦃ P ⦄ p ⦃ Q; E ⦄ :=
+  Triple.intro fun s₀ hP => Program.WP.cfg (Program.Triple.cfg.Table (I s₀) Q s₀) (var s₀) (h s₀ hP) rfl
 
 end Program.WP

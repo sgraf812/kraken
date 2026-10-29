@@ -37,11 +37,11 @@ funspec swap_spec "swap" [Host] [FunDecls] [Embeds swap]
   requires Mem.Mapped [(s.regs.rsp.toBitVec - 8#64, 8)] s.dmem;
   ensures s' => s'.regs.rax.toBitVec = s.regs.rbx.toBitVec ∧ s'.regs.rbx.toBitVec = s.regs.rax.toBitVec
   autoframes preserves rcx rdx rsi rdi rbp r8 r9 r10 r11 r12 r13 r14 r15 := by
-  refine ⟨fun s₀ ⟨h₀, _⟩ => ?_⟩
-  refine Program.WP.cfg (fun
-      | .entry, s' | .label "swap", s' => s' = s₀
+  refine Program.Triple.cfg
+    (fun s₀ => fun
+      | "swap", s' => s' = s₀
       | _, _ => False)
-    (fun _ _ => 0) ?_ rfl
+    (fun _ _ _ => 0) fun s₀ ⟨h₀, _⟩ => ?_
   cfg_cases
   all_goals kvcgen64 with finish
 

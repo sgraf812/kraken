@@ -77,15 +77,15 @@ funspec memmove_spec "memmove" [Host] [FunDecls] [Embeds memmove]
     = s.dmem.loadBytes s.regs.rsi.toBitVec s.regs.rdx.toBitVec.toNat
   autoframes calling_conv SysV preserves rcx r8 r9 r10 r11
     writes s.regs.rdi.toBitVec[*...<s.regs.rdx.toBitVec.toNat] := by
-  refine ⟨fun s₀ ⟨h₀, _⟩ => ?_⟩
-  refine Program.WP.cfg (fun
-      | .entry, s' | .label "memmove", s' => s' = s₀
-      | .label "bwd", s' => MMBwd s s₀ s'
-      | .label "bdone", s' => MMBwd s s₀ s' ∧ s'.regs.rdx.toBitVec = 0
-      | .label "fwd", s' => MMFwd s s₀ s'
-      | .label "fdone", s' => MMFwd s s₀ s' ∧ s'.regs.rdx.toBitVec = 0
+  refine Program.Triple.cfg
+    (fun s₀ => fun
+      | "memmove", s' => s' = s₀
+      | "bwd", s' => MMBwd s s₀ s'
+      | "bdone", s' => MMBwd s s₀ s' ∧ s'.regs.rdx.toBitVec = 0
+      | "fwd", s' => MMFwd s s₀ s'
+      | "fdone", s' => MMFwd s s₀ s' ∧ s'.regs.rdx.toBitVec = 0
       | _, _ => False)
-    (fun _ s' => s'.regs.rdx.toBitVec.toNat) ?_ rfl
+    (fun _ _ s' => s'.regs.rdx.toBitVec.toNat) fun s₀ ⟨h₀, _⟩ => ?_
   cfg_cases
   all_goals kvcgen64 with finish
 where

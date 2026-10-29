@@ -421,6 +421,12 @@ abbrev Program.Decreases (var : Label → MachineData → Nat) :
   | .label l, i, t, .label l', j, s => var l' s < var l t ∨ (var l' s = var l t ∧ i < j)
   | _, _, _, _, _, _ => True
 
+abbrev Program.Triple.cfg.Table (I : Label → MachineData → Prop) (Q : Unit → MachineData → Prop)
+    (s₀ : MachineData) : CfgLabel → MachineData → Prop
+  | .entry, s' => s' = s₀
+  | .label l, s' => I l s'
+  | .exit, s' => Q () s'
+
 theorem Program.blockAt_next {p : Program} (hnd : (Program.labels p).Nodup)
     {l : Label} {blk : Program.Block} (h : Program.blockAt p l = some blk)
     {l' : Label} (hn : blk.next = .label l') :
@@ -545,5 +551,5 @@ macro "cfg_cases" : tactic =>
      clear hlabels
      repeat' apply And.intro
      all_goals intro t ht
-     all_goals try simp -iota only [cfgMatch, CfgLabel.label.injEq] at ht
+     all_goals try simp -iota only [Program.Triple.cfg.Table, cfgMatch, CfgLabel.label.injEq] at ht
      all_goals try exact ht.elim))
