@@ -499,10 +499,6 @@ theorem length_of_loadBytes_eq_some {w : Nat} {m : Mem w} {a : BitVec w} {n : Na
     {bs : List UInt8} (h : m.loadBytes a n = some bs) : bs.length = n :=
   (loadBytes_eq_some_iff.mp h).1
 
-theorem loadBytes_of_eq_zero {w : Nat} {m : Mem w} {a : BitVec w} {n : Nat} (hn : n = 0) :
-    m.loadBytes a n = some [] :=
-  loadBytes_eq_some_iff.mpr ⟨hn.symm, fun i hi => by simp at hi⟩
-
 def Contains {w : Nat} (m : Mem w) (a : BitVec w) (bs : List UInt8) : Prop :=
   m.loadBytes a bs.length = some bs
 
@@ -614,12 +610,6 @@ theorem Contains.extend_back {w : Nat} {m : Mem w} {b q : BitVec w} {bs : List U
 
 theorem Contains.loadBytes_eq {w : Nat} {m : Mem w} {a : BitVec w} {bs : List UInt8} {n : Nat}
     (h : Contains m a bs) (hn : bs.length = n) : m.loadBytes a n = some bs := hn ▸ h
-
-theorem loadBytes_storeInt {w : Nat} (m : Mem w) (a : BitVec w) (n : Nat) (v : Int)
-    (hw : n ≤ 2 ^ w) : (m.storeInt a n v).loadBytes a n = some (Int.toBytes n v) := by
-  have h := Mem.loadBytes_storeBytes m a (Int.toBytes n v) (by rw [Int.toBytes_length]; exact hw)
-  rw [Int.toBytes_length] at h
-  exact h
 
 attribute [grind =] Int.toBytes_length
 
@@ -733,36 +723,6 @@ theorem Mapped.storeInt {w : Nat} {bs : List (BitVec w × Nat)} {m : Mem w} (h :
     (a : BitVec w) (n : Nat) (v : Int) : Mapped bs (m.storeInt a n v) := fun b hb =>
   DomainGrows.storeInt m a n v b (h b hb)
 
-theorem loadBytes_storeInt_of_disjoint {w : Nat} {m : Mem w} {a addr : BitVec w} {n k : Nat}
-    {bs₁ bs₂ : List (BitVec w × Nat)} (hin : Blocks.Inside addr k bs₁) (hd : Blocks.Disjoint bs₁ bs₂)
-    (ha : Blocks.Inside a n bs₂) (v : Int) :
-    (m.storeInt addr k v).loadBytes a n = m.loadBytes a n := by
-  simp only [Mem.loadBytes]
-  congr 1
-  exact List.map_congr_left fun i hi =>
-    hin.get?_storeInt (fun hb => hd _ hb (ha.add_ofNat (List.mem_range.mp hi))) v
-
-theorem loadBytes_storeInt_of_disjoint' {w : Nat} {m : Mem w} {a addr : BitVec w} {n k : Nat}
-    {bs₁ bs₂ : List (BitVec w × Nat)} (hin : Blocks.Inside addr k bs₁) (hd : Blocks.Disjoint bs₂ bs₁)
-    (ha : Blocks.Inside a n bs₂) (v : Int) :
-    (m.storeInt addr k v).loadBytes a n = m.loadBytes a n := by
-  simp only [Mem.loadBytes]
-  congr 1
-  exact List.map_congr_left fun i hi =>
-    hin.get?_storeInt (fun hb => hd _ (ha.add_ofNat (List.mem_range.mp hi)) hb) v
-
-theorem loadInt_storeInt_of_disjoint {w : Nat} {m : Mem w} {a addr : BitVec w} {n k : Nat}
-    {bs₁ bs₂ : List (BitVec w × Nat)} (hin : Blocks.Inside addr k bs₁) (hd : Blocks.Disjoint bs₁ bs₂)
-    (ha : Blocks.Inside a n bs₂) (v : Int) :
-    (m.storeInt addr k v).loadInt a n = m.loadInt a n := by
-  simp only [Mem.loadInt, loadBytes_storeInt_of_disjoint hin hd ha v]
-
-theorem loadInt_storeInt_of_disjoint' {w : Nat} {m : Mem w} {a addr : BitVec w} {n k : Nat}
-    {bs₁ bs₂ : List (BitVec w × Nat)} (hin : Blocks.Inside addr k bs₁) (hd : Blocks.Disjoint bs₂ bs₁)
-    (ha : Blocks.Inside a n bs₂) (v : Int) :
-    (m.storeInt addr k v).loadInt a n = m.loadInt a n := by
-  simp only [Mem.loadInt, loadBytes_storeInt_of_disjoint' hin hd ha v]
-
 theorem Mapped.contains_get! {w : Nat} {bs : List (BitVec w × Nat)} {m : Mem w}
     {addr : BitVec w} {n : Nat} (h : Mapped bs m) (hin : Blocks.Inside addr n bs) :
     Contains m addr (m.loadBytes addr n).get! ∧ (m.loadBytes addr n).get!.length = n := by
@@ -773,24 +733,28 @@ theorem Mapped.contains_get! {w : Nat} {bs : List (BitVec w × Nat)} {m : Mem w}
 theorem Contains.storeInt_of_disjoint {w : Nat} {m : Mem w} {a addr : BitVec w} {bs : List UInt8}
     {n : Nat} {bs₁ bs₂ : List (BitVec w × Nat)} (h : Contains m a bs)
     (hin : Blocks.Inside addr n bs₁) (hd : Blocks.Disjoint bs₁ bs₂)
-    (ha : Blocks.Inside a bs.length bs₂) (v : Int) : Contains (m.storeInt addr n v) a bs := by
-  rw [Contains, loadBytes_storeInt_of_disjoint hin hd ha v]; exact h
+    (ha : Blocks.Inside a bs.length bs₂) (v : Int) : Contains (m.storeInt addr n v) a bs :=
+  Contains.iff.mpr fun i hi => by
+    rw [hin.get?_storeInt (fun hb => hd _ hb (ha.add_ofNat hi)) v]
+    exact Contains.iff.mp h i hi
 
 theorem Contains.storeInt_of_disjoint' {w : Nat} {m : Mem w} {a addr : BitVec w} {bs : List UInt8}
     {n : Nat} {bs₁ bs₂ : List (BitVec w × Nat)} (h : Contains m a bs)
     (hin : Blocks.Inside addr n bs₁) (hd : Blocks.Disjoint bs₂ bs₁)
-    (ha : Blocks.Inside a bs.length bs₂) (v : Int) : Contains (m.storeInt addr n v) a bs := by
-  rw [Contains, loadBytes_storeInt_of_disjoint' hin hd ha v]; exact h
+    (ha : Blocks.Inside a bs.length bs₂) (v : Int) : Contains (m.storeInt addr n v) a bs :=
+  Contains.iff.mpr fun i hi => by
+    rw [hin.get?_storeInt (fun hb => hd _ (ha.add_ofNat hi) hb) v]
+    exact Contains.iff.mp h i hi
 
 grind_pattern Mapped.contains_get! => Mapped bs m, Option.get! (Mem.loadBytes m addr n)
-grind_pattern Contains.storeInt_of_disjoint => Contains m a bs, Mem.storeInt m addr n v, Blocks.Disjoint bs₁ bs₂
-grind_pattern Contains.storeInt_of_disjoint' => Contains m a bs, Mem.storeInt m addr n v, Blocks.Disjoint bs₂ bs₁
+grind_pattern Contains.storeInt_of_disjoint => Contains m a bs, Mem.storeInt m addr n v, Blocks.Disjoint bs₁ bs₂ where
+  guard Blocks.Disjoint bs₁ bs₂
+grind_pattern Contains.storeInt_of_disjoint' => Contains m a bs, Mem.storeInt m addr n v, Blocks.Disjoint bs₂ bs₁ where
+  guard Blocks.Disjoint bs₂ bs₁
 
 grind_pattern Blocks.Inside.get?_storeInt => Std.ExtHashMap.get? (Mem.storeInt m addr n v) b, Blocks.Inside b 1 bs
 grind_pattern Mapped.loadInt_isSome => Mapped bs m, Mem.loadInt m addr n
 grind_pattern Mapped.storeInt => Mapped bs m, Mem.storeInt m a n v
-grind_pattern loadInt_storeInt_of_disjoint => Mem.loadInt (Mem.storeInt m addr k v) a n, Blocks.Disjoint bs₁ bs₂
-grind_pattern loadInt_storeInt_of_disjoint' => Mem.loadInt (Mem.storeInt m addr k v) a n, Blocks.Disjoint bs₂ bs₁
 
 theorem Blocks.Inside.singleton_mono {w : Nat} {x a b : BitVec w} {k len len' : Nat}
     (h : Blocks.Inside x k [(b, len')]) (hs : (b - a).toNat + len' ≤ len) :
@@ -895,6 +859,23 @@ theorem WritesOnly.loadInt {w : Nat} {bs : List (BitVec w × Nat)} {m m' : Mem w
     (h : WritesOnly bs m m') (hd : Blocks.Disjoint [(a, n)] bs) : m'.loadInt a n = m.loadInt a n :=
   Mem.loadInt_congr fun _ hi => h.1 _ (hd _ ((Blocks.Inside.base (Nat.le_refl n)).add_ofNat hi))
 
+theorem Blocks.Inside.of_singleton {w : Nat} {b x : BitVec w} {n : Nat} {bs : List (BitVec w × Nat)}
+    (hb : Blocks.Inside b 1 [(x, n)]) (hx : Blocks.Inside x n bs) : Blocks.Inside b 1 bs := by
+  rcases hb with hb | hb
+  · have := hx.add_ofNat (i := (b - x).toNat) (by omega)
+    rwa [add_ofNat_toNat_sub] at this
+  · exact hb.elim
+
+theorem Blocks.Disjoint.of_inside {w : Nat} {x d : BitVec w} {n k : Nat}
+    {bs₁ bs₂ : List (BitVec w × Nat)} (hd : Blocks.Disjoint bs₁ bs₂) (hx : Blocks.Inside x n bs₁)
+    (hy : Blocks.Inside d k bs₂) : Blocks.Disjoint [(x, n)] [(d, k)] :=
+  fun _ hb hb' => hd _ (hb.of_singleton hx) (hb'.of_singleton hy)
+
+theorem Blocks.Disjoint.of_inside' {w : Nat} {x d : BitVec w} {n k : Nat}
+    {bs₁ bs₂ : List (BitVec w × Nat)} (hd : Blocks.Disjoint bs₁ bs₂) (hx : Blocks.Inside x n bs₂)
+    (hy : Blocks.Inside d k bs₁) : Blocks.Disjoint [(x, n)] [(d, k)] :=
+  fun _ hb hb' => hd _ (hb'.of_singleton hy) (hb.of_singleton hx)
+
 grind_pattern Blocks.Inside.ofStackSlots => Blocks.Inside (UInt64.toBitVec rsp - x) n (Block.ofStackSlots rsp k :: bs)
 grind_pattern Blocks.Disjoint.ofStackSlots => Blocks.Disjoint [(a, n)] [Block.ofStackSlots (UInt64.ofBitVec a) k]
 grind_pattern WritesOnly.refl => WritesOnly bs m m
@@ -907,5 +888,9 @@ grind_pattern WritesOnly.ofStackSlots_mono =>
   WritesOnly [Block.ofStackSlots rsp k] m m'
 grind_pattern WritesOnly.mapped => WritesOnly bs m m', Mapped cs m
 grind_pattern WritesOnly.loadInt => WritesOnly bs m m', Mem.loadInt m' a n
+grind_pattern Blocks.Disjoint.of_inside => Blocks.Disjoint [(x, n)] [(d, k)], Blocks.Disjoint bs₁ bs₂ where
+  guard Blocks.Disjoint bs₁ bs₂
+grind_pattern Blocks.Disjoint.of_inside' => Blocks.Disjoint [(x, n)] [(d, k)], Blocks.Disjoint bs₁ bs₂ where
+  guard Blocks.Disjoint bs₁ bs₂
 
 end Mem

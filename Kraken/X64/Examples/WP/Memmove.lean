@@ -99,22 +99,22 @@ where
       ∧ s'.regs.rdi.toBitVec
         = s.regs.rdi.toBitVec + .ofNat 64 (s.regs.rdx.toBitVec.toNat - s'.regs.rdx.toBitVec.toNat)
       ∧ Frame s s' ∧ s'.regs.rsp.toBitVec = s.regs.rsp.toBitVec - 8#64
-      ∧ s'.dmem.loadInt (s.regs.rsp.toBitVec - 8#64) 8 = some (Int.ofBytes (Int.toBytes 8 ra.toBitVec.toInt))
       ∧ Mem.Contains s'.dmem s.regs.rdi.toBitVec ((s.dmem.loadBytes s.regs.rsi.toBitVec s.regs.rdx.toBitVec.toNat).get!.take
           (s.regs.rdx.toBitVec.toNat - s'.regs.rdx.toBitVec.toNat))
       ∧ Mem.Contains s'.dmem s'.regs.rsi.toBitVec ((s.dmem.loadBytes s.regs.rsi.toBitVec s.regs.rdx.toBitVec.toNat).get!.drop
           (s.regs.rdx.toBitVec.toNat - s'.regs.rdx.toBitVec.toNat))
+      ∧ Mem.WritesOnly [(s.regs.rdi.toBitVec, s.regs.rdx.toBitVec.toNat)] (s.push64 ra).dmem s'.dmem
   MMBwd (s : MachineData) (ra : Int64) (s' : MachineData) : Prop :=
     s.regs.rsi.toBitVec.toNat < s.regs.rdi.toBitVec.toNat
       ∧ s'.regs.rdx.toBitVec.toNat ≤ s.regs.rdx.toBitVec.toNat
       ∧ s'.regs.rsi.toBitVec = s.regs.rsi.toBitVec + s'.regs.rdx.toBitVec
       ∧ s'.regs.rdi.toBitVec = s.regs.rdi.toBitVec + s'.regs.rdx.toBitVec
       ∧ Frame s s' ∧ s'.regs.rsp.toBitVec = s.regs.rsp.toBitVec - 8#64
-      ∧ s'.dmem.loadInt (s.regs.rsp.toBitVec - 8#64) 8 = some (Int.ofBytes (Int.toBytes 8 ra.toBitVec.toInt))
       ∧ Mem.Contains s'.dmem s'.regs.rdi.toBitVec ((s.dmem.loadBytes s.regs.rsi.toBitVec s.regs.rdx.toBitVec.toNat).get!.drop
           s'.regs.rdx.toBitVec.toNat)
       ∧ Mem.Contains s'.dmem s.regs.rsi.toBitVec ((s.dmem.loadBytes s.regs.rsi.toBitVec s.regs.rdx.toBitVec.toNat).get!.take
           s'.regs.rdx.toBitVec.toNat)
+      ∧ Mem.WritesOnly [(s.regs.rdi.toBitVec, s.regs.rdx.toBitVec.toNat)] (s.push64 ra).dmem s'.dmem
 
 theorem memmove_correct [Host] (hp : memmoveProg.IsInfix Host.prog)
     (s : MachineData) (bs : List UInt8)
