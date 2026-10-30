@@ -7,7 +7,7 @@ computes `rdx = 2 ^ 2 ^ rbx`. The proposition is the baseline's
 `p3_correct` with two more hypotheses: `rax` starts at zero, which the
 statement needs when the loop does not run, and the layout is valid, which
 places the loop's labels. `p3_table` gives the assertion at each label,
-`rbx` is the variant, and `Program.WP.cfg` leaves one `kvcgen64` obligation per
+`rbx` is the variant, and `Program.Triple.cfg` leaves one `kvcgen64` obligation per
 block.
 -/
 public import Kraken.StateCfg
@@ -38,26 +38,27 @@ namespace State
         Nat.pow_le_pow_right (by omega) (Nat.pow_le_pow_right (by omega) (by omega))
     _ < 2 ^ 64 := hbound
 
-/-- The machine at each label of `p3`, for a run that started on `d`. At
+/-- The machine at each label of `p3`, for a run that started on `s`. At
 `start` it is the loop invariant. -/
-private abbrev p3_table (d : MachineData) : CfgLabel → MachineData → Prop
-  | .entry, s | .label "init", s => s = d
-  | .label "start", s =>
-      s.regs.rdx.toNat = 2 ^ 2 ^ (d.regs.rbx.toNat - s.regs.rbx.toNat)
-      ∧ s.regs.rbx.toNat ≤ d.regs.rbx.toNat ∧ s.regs.rax = 0 ∧ s.regs.rsp = d.regs.rsp
-  | .label "_end", s => s.regs.rdx.toNat = 2 ^ 2 ^ d.regs.rbx.toNat ∧ s.regs.rax = 0 ∧ s.regs.rsp = d.regs.rsp
-  | .exit, s => s.regs.rdx.toNat = 2 ^ 2 ^ d.regs.rbx.toNat ∧ s.regs.rax = 0
+private abbrev p3_table (s : MachineData) : Label → MachineData → Prop
+  | "init", s' => s' = s
+  | "start", s' =>
+      s'.regs.rdx.toNat = 2 ^ 2 ^ (s.regs.rbx.toNat - s'.regs.rbx.toNat)
+      ∧ s'.regs.rbx.toNat ≤ s.regs.rbx.toNat ∧ s'.regs.rax = 0 ∧ s'.regs.rsp = s.regs.rsp
+  | "_end", s' => s'.regs.rdx.toNat = 2 ^ 2 ^ s.regs.rbx.toNat ∧ s'.regs.rax = 0 ∧ s'.regs.rsp = s.regs.rsp
   | _, _ => False
 
 /-- The baseline's `p3_correct`, for a start state with `rax = 0` and a valid
 layout. -/
 theorem p3_correct [Host] (hp : p3.IsInfix Host.prog)
-    (d : MachineData) (h_bounds : p3_spec d < 2 ^ 64) (h_rax : d.regs.rax = 0) :
+    (s : MachineData) (h_bounds : p3_spec s < 2 ^ 64) (h_rax : s.regs.rax = 0) :
     Eventually (step1 Host.exe)
-      (fun s => s.data.regs.rdx.toNat = p3_spec d ∧ s.data.regs.rax = 0) ⟨d, startAddr hp⟩ := by
+      (fun st => st.data.regs.rdx.toNat = p3_spec s ∧ st.data.regs.rax = 0) ⟨s, startAddr hp⟩ := by
   simp only [p3_spec] at h_bounds ⊢
   apply Program.WP.step1_of_wp hp
-  refine Program.WP.cfg (p3_table d) (fun _ s => s.regs.rbx.toNat) ?_ rfl
+  refine Triple.le_wp (Program.Triple.cfg (P := (· = s)) p3_table (fun _ _ s' => s'.regs.rbx.toNat)
+    fun _ h₀ => ?_) s rfl
+  subst h₀
   cfg_cases
   all_goals kvcgen64 with finish
 

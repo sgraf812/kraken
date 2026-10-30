@@ -63,12 +63,13 @@ theorem pswap_correct [Host] (hp : pswap.IsInfix Host.prog)
     show List.find? _ [_] = _
     simp [hstart]
   apply Program.WP.step1_of_wp hp
-  refine Program.WP.cfg (fun
-      | .entry, s' | .label "start", s' => s' = s
-      | .label "done", s' | .exit, s' => s'.regs.rax.toBitVec = s.regs.rax.toBitVec
+  refine Triple.le_wp (Program.Triple.cfg (P := (· = s)) (fun _ l s' => match l with
+      | "start" => s' = s
+      | "done" => s'.regs.rax.toBitVec = s.regs.rax.toBitVec
           ∧ s'.regs.rbx.toBitVec = s.regs.rbx.toBitVec ∧ s'.regs.rsp.toBitVec = s.regs.rsp.toBitVec
-      | _, _ => False)
-    (fun _ _ => 0) ?_ rfl
+      | _ => False)
+    (fun _ _ _ => 0) fun _ h₀ => ?_) s rfl
+  subst h₀
   cfg_cases
   all_goals kvcgen64 with finish
 

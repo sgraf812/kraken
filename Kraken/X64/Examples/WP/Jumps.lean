@@ -15,11 +15,9 @@ namespace State.Jumps
 example [Host] [FunDecls] (l : Label) (Q : Unit → MachineData → Prop)
     (E : Int64 → MachineData → Prop) (s : MachineData) (hq : Q () s) :
     WP.wp ([Directive.label l]) Q E s := by
-  refine Program.WP.cfg
-    (fun b t => match b with
-      | .entry => t = s
-      | _ => Q () t)
-    (fun _ _ => 0) ?_ rfl
+  refine Triple.le_wp (Program.Triple.cfg (P := (· = s))
+    (fun _ _ s' => Q () s') (fun _ _ _ => 0) fun _ h₀ => ?_) s rfl
+  subst h₀
   cfg_cases
   all_goals kvcgen64 with finish
 
@@ -30,12 +28,9 @@ next:
 
 example [Host] [FunDecls] (s : MachineData) :
     WP.wp jmpNext (fun _ t => t.regs.get64 .rax = 2) (fun _ _ => False) s := by
-  refine Program.WP.cfg
-    (fun b t => match b with
-      | .entry => t = s
-      | .label _ => t.regs.rsp = s.regs.rsp
-      | .exit => t.regs.get64 .rax = 2)
-    (fun _ _ => 0) ?_ rfl
+  refine Triple.le_wp (Program.Triple.cfg (P := (· = s))
+    (fun _ _ s' => s'.regs.rsp = s.regs.rsp) (fun _ _ _ => 0) fun _ h₀ => ?_) s rfl
+  subst h₀
   cfg_cases
   all_goals kvcgen64 with finish
 
@@ -47,12 +42,9 @@ top:
 
 example [Host] [FunDecls] (s : MachineData) (h : 0 < s.regs.rcx.toNat) :
     WP.wp decMid (fun _ t => t.regs.rcx = 0 ∧ t.regs.rax = 1) (fun _ _ => False) s := by
-  refine Program.WP.cfg
-    (fun b t => match b with
-      | .entry => t = s
-      | .label _ => 0 < t.regs.rcx.toNat ∧ t.regs.rsp = s.regs.rsp
-      | .exit => t.regs.rcx = 0 ∧ t.regs.rax = 1)
-    (fun _ t => t.regs.rcx.toNat) ?_ rfl
+  refine Triple.le_wp (Program.Triple.cfg (P := (· = s))
+    (fun _ _ s' => 0 < s'.regs.rcx.toNat ∧ s'.regs.rsp = s.regs.rsp) (fun _ _ s' => s'.regs.rcx.toNat) fun _ h₀ => ?_) s rfl
+  subst h₀
   cfg_cases
   all_goals kvcgen64 with finish
 
@@ -64,12 +56,9 @@ done:
 
 example [Host] [FunDecls] (s : MachineData) (h : s.regs.rbx = 0) :
     WP.wp jmpOver (fun _ t => t.regs.rbx = 0 ∧ t.regs.rax = 2) (fun _ _ => False) s := by
-  refine Program.WP.cfg
-    (fun b t => match b with
-      | .entry => t = s
-      | .label _ => t.regs.rbx = 0 ∧ t.regs.rsp = s.regs.rsp
-      | .exit => t.regs.rbx = 0 ∧ t.regs.rax = 2)
-    (fun _ _ => 0) ?_ rfl
+  refine Triple.le_wp (Program.Triple.cfg (P := (· = s))
+    (fun _ _ s' => s'.regs.rbx = 0 ∧ s'.regs.rsp = s.regs.rsp) (fun _ _ _ => 0) fun _ h₀ => ?_) s rfl
+  subst h₀
   cfg_cases
   all_goals kvcgen64 with finish
 
@@ -81,12 +70,9 @@ b:
 
 example [Host] [FunDecls] (s : MachineData) :
     WP.wp jmpGap (fun _ t => t.regs.rax = 2) (fun _ _ => False) s := by
-  refine Program.WP.cfg
-    (fun b t => match b with
-      | .entry => t = s
-      | .label _ => t.regs.rsp = s.regs.rsp
-      | .exit => t.regs.rax = 2)
-    (fun _ _ => 0) ?_ rfl
+  refine Triple.le_wp (Program.Triple.cfg (P := (· = s))
+    (fun _ _ s' => s'.regs.rsp = s.regs.rsp) (fun _ _ _ => 0) fun _ h₀ => ?_) s rfl
+  subst h₀
   cfg_cases
   all_goals kvcgen64 with finish
 
@@ -99,12 +85,9 @@ done:
 
 example [Host] [FunDecls] (s : MachineData) :
     WP.wp jccOver (fun _ t => t.regs.rax = 2) (fun _ _ => False) s := by
-  refine Program.WP.cfg
-    (fun b t => match b with
-      | .entry => t = s
-      | .label _ => t.regs.rsp = s.regs.rsp
-      | .exit => t.regs.rax = 2)
-    (fun _ _ => 0) ?_ rfl
+  refine Triple.le_wp (Program.Triple.cfg (P := (· = s))
+    (fun _ _ s' => s'.regs.rsp = s.regs.rsp) (fun _ _ _ => 0) fun _ h₀ => ?_) s rfl
+  subst h₀
   cfg_cases
   all_goals kvcgen64 with finish
 
@@ -116,12 +99,9 @@ top:
 example [Host] (hp : countdown.IsInfix Host.prog) (s : MachineData) (h : 0 < s.regs.rcx.toNat) :
     Eventually (step1 Host.exe) (fun st => st.data.regs.rcx = 0) ⟨s, startAddr hp⟩ := by
   apply Program.WP.step1_of_wp hp
-  refine Program.WP.cfg
-    (fun b t => match b with
-      | .entry => t = s
-      | .label _ => 0 < t.regs.rcx.toNat ∧ t.regs.rsp = s.regs.rsp
-      | .exit => t.regs.rcx = 0)
-    (fun _ t => t.regs.rcx.toNat) ?_ rfl
+  refine Triple.le_wp (Program.Triple.cfg (P := (· = s))
+    (fun _ _ s' => 0 < s'.regs.rcx.toNat ∧ s'.regs.rsp = s.regs.rsp) (fun _ _ s' => s'.regs.rcx.toNat) fun _ h₀ => ?_) s rfl
+  subst h₀
   cfg_cases
   all_goals kvcgen64 with finish
 
@@ -136,12 +116,9 @@ done:
 example [Host] (hp : skip.IsInfix Host.prog) (s : MachineData) :
     Eventually (step1 Host.exe) (fun st => st.data.regs.rax = 2) ⟨s, startAddr hp⟩ := by
   apply Program.WP.step1_of_wp hp
-  refine Program.WP.cfg
-    (fun b t => match b with
-      | .entry => t = s
-      | .label _ => t.regs.rsp = s.regs.rsp
-      | .exit => t.regs.rax = 2)
-    (fun _ _ => 0) ?_ rfl
+  refine Triple.le_wp (Program.Triple.cfg (P := (· = s))
+    (fun _ _ s' => s'.regs.rsp = s.regs.rsp) (fun _ _ _ => 0) fun _ h₀ => ?_) s rfl
+  subst h₀
   cfg_cases
   all_goals kvcgen64 with finish
 
@@ -173,17 +150,19 @@ example [Host] (hp : fnReuse.IsInfix Host.prog) (s : MachineData) :
     exact Host.addrOf_ne (m := k + 6) (List.isInfixAt_iff_getElem?.mp hk 6 (by decide))
       (by rintro ⟨⟩) (by omega) (by omega)
   apply Program.WP.step1_of_wp hp
-  refine Program.WP.cfg
-    (fun b t => match b with
-      | .entry | .label "entry" => t = s
-      | .label "cont1" => t.regs.rsp = s.regs.rsp ∧ t.regs.rax = s.regs.r8 + s.regs.r9
-      | .label "add" => t.regs.rsp = s.regs.rsp
-          ∧ ((Int64.ofBitVec (t.regs.get64 .rcx) = label "cont1" ∧ t.regs.rdi = s.regs.r8 ∧ t.regs.rsi = s.regs.r9)
-            ∨ (Int64.ofBitVec (t.regs.get64 .rcx) = label "cont2" ∧ t.regs.rdi = s.regs.r8 + s.regs.r9
-              ∧ t.regs.rsi = s.regs.r8 + s.regs.r9))
-      | .label "cont2" | .exit => t.regs.rax = 2 * (s.regs.r8 + s.regs.r9)
+  refine Triple.le_wp (Program.Triple.cfg (P := (· = s))
+    (fun _ l s' => match l with
+      | "entry" => s' = s
+      | "cont1" => s'.regs.rsp = s.regs.rsp ∧ s'.regs.rax = s.regs.r8 + s.regs.r9
+      | "add" => s'.regs.rsp = s.regs.rsp
+          ∧ ((Int64.ofBitVec (s'.regs.get64 .rcx) = label "cont1" ∧ s'.regs.rdi = s.regs.r8 ∧ s'.regs.rsi = s.regs.r9)
+            ∨ (Int64.ofBitVec (s'.regs.get64 .rcx) = label "cont2" ∧ s'.regs.rdi = s.regs.r8 + s.regs.r9
+              ∧ s'.regs.rsi = s.regs.r8 + s.regs.r9))
+      | "cont2" => s'.regs.rax = 2 * (s.regs.r8 + s.regs.r9)
       | _ => False)
-    (fun l t => if l = "entry" ∨ (l = "add" ∧ Int64.ofBitVec (t.regs.get64 .rcx) = label "cont1") then 1 else 0) ?_ rfl
+    (fun _ l s' => if l = "entry" ∨ (l = "add" ∧ Int64.ofBitVec (s'.regs.get64 .rcx) = label "cont1") then 1 else 0)
+    fun _ h₀ => ?_) s rfl
+  subst h₀
   cfg_cases
   all_goals kvcgen64 with finish
 
@@ -197,12 +176,9 @@ target:
 
 example [Host] [FunDecls] (s : MachineData) (hm : Mem.Mapped [(s.regs.get64 .rsp - 8#64, 8)] s.dmem) :
     WP.wp retJump (fun _ t => t.regs.get64 .rbx = 1) (fun _ _ => False) s := by
-  refine Program.WP.cfg
-    (fun b t => match b with
-      | .entry => t = s
-      | .label _ => t.regs.get64 .rsp = s.regs.get64 .rsp
-      | .exit => t.regs.get64 .rbx = 1)
-    (fun _ _ => 0) ?_ rfl
+  refine Triple.le_wp (Program.Triple.cfg (P := (· = s))
+    (fun _ _ s' => s'.regs.get64 .rsp = s.regs.get64 .rsp) (fun _ _ _ => 0) fun _ h₀ => ?_) s rfl
+  subst h₀
   cfg_cases
   all_goals kvcgen64 with finish
 

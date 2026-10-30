@@ -45,12 +45,10 @@ drain:
   jnz drain")
 
 example [Host] [FunDecls] (s : MachineData) (hc : s.regs.rcx.toNat = 2) :
-    WP.wp drain (fun _ _ => False) (fun a t => a = label "drain" ∧ t.regs.rcx.toNat = 1) s := by
-  refine Program.WP.cfg
-    (fun b t => match b with
-      | .exit => False
-      | _ => t = s)
-    (fun _ _ => 0) ?_ rfl
+    WP.wp drain (fun _ _ => False) (fun a s' => a = label "drain" ∧ s'.regs.rcx.toNat = 1) s := by
+  refine Triple.le_wp (Program.Triple.cfg (P := (· = s))
+    (fun _ _ s' => s' = s) (fun _ _ _ => 0) fun _ h₀ => ?_) s rfl
+  subst h₀
   cfg_cases
   all_goals kvcgen64 with finish
 

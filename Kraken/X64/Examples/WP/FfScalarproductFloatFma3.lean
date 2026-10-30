@@ -130,37 +130,37 @@ done:
     nop
 ")
 
-theorem scalarproduct_fma3_spec [Host] [FunDecls] (d : MachineData) (len : Nat)
-    (h_len_reg : (d.regs.get64 .rdx).take 32 = BitVec.ofNat 32 len)
+theorem scalarproduct_fma3_spec [Host] [FunDecls] (s : MachineData) (len : Nat)
+    (h_len_reg : (s.regs.get64 .rdx).take 32 = BitVec.ofNat 32 len)
     (h_len_mod : len % 4 = 0) (h_len_pos : 0 < len) (h_len_bound : len * 4 < 2 ^ 32)
-    (h_v1_aligned : isAligned 16 (d.regs.get64 .rdi) = true)
+    (h_v1_aligned : isAligned 16 (s.regs.get64 .rdi) = true)
     (R₁ R₂ : DataMem → Prop)
-    (h_v1 : d.dmem =⋆ Mem.Blocks [(d.regs.get64 .rdi, len * 4)] ⋆ R₁)
-    (h_v2 : d.dmem =⋆ Mem.Blocks [(d.regs.get64 .rsi, len * 4)] ⋆ R₂) :
-    WP.wp scalarproduct_fma3_prog (fun _ t => t.dmem = d.dmem) (fun _ _ => False) d := by
-  refine Program.WP.cfg
-    (fun b t =>
-      let r8 := (t.regs.get64 .r8).toNat
-      let rcx := (t.regs.get64 .rcx).toNat
+    (h_v1 : s.dmem =⋆ Mem.Blocks [(s.regs.get64 .rdi, len * 4)] ⋆ R₁)
+    (h_v2 : s.dmem =⋆ Mem.Blocks [(s.regs.get64 .rsi, len * 4)] ⋆ R₂) :
+    WP.wp scalarproduct_fma3_prog (fun _ s' => s'.dmem = s.dmem) (fun _ _ => False) s := by
+  refine Triple.le_wp (Program.Triple.cfg (P := (· = s))
+    (fun _ l s' =>
+      let r8 := (s'.regs.get64 .r8).toNat
+      let rcx := (s'.regs.get64 .rcx).toNat
       let L := len * 4
-      let inv := t.regs.get64 .rdi = d.regs.get64 .rdi ∧ t.regs.get64 .rsi = d.regs.get64 .rsi
-        ∧ (t.regs.get64 .rdx).toNat = L ∧ t.dmem = d.dmem ∧ t.regs.get64 .rsp = d.regs.get64 .rsp
-      match b with
-      | .entry | .label "start" => t = d
-      | .label ".loop128" => inv ∧ rcx % 128 = 0 ∧ rcx ≤ L ∧ L < rcx + 128 ∧ r8 % 128 = 0 ∧ r8 < rcx
-      | .label ".l64" => inv ∧ rcx + r8 = L ∧ 64 ≤ rcx ∧ rcx < 128 ∧ r8 % 128 = 0
-      | .label ".loop64" => inv ∧ rcx = r8 + 64 ∧ r8 + 64 ≤ L ∧ L < r8 + 128 ∧ r8 % 64 = 0
-      | .label ".l32" => inv ∧ rcx + r8 = L ∧ 32 ≤ rcx ∧ rcx < 64 ∧ r8 % 64 = 0
-      | .label ".loop32" => inv ∧ rcx = r8 + 32 ∧ r8 + 32 ≤ L ∧ L < r8 + 64 ∧ r8 % 32 = 0
-      | .label ".l16" => inv ∧ rcx + r8 = L ∧ 16 ≤ rcx ∧ rcx < 32 ∧ r8 % 32 = 0
-      | .label ".loop16" => inv ∧ rcx = r8 + 16 ∧ r8 + 16 ≤ L ∧ L < r8 + 32 ∧ r8 % 16 = 0
-      | .label "done" => t.dmem = d.dmem ∧ t.regs.get64 .rsp = d.regs.get64 .rsp
-      | .exit => t.dmem = d.dmem
+      let inv := s'.regs.get64 .rdi = s.regs.get64 .rdi ∧ s'.regs.get64 .rsi = s.regs.get64 .rsi
+        ∧ (s'.regs.get64 .rdx).toNat = L ∧ s'.dmem = s.dmem ∧ s'.regs.get64 .rsp = s.regs.get64 .rsp
+      match l with
+      | "start" => s' = s
+      | ".loop128" => inv ∧ rcx % 128 = 0 ∧ rcx ≤ L ∧ L < rcx + 128 ∧ r8 % 128 = 0 ∧ r8 < rcx
+      | ".l64" => inv ∧ rcx + r8 = L ∧ 64 ≤ rcx ∧ rcx < 128 ∧ r8 % 128 = 0
+      | ".loop64" => inv ∧ rcx = r8 + 64 ∧ r8 + 64 ≤ L ∧ L < r8 + 128 ∧ r8 % 64 = 0
+      | ".l32" => inv ∧ rcx + r8 = L ∧ 32 ≤ rcx ∧ rcx < 64 ∧ r8 % 64 = 0
+      | ".loop32" => inv ∧ rcx = r8 + 32 ∧ r8 + 32 ≤ L ∧ L < r8 + 64 ∧ r8 % 32 = 0
+      | ".l16" => inv ∧ rcx + r8 = L ∧ 16 ≤ rcx ∧ rcx < 32 ∧ r8 % 32 = 0
+      | ".loop16" => inv ∧ rcx = r8 + 16 ∧ r8 + 16 ≤ L ∧ L < r8 + 32 ∧ r8 % 16 = 0
+      | "done" => s'.dmem = s.dmem ∧ s'.regs.get64 .rsp = s.regs.get64 .rsp
       | _ => False)
-    (fun l t => match l with
+    (fun _ l s' => match l with
       | "start" => 2 ^ 64
-      | ".loop128" => (t.regs.get64 .rcx).toNat - (t.regs.get64 .r8).toNat
-      | _ => 0) ?_ rfl
+      | ".loop128" => (s'.regs.get64 .rcx).toNat - (s'.regs.get64 .r8).toNat
+      | _ => 0) fun _ h₀ => ?_) s rfl
+  subst h₀
   cfg_cases
   all_goals kvcgen64 with finish
 

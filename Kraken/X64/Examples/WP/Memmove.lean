@@ -140,17 +140,15 @@ theorem memmove_correct [Host] (hp : memmoveProg.IsInfix Host.prog)
     show List.find? _ [_] = _
     simp [hstart]
   apply Program.WP.step1_of_wp hp
-  refine Program.WP.cfg (fun
-      | .entry, s' | .label "start", s' => s' = s
-      | .label "done", s' => s'.regs.rsp = s.regs.rsp
+  refine Triple.le_wp (Program.Triple.cfg (P := (· = s)) (fun _ l s' => match l with
+      | "start" => s' = s
+      | "done" => s'.regs.rsp = s.regs.rsp
           ∧ s'.dmem.loadBytes s.regs.rdi.toBitVec s.regs.rdx.toBitVec.toNat = some bs
           ∧ Mem.WritesOnly [Mem.Block.ofStackSlots s.regs.rsp 0, (s.regs.rdi.toBitVec, s.regs.rdx.toBitVec.toNat)]
               s.dmem s'.dmem
-      | .exit, s' => s'.dmem.loadBytes s.regs.rdi.toBitVec s.regs.rdx.toBitVec.toNat = some bs
-          ∧ Mem.WritesOnly [Mem.Block.ofStackSlots s.regs.rsp 0, (s.regs.rdi.toBitVec, s.regs.rdx.toBitVec.toNat)]
-              s.dmem s'.dmem
-      | _, _ => False)
-    (fun _ _ => 0) ?_ rfl
+      | _ => False)
+    (fun _ _ _ => 0) fun _ h₀ => ?_) s rfl
+  subst h₀
   cfg_cases
   all_goals kvcgen64 with finish
 
