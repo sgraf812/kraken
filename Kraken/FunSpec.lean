@@ -380,7 +380,7 @@ meta def funspecTheorem (sig : TSyntax `funspecSig) (group : Array (TSyntax `fun
   let regsVal ← `({ $(mkIdent (tQ.getId ++ `regs)):ident with $fields,* })
   let stateVal ← `({ $tQ:ident with regs := $regsVal, dmem := Mem.havoc $cDmem ($blks $c) $tDmem })
   elabCommand (← `(command|
-    @[vcgen_simp] abbrev $havoc:ident ($c:ident $tQ:ident : MachineData) : MachineData := $stateVal))
+    abbrev $havoc:ident ($c:ident $tQ:ident : MachineData) : MachineData := $stateVal))
   elabCommand (← `(command|
     theorem $havocEq:ident ($c $tQ : MachineData) (h : $frame $c $tQ)
         (hr : $(regField tQ `rsp) = $(regField c `rsp)) : $havoc $c $tQ = $tQ := by
