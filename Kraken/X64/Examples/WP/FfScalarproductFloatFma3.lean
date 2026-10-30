@@ -2,6 +2,7 @@ module
 
 public import Kraken.StateCfg
 public import Kraken.SeparationMem
+import Kraken.FunSpec
 import Kraken.X64.Parser
 
 open Kraken.X64.Parser
@@ -14,7 +15,7 @@ set_option experimental.vcgen true
 namespace State.FfScalarproductFloatFma3
 
 def scalarproduct_fma3_prog : Program := parse("
-start:
+ff_scalarproduct_float_fma3:
     xor %r8,%r8
     vxorps %ymm0,%ymm0,%ymm0
     shl $0x2,%edx
@@ -130,6 +131,10 @@ done:
     nop
 ")
 
+def scalarproduct_fma3 : Program := scalarproduct_fma3_prog ++ parse("
+    ret
+")
+
 theorem scalarproduct_fma3_spec [Host] [FunDecls] (s : MachineData) (len : Nat)
     (h_len_reg : (s.regs.get64 .rdx).take 32 = BitVec.ofNat 32 len)
     (h_len_mod : len % 4 = 0) (h_len_pos : 0 < len) (h_len_bound : len * 4 < 2 ^ 32)
@@ -146,7 +151,7 @@ theorem scalarproduct_fma3_spec [Host] [FunDecls] (s : MachineData) (len : Nat)
       let inv := s'.regs.get64 .rdi = s.regs.get64 .rdi ∧ s'.regs.get64 .rsi = s.regs.get64 .rsi
         ∧ (s'.regs.get64 .rdx).toNat = L ∧ s'.dmem = s.dmem ∧ s'.regs.get64 .rsp = s.regs.get64 .rsp
       match l with
-      | "start" => s' = s
+      | "ff_scalarproduct_float_fma3" => s' = s
       | ".loop128" => inv ∧ rcx % 128 = 0 ∧ rcx ≤ L ∧ L < rcx + 128 ∧ r8 % 128 = 0 ∧ r8 < rcx
       | ".l64" => inv ∧ rcx + r8 = L ∧ 64 ≤ rcx ∧ rcx < 128 ∧ r8 % 128 = 0
       | ".loop64" => inv ∧ rcx = r8 + 64 ∧ r8 + 64 ≤ L ∧ L < r8 + 128 ∧ r8 % 64 = 0
@@ -157,10 +162,45 @@ theorem scalarproduct_fma3_spec [Host] [FunDecls] (s : MachineData) (len : Nat)
       | "done" => s'.dmem = s.dmem ∧ s'.regs.get64 .rsp = s.regs.get64 .rsp
       | _ => False)
     (fun _ l s' => match l with
-      | "start" => 2 ^ 64
+      | "ff_scalarproduct_float_fma3" => 2 ^ 64
       | ".loop128" => (s'.regs.get64 .rcx).toNat - (s'.regs.get64 .r8).toNat
       | _ => 0) fun _ h₀ => ?_) s rfl
   subst h₀
+  cfg_cases
+  all_goals kvcgen64 with finish
+
+funspec scalarproduct_fma3_funspec "ff_scalarproduct_float_fma3" [Host] [FunDecls]
+    [Embeds scalarproduct_fma3]
+    (hf : FunDecls.at (label "ff_scalarproduct_float_fma3") = some ⟨scalarproduct_fma3⟩)
+    (len : Nat) at s
+    requires s.regs.rdx.toBitVec.take 32 = BitVec.ofNat 32 len
+      ∧ len % 4 = 0 ∧ 0 < len ∧ len * 4 < 2 ^ 32 ∧ isAligned 16 s.regs.rdi.toBitVec = true
+      ∧ Mem.Mapped [(s.regs.rsp.toBitVec - 8#64, 8), (s.regs.rdi.toBitVec, len * 4),
+          (s.regs.rsi.toBitVec, len * 4)] s.dmem
+    ensures s' => True
+    autoframes calling_conv SysV preserves rax rsi rdi r9 r10 r11 := by
+  refine Program.Triple.cfg
+    (fun s₀ l s' =>
+      let r8 := s'.regs.r8.toBitVec.toNat
+      let rcx := s'.regs.rcx.toBitVec.toNat
+      let L := len * 4
+      let inv := s'.regs.rdx.toBitVec.toNat = L ∧ s'.dmem = s₀.dmem ∧ Frame s s'
+        ∧ s'.regs.rsp.toBitVec = s.regs.rsp.toBitVec - 8#64
+      match l with
+      | "ff_scalarproduct_float_fma3" => s' = s₀
+      | ".loop128" => inv ∧ rcx % 128 = 0 ∧ rcx ≤ L ∧ L < rcx + 128 ∧ r8 % 128 = 0 ∧ r8 < rcx
+      | ".l64" => inv ∧ rcx + r8 = L ∧ 64 ≤ rcx ∧ rcx < 128 ∧ r8 % 128 = 0
+      | ".loop64" => inv ∧ rcx = r8 + 64 ∧ r8 + 64 ≤ L ∧ L < r8 + 128 ∧ r8 % 64 = 0
+      | ".l32" => inv ∧ rcx + r8 = L ∧ 32 ≤ rcx ∧ rcx < 64 ∧ r8 % 64 = 0
+      | ".loop32" => inv ∧ rcx = r8 + 32 ∧ r8 + 32 ≤ L ∧ L < r8 + 64 ∧ r8 % 32 = 0
+      | ".l16" => inv ∧ rcx + r8 = L ∧ 16 ≤ rcx ∧ rcx < 32 ∧ r8 % 32 = 0
+      | ".loop16" => inv ∧ rcx = r8 + 16 ∧ r8 + 16 ≤ L ∧ L < r8 + 32 ∧ r8 % 16 = 0
+      | "done" => s'.dmem = s₀.dmem ∧ Frame s s' ∧ s'.regs.rsp.toBitVec = s.regs.rsp.toBitVec - 8#64
+      | _ => False)
+    (fun _ l s' => match l with
+      | "ff_scalarproduct_float_fma3" => 2 ^ 64
+      | ".loop128" => s'.regs.rcx.toBitVec.toNat - s'.regs.r8.toBitVec.toNat
+      | _ => 0) fun s₀ ⟨h₀, _⟩ => ?_
   cfg_cases
   all_goals kvcgen64 with finish
 
