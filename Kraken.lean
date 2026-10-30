@@ -35,3 +35,4 @@ import Kraken.X64.Examples.WP.PushPopLoop
 import Kraken.X64.Examples.WP.EvenOdd
 import Kraken.X64.Examples.WP.LoadStore
 import Kraken.X64.Examples.WP.FfScalarproductFloatFma3
+import Kraken.X64.Examples.WP.ManyCalls

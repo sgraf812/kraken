@@ -21,16 +21,20 @@ namespace FunSpec
 
 variable [Host] [FunDecls]
 
+
 public theorem autoframes {f : Label} {g : Fragment} (h : FunDecls.at (label f) = some g)
     (s : MachineData) (ra : Int64)
     {P : MachineData → Prop} {Q : MachineData → MachineData → Prop}
     {X : MachineData → Int64 → MachineData → Prop} {Fr : MachineData → MachineData → Prop}
+    {Hv : MachineData → MachineData → MachineData}
+    (hH : ∀ s s', Fr s s' → s'.regs.rsp = s.regs.rsp → Hv s s' = s')
     (hp : ⦃ fun s₀ => s₀ = s.push64 ra ∧ P s ⦄ g.prog
-      ⦃ fun _ _ => False; fun a s' => (a = ra → Q s s' ∧ s'.regs.rsp = s.regs.rsp ∧ Fr s s')
+      ⦃ fun _ _ => False; fun a s' =>
+        (a = ra → Q s s' ∧ s'.regs.rsp = s.regs.rsp ∧ Fr s s')
         ∧ (a ≠ ra → X s a s' ∧ Fr s s') ⦄)
     (Q' : Unit → MachineData → Prop) (E' : Int64 → MachineData → Prop) :
     ⦃ fun s₀ => s₀ = s.push64 ra ∧ P s
-        ∧ (∀ s', Q s s' ∧ s'.regs.rsp = s.regs.rsp ∧ Fr s s' → E' ra s')
+        ∧ (∀ r, (fun t => Q s t → E' ra t) (Hv s r))
         ∧ (∀ a s', a ≠ ra → X s a s' ∧ Fr s s' → E' a s') ⦄
       FunDecls.body f
     ⦃ Q'; E' ⦄ := by
@@ -38,24 +42,32 @@ public theorem autoframes {f : Label} {g : Fragment} (h : FunDecls.at (label f) 
   rw [FunDecls.body_eq h]
   refine Program.wp_mono (fun _ h => False.elim h) (fun u hu => ?_) (hp.1 s₀ ⟨h₀, hpre⟩)
   by_cases ha : u.pc = ra
-  · exact ha ▸ hok u.data (hu.1 ha)
+  · obtain ⟨hQ, hrsp, hF⟩ := hu.1 ha
+    have hk := hok u.data
+    rw [hH s u.data hF hrsp] at hk
+    exact ha ▸ hk hQ
   · exact hexit u.pc u.data ha (hu.2 ha)
 
 public theorem autoframes_of_ret {f : Label} {g : Fragment} (h : FunDecls.at (label f) = some g)
     (s : MachineData) (ra : Int64)
     {P : MachineData → Prop} {Q : MachineData → MachineData → Prop}
-    {Fr : MachineData → MachineData → Prop}
+    {Fr : MachineData → MachineData → Prop} {Hv : MachineData → MachineData → MachineData}
+    (hH : ∀ s s', Fr s s' → s'.regs.rsp = s.regs.rsp → Hv s s' = s')
     (hp : ⦃ fun s₀ => s₀ = s.push64 ra ∧ P s ⦄ g.prog
-      ⦃ fun _ _ => False; fun a s' => a = ra ∧ Q s s' ∧ s'.regs.rsp = s.regs.rsp ∧ Fr s s' ⦄)
+      ⦃ fun _ _ => False; fun a s' => a = ra ∧ Q s s' ∧ s'.regs.rsp = s.regs.rsp
+        ∧ Fr s s' ⦄)
     (Q' : Unit → MachineData → Prop) (E' : Int64 → MachineData → Prop) :
     ⦃ fun s₀ => s₀ = s.push64 ra ∧ P s
-        ∧ (∀ s', Q s s' ∧ s'.regs.rsp = s.regs.rsp ∧ Fr s s' → E' ra s') ⦄
+        ∧ (∀ r, (fun t => Q s t → E' ra t) (Hv s r)) ⦄
       FunDecls.body f
     ⦃ Q'; E' ⦄ := by
   refine Triple.intro fun s₀ ⟨h₀, hpre, hok⟩ => ?_
   rw [FunDecls.body_eq h]
-  exact Program.wp_mono (fun _ h => False.elim h) (fun u hu => hu.1 ▸ hok u.data hu.2)
-    (hp.1 s₀ ⟨h₀, hpre⟩)
+  refine Program.wp_mono (fun _ h => False.elim h) (fun u hu => ?_) (hp.1 s₀ ⟨h₀, hpre⟩)
+  obtain ⟨ha, hQ, hrsp, hF⟩ := hu
+  have hk := hok u.data
+  rw [hH s u.data hF hrsp] at hk
+  exact ha ▸ hk hQ
 
 public theorem plain {f : Label} {g : Fragment} (h : FunDecls.at (label f) = some g)
     (s : MachineData) (ra : Int64)
@@ -204,19 +216,22 @@ meta def parts (sig : TSyntax `funspecSig) : MacroM Parts := do
   let aX : Ident := aX?.getD (mkIdent `a)
   return ⟨name, f, binders, c, h, p, P, tQ, Q, aX, X?, clauses?.isSome, proof, sfx, wds?.isSome⟩
 
-syntax (name := funspecFrame) "funspec_frame% " ident : term
+syntax (name := funspecAux) "funspec_aux% " ident ident : term
 
-@[term_elab funspecFrame] public meta def elabFunspecFrame : TermElab := fun stx expectedType? => do
-  let n ← resolveGlobalConstNoOverload (mkIdentFrom stx[1] (stx[1].getId ++ `Frame))
+@[term_elab funspecAux] public meta def elabFunspecAux : TermElab := fun stx expectedType? => do
+  let n ← resolveGlobalConstNoOverload (mkIdentFrom stx[1] (stx[1].getId ++ stx[2].getId.eraseMacroScopes))
   elabTerm (mkCIdentFrom stx[1] n) expectedType?
 
-meta def frameOf (name : Ident) : MacroM Term := `((funspec_frame% $name))
+meta def frameOf (name : Ident) : MacroM Term := `((funspec_aux% $name Frame))
+
+meta def havocOf (name : Ident) : MacroM Term := `((funspec_aux% $name Frame.havoc))
+
+meta def havocEqOf (name : Ident) : MacroM Term := `((funspec_aux% $name Frame.havoc_eq))
 
 meta def autoPre (x : Parts) (s₀ : Ident) : MacroM Term := do
   let (c, tQ, aX, P, Q) := (x.c, x.tQ, x.aX, x.P, x.Q)
   let frame ← frameOf x.name
-  let ok ← `(∀ $tQ:ident, $Q ∧ $(regField tQ `rsp) = $(regField c `rsp) ∧ $frame $c $tQ
-    → E' ra $tQ)
+  let ok ← `(∀ (r : MachineData), (fun $tQ:ident => $Q → E' ra $tQ) ($(← havocOf x.name) $c r))
   match x.X? with
   | some X => `($s₀ = MachineData.push64 $c ra ∧ $P ∧ $ok
       ∧ (∀ ($aX : Int64) ($tQ : MachineData), $aX ≠ ra → $X ∧ $frame $c $tQ → E' $aX $tQ))
@@ -296,10 +311,10 @@ meta def funspecTheorem (sig : TSyntax `funspecSig) (group : Array (TSyntax `fun
           (X := fun $c $aX $tQ => $X) $goApp)
     else if x.X?.isSome then
       `(FunSpec.autoframes $h $c ra (P := fun $c => $P) (Q := fun $c $tQ => $Q)
-          (X := fun $c $aX $tQ => $X) (Fr := $frame) $goApp Q' E')
+          (X := fun $c $aX $tQ => $X) (Fr := $frame) (Hv := $(← havocOf name)) $(← havocEqOf name) $goApp Q' E')
     else
       `(FunSpec.autoframes_of_ret $h $c ra (P := fun $c => $P) (Q := fun $c $tQ => $Q)
-          (Fr := $frame) $goApp Q' E')
+          (Fr := $frame) (Hv := $(← havocOf name)) $(← havocEqOf name) $goApp Q' E')
   let (bs, t) ← specStmt x none
   return (goCmd, ← `(command|
     @[spec] theorem $name:ident $binders* ($c : MachineData) (ra : Int64) $bs* : $t := $pf
@@ -343,11 +358,37 @@ meta def funspecTheorem (sig : TSyntax `funspecSig) (group : Array (TSyntax `fun
       let base := mkIdent (rsp.getId ++ `toBitVec)
       blocks := blocks.push (← `(($base, $(Syntax.mkNumLit (toString n)))))
   blocks := blocks ++ written
-  let mem ← `(Mem.WritesOnly [$blocks,*] $(mkIdent (c.getId ++ `dmem))
-    $(mkIdent (tQ.getId ++ `dmem)))
+  let regs := mkIdent (name.getId ++ `Frame.Regs)
+  let blks := mkIdent (name.getId ++ `Frame.blocks)
   let frame := mkIdent (name.getId ++ `Frame)
+  let havoc := mkIdent (name.getId ++ `Frame.havoc)
+  let havocEq := mkIdent (name.getId ++ `Frame.havoc_eq)
+  let cDmem := mkIdent (c.getId ++ `dmem)
+  let tDmem := mkIdent (tQ.getId ++ `dmem)
+  let regsBody ← match eqs.back? with
+    | some e => conj eqs.pop e
+    | none => `(True)
   elabCommand (← `(command|
-    abbrev $frame:ident ($c:ident $tQ:ident : MachineData) : Prop := $(← conj eqs mem)))
+    abbrev $regs:ident ($c:ident $tQ:ident : MachineData) : Prop := $regsBody))
+  elabCommand (← `(command|
+    abbrev $blks:ident ($c:ident : MachineData) : List (BitVec 64 × Nat) := [$blocks,*]))
+  elabCommand (← `(command|
+    abbrev $frame:ident ($c:ident $tQ:ident : MachineData) : Prop :=
+      $regs $c $tQ ∧ Mem.WritesOnly ($blks $c) $cDmem $tDmem))
+  let fields ← (kept.toArray.push `rsp).mapM fun f =>
+    `(Lean.Parser.Term.structInstField| $(mkIdent f):ident := $(regField c f))
+  let regsVal ← `({ $(mkIdent (tQ.getId ++ `regs)):ident with $fields,* })
+  let stateVal ← `({ $tQ:ident with regs := $regsVal, dmem := Mem.havoc $cDmem ($blks $c) $tDmem })
+  elabCommand (← `(command|
+    @[vcgen_simp] abbrev $havoc:ident ($c:ident $tQ:ident : MachineData) : MachineData := $stateVal))
+  elabCommand (← `(command|
+    theorem $havocEq:ident ($c $tQ : MachineData) (h : $frame $c $tQ)
+        (hr : $(regField tQ `rsp) = $(regField c `rsp)) : $havoc $c $tQ = $tQ := by
+      obtain ⟨hR, hW⟩ := h
+      simp only [$havoc:ident]
+      rw [← Mem.WritesOnly.eq_havoc hW]
+      obtain ⟨⟨⟩, _, _, _⟩ := $tQ:ident
+      simp_all [$regs:ident]))
   elabWhere name wdecls
 
 macro_rules

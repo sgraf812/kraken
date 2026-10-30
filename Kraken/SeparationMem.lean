@@ -831,12 +831,12 @@ theorem WritesOnly.ofStackSlots_push64 {m m' : Mem 64} {rsp : UInt64} {k : Nat} 
     WritesOnly [Block.ofStackSlots rsp k] m m' :=
   (WritesOnly.storeInt (Blocks.Inside.ofStackSlots (by decide) (by simp; omega) hk) v).trans h
 
-theorem WritesOnly.ofStackSlots_mono {m m' : Mem 64} {rsp : UInt64} {k k' : Nat}
-    (hs : k' + 1 ≤ k) (hk : 8 * (k + 1) < 2 ^ 64)
-    (h : WritesOnly [Block.ofStackSlots (UInt64.ofBitVec (rsp.toBitVec - 8)) k'] m m') :
-    WritesOnly [Block.ofStackSlots rsp k] m m' := by
-  unfold Block.ofStackSlots at h ⊢
-  rw [UInt64.toBitVec_ofBitVec] at h
+private theorem Block.ofStackSlots_sub_le {rsp : UInt64} {k k' : Nat} (hs : k' + 1 ≤ k)
+    (hk : 8 * (k + 1) < 2 ^ 64) :
+    ((Block.ofStackSlots (UInt64.ofBitVec (rsp.toBitVec - 8)) k').1 - (Block.ofStackSlots rsp k).1).toNat
+      + (Block.ofStackSlots (UInt64.ofBitVec (rsp.toBitVec - 8)) k').2 ≤ (Block.ofStackSlots rsp k).2 := by
+  unfold Block.ofStackSlots
+  rw [UInt64.toBitVec_ofBitVec]
   have hz : (BitVec.ofNat 64 (8 * (k + 1))).toNat = 8 * (k + 1) := by
     rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hk]
   have hy : (BitVec.ofNat 64 (8 * (k' + 1))).toNat = 8 * (k' + 1) := by
@@ -849,7 +849,19 @@ theorem WritesOnly.ofStackSlots_mono {m m' : Mem 64} {rsp : UInt64} {k k' : Nat}
         = BitVec.ofNat 64 (8 * (k + 1)) - (8 + BitVec.ofNat 64 (8 * (k' + 1))) by grind,
       BitVec.toNat_sub_of_le (by rw [BitVec.le_def, h1, hz]; omega), h1, hz]
     omega
-  exact h.mono_singleton (by rw [he]; omega)
+  simp only
+  omega
+
+theorem WritesOnly.ofStackSlots_mono {m m' : Mem 64} {rsp : UInt64} {k k' : Nat}
+    (hs : k' + 1 ≤ k) (hk : 8 * (k + 1) < 2 ^ 64)
+    (h : WritesOnly [Block.ofStackSlots (UInt64.ofBitVec (rsp.toBitVec - 8)) k'] m m') :
+    WritesOnly [Block.ofStackSlots rsp k] m m' :=
+  h.mono_singleton (Block.ofStackSlots_sub_le hs hk)
+
+theorem Blocks.Disjoint.ofStackSlots_mono {bs : List (BitVec 64 × Nat)} {rsp : UInt64} {k k' : Nat}
+    (hs : k' + 1 ≤ k) (hk : 8 * (k + 1) < 2 ^ 64) (h : Blocks.Disjoint bs [Block.ofStackSlots rsp k]) :
+    Blocks.Disjoint bs [Block.ofStackSlots (UInt64.ofBitVec (rsp.toBitVec - 8)) k'] :=
+  fun b hb hb' => h b hb (hb'.singleton_mono (Block.ofStackSlots_sub_le hs hk))
 
 theorem WritesOnly.mapped {w : Nat} {bs cs : List (BitVec w × Nat)} {m m' : Mem w}
     (h : WritesOnly bs m m') (hc : Mapped cs m) : Mapped cs m' :=
@@ -886,6 +898,9 @@ grind_pattern WritesOnly.ofStackSlots_push64 =>
 grind_pattern WritesOnly.ofStackSlots_mono =>
   WritesOnly [Block.ofStackSlots (UInt64.ofBitVec (UInt64.toBitVec rsp - 8)) k'] m m',
   WritesOnly [Block.ofStackSlots rsp k] m m'
+grind_pattern Blocks.Disjoint.ofStackSlots_mono =>
+  Blocks.Disjoint bs [Block.ofStackSlots rsp k],
+  Blocks.Disjoint bs [Block.ofStackSlots (UInt64.ofBitVec (UInt64.toBitVec rsp - 8)) k']
 grind_pattern WritesOnly.mapped => WritesOnly bs m m', Mapped cs m
 grind_pattern WritesOnly.loadInt => WritesOnly bs m m', Mem.loadInt m' a n
 grind_pattern Blocks.Disjoint.of_inside => Blocks.Disjoint [(x, n)] [(d, k)], Blocks.Disjoint bs₁ bs₂ where
@@ -941,6 +956,198 @@ theorem loadInt_storeInt_of_inside' {w : Nat} {m : Mem w} {a x : BitVec w} {n k 
 grind_pattern loadInt_storeInt_of_inside => Mem.loadInt (Mem.storeInt m a n v) x k, Blocks.Disjoint bs₁ bs₂ where
   guard Blocks.Disjoint bs₁ bs₂
 grind_pattern loadInt_storeInt_of_inside' => Mem.loadInt (Mem.storeInt m a n v) x k, Blocks.Disjoint bs₁ bs₂ where
+  guard Blocks.Disjoint bs₁ bs₂
+
+def Blocks.decInside {w : Nat} (a : BitVec w) (n : Nat) :
+    (bs : List (BitVec w × Nat)) → Decidable (Blocks.Inside a n bs)
+  | [] => isFalse id
+  | (_, _) :: bs => @instDecidableOr _ _ (Nat.decLe _ _) (Blocks.decInside a n bs)
+
+instance {w : Nat} {a : BitVec w} {n : Nat} {bs : List (BitVec w × Nat)} :
+    Decidable (Blocks.Inside a n bs) :=
+  Blocks.decInside a n bs
+
+theorem Blocks.Inside.append_iff {w : Nat} {a : BitVec w} {n : Nat} {bs cs : List (BitVec w × Nat)} :
+    Blocks.Inside a n (bs ++ cs) ↔ Blocks.Inside a n bs ∨ Blocks.Inside a n cs := by
+  induction bs with
+  | nil => simp [Blocks.Inside]
+  | cons p bs ih =>
+    obtain ⟨b, len⟩ := p
+    simp only [List.cons_append, Blocks.Inside]
+    rw [ih, or_assoc]
+
+def restrict {w : Nat} (y : Mem w) (bs : List (BitVec w × Nat)) : Mem w :=
+  y.filter fun b _ => decide (Blocks.Inside b 1 bs)
+
+def havoc {w : Nat} (m : Mem w) (bs : List (BitVec w × Nat)) (y : Mem w) : Mem w :=
+  m.union (y.restrict bs)
+
+theorem get?_restrict {w : Nat} (y : Mem w) (bs : List (BitVec w × Nat)) (b : BitVec w) :
+    (y.restrict bs).get? b = if Blocks.Inside b 1 bs then y.get? b else none := by
+  simp only [restrict, ExtHashMap.get?_eq_getElem?, ExtHashMap.getElem?_filter']
+  by_cases h : Blocks.Inside b 1 bs <;> cases y[b]? <;> simp [h]
+
+theorem get?_havoc {w : Nat} (m : Mem w) (bs : List (BitVec w × Nat)) (y : Mem w) (b : BitVec w) :
+    (m.havoc bs y).get? b = if Blocks.Inside b 1 bs then (y.get? b).or (m.get? b) else m.get? b := by
+  simp only [havoc, ExtHashMap.get?_eq_getElem?, ExtHashMap.union_eq, ExtHashMap.getElem?_union]
+  rw [← ExtHashMap.get?_eq_getElem? (m := y.restrict bs), get?_restrict]
+  by_cases h : Blocks.Inside b 1 bs <;> simp [h, ExtHashMap.get?_eq_getElem?]
+
+theorem havoc_havoc {w : Nat} (m : Mem w) (bs cs : List (BitVec w × Nat)) (y z : Mem w) :
+    (m.havoc bs y).havoc cs z = m.havoc (bs ++ cs) ((y.restrict bs).havoc cs z) := by
+  apply ExtHashMap.ext_getElem?
+  intro b
+  simp only [← ExtHashMap.get?_eq_getElem?, get?_havoc, get?_restrict, Blocks.Inside.append_iff]
+  by_cases hb : Blocks.Inside b 1 bs <;> by_cases hc : Blocks.Inside b 1 cs <;>
+    cases y.get? b <;> cases z.get? b <;> cases m.get? b <;> simp [hb, hc]
+
+theorem havoc_append_self {w : Nat} (m : Mem w) (bs : List (BitVec w × Nat)) (y : Mem w) :
+    m.havoc (bs ++ bs) y = m.havoc bs y := by
+  apply ExtHashMap.ext_getElem?
+  intro b
+  simp only [← ExtHashMap.get?_eq_getElem?, get?_havoc, Blocks.Inside.append_iff, or_self]
+
+theorem havoc_restrict_havoc {w : Nat} (m : Mem w) (bs : List (BitVec w × Nat)) (y z : Mem w) :
+    m.havoc bs ((y.restrict bs).havoc bs z) = m.havoc bs (y.havoc bs z) := by
+  apply ExtHashMap.ext_getElem?
+  intro b
+  simp only [← ExtHashMap.get?_eq_getElem?, get?_havoc, get?_restrict]
+  by_cases hb : Blocks.Inside b 1 bs <;> simp [hb]
+
+theorem get?_storeInt {w : Nat} (m : Mem w) (a b : BitVec w) (n : Nat) (v : Int) :
+    (m.storeInt a n v).get? b = ((Int.toBytes n v).At a)[b]?.or (m.get? b) := by
+  simp only [Mem.storeInt, Mem.storeBytes, ExtHashMap.get?_eq_getElem?, ExtHashMap.union_eq,
+    ExtHashMap.getElem?_union]
+
+theorem Blocks.Inside.mem_At {w : Nat} {a b : BitVec w} {n : Nat} {v : Int}
+    (h : Blocks.Inside b 1 [(a, n)]) : b ∈ (Int.toBytes n v).At a := by
+  rw [mem_At_iff, Int.toBytes_length]
+  rcases h with h | h
+  · refine ⟨(b - a).toNat, by omega, ?_⟩
+    rw [BitVec.ofNat_toNat, BitVec.setWidth_eq, BitVec.add_comm, BitVec.sub_add_cancel]
+  · exact h.elim
+
+theorem storeInt_havoc {w : Nat} (m : Mem w) (bs : List (BitVec w × Nat)) (y : Mem w) (a : BitVec w)
+    (n : Nat) (v : Int) :
+    (m.havoc bs y).storeInt a n v = m.havoc (bs ++ [(a, n)]) (y.storeInt a n v) := by
+  apply ExtHashMap.ext_getElem?
+  intro b
+  simp only [← ExtHashMap.get?_eq_getElem?, get?_storeInt, get?_havoc, Blocks.Inside.append_iff]
+  by_cases hs : b ∈ (Int.toBytes n v).At a
+  · obtain ⟨x, hx⟩ := Option.isSome_iff_exists.mp (ExtHashMap.isSome_getElem?_iff_mem.mpr hs)
+    have hi : Blocks.Inside b 1 [(a, n)] := by
+      rw [mem_At_iff, Int.toBytes_length] at hs
+      obtain ⟨i, hi, rfl⟩ := hs
+      exact (Blocks.Inside.base (Nat.le_refl n)).add_ofNat hi
+    simp [hx, hi]
+  · have hi : ¬ Blocks.Inside b 1 [(a, n)] := fun h => hs h.mem_At
+    rw [ExtHashMap.get?_eq_getElem? (a := b), ExtHashMap.getElem?_eq_none hs]
+    by_cases hb : Blocks.Inside b 1 bs <;> simp [hb, hi]
+
+theorem loadBytes_congr {w : Nat} {m m' : Mem w} {a : BitVec w} {n : Nat}
+    (h : ∀ i < n, m.get? (a + .ofNat w i) = m'.get? (a + .ofNat w i)) :
+    m.loadBytes a n = m'.loadBytes a n := by
+  simp only [Mem.loadBytes]
+  rw [List.map_congr_left (fun i hi => h i (List.mem_range.mp hi))]
+
+theorem loadBytes_havoc_of_disjoint {w : Nat} {m y : Mem w} {bs : List (BitVec w × Nat)} {a : BitVec w}
+    {n : Nat} (hd : Blocks.Disjoint [(a, n)] bs) : (m.havoc bs y).loadBytes a n = m.loadBytes a n :=
+  loadBytes_congr fun _ hi => by
+    rw [get?_havoc, ite_eq_right (hd _ ((Blocks.Inside.base (Nat.le_refl n)).add_ofNat hi))]
+
+theorem loadBytes_havoc_of_inside {w : Nat} {m y : Mem w} {bs : List (BitVec w × Nat)} {a : BitVec w}
+    {n : Nat} (h : Blocks.Inside a n bs) (hy : (y.loadBytes a n).isSome) :
+    (m.havoc bs y).loadBytes a n = y.loadBytes a n :=
+  loadBytes_congr fun i hi => by
+    rw [get?_havoc, ite_eq_left (h.add_ofNat hi)]
+    obtain ⟨xs, hxs⟩ := Option.isSome_iff_exists.mp hy
+    obtain ⟨hl, hg⟩ := loadBytes_eq_some_iff.mp hxs
+    rw [hg i (hl ▸ hi), Option.some_or]
+
+theorem loadBytes_restrict_of_inside {w : Nat} {y : Mem w} {bs : List (BitVec w × Nat)} {a : BitVec w}
+    {n : Nat} (h : Blocks.Inside a n bs) : (y.restrict bs).loadBytes a n = y.loadBytes a n :=
+  loadBytes_congr fun _ hi => by rw [get?_restrict, ite_eq_left (h.add_ofNat hi)]
+
+theorem loadInt_havoc_of_disjoint {w : Nat} {m y : Mem w} {bs : List (BitVec w × Nat)} {a : BitVec w}
+    {n : Nat} (hd : Blocks.Disjoint [(a, n)] bs) : (m.havoc bs y).loadInt a n = m.loadInt a n := by
+  rw [Mem.loadInt, loadBytes_havoc_of_disjoint hd, ← Mem.loadInt]
+
+theorem loadInt_havoc_of_inside {w : Nat} {m y : Mem w} {bs : List (BitVec w × Nat)} {a : BitVec w}
+    {n : Nat} (h : Blocks.Inside a n bs) (hy : (y.loadInt a n).isSome) :
+    (m.havoc bs y).loadInt a n = y.loadInt a n := by
+  rw [Mem.loadInt, loadBytes_havoc_of_inside h (by simpa [Mem.loadInt] using hy), ← Mem.loadInt]
+
+theorem loadInt_restrict_of_inside {w : Nat} {y : Mem w} {bs : List (BitVec w × Nat)} {a : BitVec w}
+    {n : Nat} (h : Blocks.Inside a n bs) : (y.restrict bs).loadInt a n = y.loadInt a n := by
+  rw [Mem.loadInt, loadBytes_restrict_of_inside h, ← Mem.loadInt]
+
+theorem DomainGrows.havoc {w : Nat} (m : Mem w) (bs : List (BitVec w × Nat)) (y : Mem w) :
+    DomainGrows m (m.havoc bs y) := fun b hb => by
+  rw [get?_havoc]
+  split
+  · cases y.get? b <;> simp_all
+  · exact hb
+
+theorem Mapped.havoc {w : Nat} {cs : List (BitVec w × Nat)} {m : Mem w} (hm : Mapped cs m)
+    (bs : List (BitVec w × Nat)) (y : Mem w) : Mapped cs (m.havoc bs y) :=
+  fun b hb => DomainGrows.havoc m bs y b (hm b hb)
+
+theorem WritesOnly.eq_havoc {w : Nat} {bs : List (BitVec w × Nat)} {m m' : Mem w} (h : WritesOnly bs m m') :
+    m' = m.havoc bs m' := by
+  apply ExtHashMap.ext_getElem?
+  intro b
+  simp only [← ExtHashMap.get?_eq_getElem?, get?_havoc]
+  split
+  · cases hm' : m'.get? b with
+    | some _ => rfl
+    | none =>
+      cases hm : m.get? b with
+      | none => rfl
+      | some _ => have := h.2 b (by rw [hm]; rfl); rw [hm'] at this; exact absurd this (by decide)
+  · exact h.1 b ‹_›
+
+theorem WritesOnly.havoc {w : Nat} (bs : List (BitVec w × Nat)) (m y : Mem w) :
+    WritesOnly bs m (m.havoc bs y) :=
+  ⟨fun b hb => by rw [get?_havoc, ite_eq_right hb], DomainGrows.havoc m bs y⟩
+
+theorem Blocks.Disjoint.append_right_iff {w : Nat} {xs bs cs : List (BitVec w × Nat)} :
+    Blocks.Disjoint xs (bs ++ cs) ↔ Blocks.Disjoint xs bs ∧ Blocks.Disjoint xs cs := by
+  simp only [Blocks.Disjoint, Blocks.Inside.append_iff, not_or]
+  exact ⟨fun h => ⟨fun b hb => (h b hb).1, fun b hb => (h b hb).2⟩, fun h b hb => ⟨h.1 b hb, h.2 b hb⟩⟩
+
+theorem WritesOnly.loadBytes {w : Nat} {bs : List (BitVec w × Nat)} {m m' : Mem w} {a : BitVec w} {n : Nat}
+    (h : WritesOnly bs m m') (hd : Blocks.Disjoint [(a, n)] bs) : m'.loadBytes a n = m.loadBytes a n :=
+  loadBytes_congr fun _ hi => h.1 _ (hd _ ((Blocks.Inside.base (Nat.le_refl n)).add_ofNat hi))
+
+theorem loadBytes_storeInt_of_inside {w : Nat} {m : Mem w} {a x : BitVec w} {n k : Nat}
+    {bs₁ bs₂ : List (BitVec w × Nat)} (hd : Blocks.Disjoint bs₁ bs₂) (hx : Blocks.Inside x k bs₁)
+    (ha : Blocks.Inside a n bs₂) (v : Int) : (m.storeInt a n v).loadBytes x k = m.loadBytes x k :=
+  loadBytes_congr fun _ hi =>
+    (Blocks.Inside.base (Nat.le_refl n)).get?_storeInt
+      (hd.of_inside hx ha _ ((Blocks.Inside.base (Nat.le_refl k)).add_ofNat hi)) v
+
+theorem loadBytes_storeInt_of_inside' {w : Nat} {m : Mem w} {a x : BitVec w} {n k : Nat}
+    {bs₁ bs₂ : List (BitVec w × Nat)} (hd : Blocks.Disjoint bs₁ bs₂) (hx : Blocks.Inside x k bs₂)
+    (ha : Blocks.Inside a n bs₁) (v : Int) : (m.storeInt a n v).loadBytes x k = m.loadBytes x k :=
+  loadBytes_congr fun _ hi =>
+    (Blocks.Inside.base (Nat.le_refl n)).get?_storeInt
+      (hd.of_inside' hx ha _ ((Blocks.Inside.base (Nat.le_refl k)).add_ofNat hi)) v
+
+attribute [vcgen_simp] havoc_havoc havoc_append_self havoc_restrict_havoc storeInt_havoc
+attribute [grind norm] Blocks.Inside.append_iff Blocks.Disjoint.append_right_iff
+
+grind_pattern loadInt_havoc_of_disjoint => Mem.loadInt (havoc m bs y) a n
+grind_pattern loadInt_havoc_of_inside => Mem.loadInt (havoc m bs y) a n
+grind_pattern loadInt_restrict_of_inside => Mem.loadInt (restrict y bs) a n
+grind_pattern loadBytes_havoc_of_disjoint => Mem.loadBytes (havoc m bs y) a n
+grind_pattern loadBytes_havoc_of_inside => Mem.loadBytes (havoc m bs y) a n
+grind_pattern loadBytes_restrict_of_inside => Mem.loadBytes (restrict y bs) a n
+grind_pattern Mapped.havoc => Mapped cs m, havoc m bs y
+grind_pattern WritesOnly.havoc => havoc m bs y
+grind_pattern WritesOnly.loadBytes => WritesOnly bs m m', Mem.loadBytes m' a n
+grind_pattern loadBytes_storeInt_of_inside => Mem.loadBytes (Mem.storeInt m a n v) x k, Blocks.Disjoint bs₁ bs₂ where
+  guard Blocks.Disjoint bs₁ bs₂
+grind_pattern loadBytes_storeInt_of_inside' => Mem.loadBytes (Mem.storeInt m a n v) x k, Blocks.Disjoint bs₁ bs₂ where
   guard Blocks.Disjoint bs₁ bs₂
 
 end Mem

@@ -184,7 +184,7 @@ funspec scalarproduct_fma3_funspec "ff_scalarproduct_float_fma3" [Host] [FunDecl
       let r8 := s'.regs.r8.toBitVec.toNat
       let rcx := s'.regs.rcx.toBitVec.toNat
       let L := len * 4
-      let inv := s'.regs.rdx.toBitVec.toNat = L ∧ s'.dmem = s₀.dmem ∧ Frame s s'
+      let inv := s'.regs.rdx.toBitVec.toNat = L ∧ s'.dmem = s₀.dmem ∧ Frame.Regs s s'
         ∧ s'.regs.rsp.toBitVec = s.regs.rsp.toBitVec - 8#64
       match l with
       | "ff_scalarproduct_float_fma3" => s' = s₀
@@ -195,7 +195,7 @@ funspec scalarproduct_fma3_funspec "ff_scalarproduct_float_fma3" [Host] [FunDecl
       | ".loop32" => inv ∧ rcx = r8 + 32 ∧ r8 + 32 ≤ L ∧ L < r8 + 64 ∧ r8 % 32 = 0
       | ".l16" => inv ∧ rcx + r8 = L ∧ 16 ≤ rcx ∧ rcx < 32 ∧ r8 % 32 = 0
       | ".loop16" => inv ∧ rcx = r8 + 16 ∧ r8 + 16 ≤ L ∧ L < r8 + 32 ∧ r8 % 16 = 0
-      | "done" => s'.dmem = s₀.dmem ∧ Frame s s' ∧ s'.regs.rsp.toBitVec = s.regs.rsp.toBitVec - 8#64
+      | "done" => s'.dmem = s₀.dmem ∧ Frame.Regs s s' ∧ s'.regs.rsp.toBitVec = s.regs.rsp.toBitVec - 8#64
       | _ => False)
     (fun _ l s' => match l with
       | "ff_scalarproduct_float_fma3" => 2 ^ 64
