@@ -27,6 +27,10 @@ adjacent literals to `evalGround`. -/
 @[scoped vcgen_simp] theorem _root_.BitVec.add_ofNat_zero {w : Nat} (x : BitVec w) : x + (0 : BitVec w) = x :=
   BitVec.add_zero x
 
+@[scoped vcgen_simp] theorem _root_.BitVec.ofInt_toInt_int64_zero {w : Nat} :
+    BitVec.ofInt w (Int64.toInt 0) = (0 : BitVec w) := by
+  simp
+
 attribute [scoped vcgen_simp] UInt64.toBitVec_ofBitVec Int64.toBitVec_ofNat BitVec.ofNat_eq_ofNat
   BitVec.setWidth_eq BitVec.add_zero BitVec.toNat_ofNat Nat.zero_mod Int.add_zero Int.cast_ofNat_Int
   bne_self_eq_false BitVec.xor_self Bool.toNat_false Option.map_some Option.get!_some Option.isSome_some
