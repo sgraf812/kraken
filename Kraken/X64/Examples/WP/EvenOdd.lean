@@ -43,11 +43,11 @@ mutual
 funspec even_spec "even" [Host] [FunDecls] [Embeds even] [Embeds odd]
     (he : FunDecls.at (label "even") = some ⟨even⟩) (ho : FunDecls.at (label "odd") = some ⟨odd⟩)
     (base : BitVec 64) (sz : Nat) at s
-  requires 8 * (s.regs.rdi.toBitVec.toNat + 1) ≤ (s.regs.rsp.toBitVec - base).toNat
-    ∧ (s.regs.rsp.toBitVec - base).toNat ≤ sz ∧ Mem.Mapped [(base, sz)] s.dmem;
-  ensures s' => s'.regs.rax.toBitVec.toNat = (s.regs.rdi.toBitVec.toNat + 1) % 2
-  autoframes calling_conv SysV reserve s.regs.rdi.toBitVec.toNat
-    preserves rcx rdx rsi r8 r9 r10 r11 := by
+    requires 8 * (s.regs.rdi.toBitVec.toNat + 1) ≤ (s.regs.rsp.toBitVec - base).toNat
+      ∧ (s.regs.rsp.toBitVec - base).toNat ≤ sz ∧ Mem.Mapped [(base, sz)] s.dmem
+    ensures s' => s'.regs.rax.toBitVec.toNat = (s.regs.rdi.toBitVec.toNat + 1) % 2
+    autoframes calling_conv SysV reserve s.regs.rdi.toBitVec.toNat
+      preserves rcx rdx rsi r8 r9 r10 r11 := by
   refine Program.Triple.cfg
     (fun s₀ => fun
       | "even", s' => s' = s₀
@@ -60,11 +60,11 @@ termination_by s.regs.rdi.toBitVec.toNat
 funspec odd_spec "odd" [Host] [FunDecls] [Embeds even] [Embeds odd]
     (he : FunDecls.at (label "even") = some ⟨even⟩) (ho : FunDecls.at (label "odd") = some ⟨odd⟩)
     (base : BitVec 64) (sz : Nat) at s
-  requires 8 * (s.regs.rdi.toBitVec.toNat + 1) ≤ (s.regs.rsp.toBitVec - base).toNat
-    ∧ (s.regs.rsp.toBitVec - base).toNat ≤ sz ∧ Mem.Mapped [(base, sz)] s.dmem;
-  ensures s' => s'.regs.rax.toBitVec.toNat = s.regs.rdi.toBitVec.toNat % 2
-  autoframes calling_conv SysV reserve s.regs.rdi.toBitVec.toNat
-    preserves rcx rdx rsi r8 r9 r10 r11 := by
+    requires 8 * (s.regs.rdi.toBitVec.toNat + 1) ≤ (s.regs.rsp.toBitVec - base).toNat
+      ∧ (s.regs.rsp.toBitVec - base).toNat ≤ sz ∧ Mem.Mapped [(base, sz)] s.dmem
+    ensures s' => s'.regs.rax.toBitVec.toNat = s.regs.rdi.toBitVec.toNat % 2
+    autoframes calling_conv SysV reserve s.regs.rdi.toBitVec.toNat
+      preserves rcx rdx rsi r8 r9 r10 r11 := by
   refine Program.Triple.cfg
     (fun s₀ => fun
       | "odd", s' => s' = s₀

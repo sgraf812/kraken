@@ -34,9 +34,10 @@ done:
 
 funspec swap_spec "swap" [Host] [FunDecls] [Embeds swap]
     (hs : FunDecls.at (label "swap") = some ⟨swap⟩) at s
-  requires Mem.Mapped [(s.regs.rsp.toBitVec - 8#64, 8)] s.dmem;
-  ensures s' => s'.regs.rax.toBitVec = s.regs.rbx.toBitVec ∧ s'.regs.rbx.toBitVec = s.regs.rax.toBitVec
-  autoframes preserves rcx rdx rsi rdi rbp r8 r9 r10 r11 r12 r13 r14 r15 := by
+    requires Mem.Mapped [(s.regs.rsp.toBitVec - 8#64, 8)] s.dmem
+    ensures s' => s'.regs.rax.toBitVec = s.regs.rbx.toBitVec
+      ∧ s'.regs.rbx.toBitVec = s.regs.rax.toBitVec
+    autoframes preserves rcx rdx rsi rdi rbp r8 r9 r10 r11 r12 r13 r14 r15 := by
   refine Program.Triple.cfg
     (fun s₀ => fun
       | "swap", s' => s' = s₀

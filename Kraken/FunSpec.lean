@@ -89,8 +89,8 @@ syntax "writes " term,+ : funspecClause
 declare_syntax_cat funspecSig
 
 syntax ident ppSpace str (ppSpace bracketedBinder)* " at " ident
-  (" requires " term ";")? " ensures " ident " => " term
-  (";" " exits " ident ident " => " term)?
+  (" requires " term)? " ensures " ident " => " term
+  (" exits " ident ident " => " term)?
   (" autoframes" (ppSpace funspecClause)*)? " := " term Lean.Parser.Termination.suffix
   (Lean.Parser.Term.whereDecls)? : funspecSig
 
@@ -188,8 +188,8 @@ structure Parts where
   hasWhere : Bool
 
 meta def parts (sig : TSyntax `funspecSig) : MacroM Parts := do
-  let `(funspecSig| $name:ident $f:str $binders* at $c $[requires $P? ;]? ensures $tQ => $Q
-      $[; exits $aX? $tX? => $X?]? $[autoframes $clauses?*]? := $proof $sfx:suffix $[$wds?]?) := sig
+  let `(funspecSig| $name:ident $f:str $binders* at $c $[requires $P?]? ensures $tQ => $Q
+      $[exits $aX? $tX? => $X?]? $[autoframes $clauses?*]? := $proof $sfx:suffix $[$wds?]?) := sig
     | Macro.throwUnsupported
   let some (h, p) ← binders.findSomeM? fun b => do
       match b with
@@ -307,8 +307,8 @@ meta def funspecTheorem (sig : TSyntax `funspecSig) (group : Array (TSyntax `fun
 
 @[command_elab funspecPrelude] public meta def elabFunspecPrelude : CommandElab := fun stx => do
   let `(funspec_prelude $sig:funspecSig) := stx | throwUnsupportedSyntax
-  let `(funspecSig| $name:ident $_f:str $_binders* at $c $[requires $_P? ;]? ensures $tQ => $_Q
-      $[; exits $_aX? $_tX? => $_X?]? $[autoframes $clauses?*]? := $_proof $_sfx:suffix
+  let `(funspecSig| $name:ident $_f:str $_binders* at $c $[requires $_P?]? ensures $tQ => $_Q
+      $[exits $_aX? $_tX? => $_X?]? $[autoframes $clauses?*]? := $_proof $_sfx:suffix
       $[$wds?]?) := sig
     | throwUnsupportedSyntax
   let wdecls := match wds? with

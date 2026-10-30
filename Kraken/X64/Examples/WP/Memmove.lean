@@ -66,17 +66,18 @@ done:
 
 funspec memmove_spec "memmove" [Host] [FunDecls] [Embeds memmove]
     (hm : FunDecls.at (label "memmove") = some ⟨memmove⟩) at s
-  requires s.regs.rsi.toBitVec.toNat + s.regs.rdx.toBitVec.toNat < 2 ^ 64
-    ∧ s.regs.rdi.toBitVec.toNat + s.regs.rdx.toBitVec.toNat < 2 ^ 64
-    ∧ Mem.Mapped [(s.regs.rsi.toBitVec, s.regs.rdx.toBitVec.toNat), (s.regs.rsp.toBitVec - 8#64, 8),
-        (s.regs.rdi.toBitVec, s.regs.rdx.toBitVec.toNat)] s.dmem
-    ∧ Mem.Blocks.Disjoint
-        [(s.regs.rsi.toBitVec, s.regs.rdx.toBitVec.toNat), (s.regs.rdi.toBitVec, s.regs.rdx.toBitVec.toNat)]
-        [(s.regs.rsp.toBitVec - 8#64, 8)];
-  ensures s' => s'.dmem.loadBytes s.regs.rdi.toBitVec s.regs.rdx.toBitVec.toNat
-    = s.dmem.loadBytes s.regs.rsi.toBitVec s.regs.rdx.toBitVec.toNat
-  autoframes calling_conv SysV preserves rcx r8 r9 r10 r11
-    writes s.regs.rdi.toBitVec[*...<s.regs.rdx.toBitVec.toNat] := by
+    requires s.regs.rsi.toBitVec.toNat + s.regs.rdx.toBitVec.toNat < 2 ^ 64
+      ∧ s.regs.rdi.toBitVec.toNat + s.regs.rdx.toBitVec.toNat < 2 ^ 64
+      ∧ Mem.Mapped [(s.regs.rsi.toBitVec, s.regs.rdx.toBitVec.toNat),
+          (s.regs.rsp.toBitVec - 8#64, 8), (s.regs.rdi.toBitVec, s.regs.rdx.toBitVec.toNat)] s.dmem
+      ∧ Mem.Blocks.Disjoint
+          [(s.regs.rsi.toBitVec, s.regs.rdx.toBitVec.toNat),
+            (s.regs.rdi.toBitVec, s.regs.rdx.toBitVec.toNat)]
+          [(s.regs.rsp.toBitVec - 8#64, 8)]
+    ensures s' => s'.dmem.loadBytes s.regs.rdi.toBitVec s.regs.rdx.toBitVec.toNat
+      = s.dmem.loadBytes s.regs.rsi.toBitVec s.regs.rdx.toBitVec.toNat
+    autoframes calling_conv SysV preserves rcx r8 r9 r10 r11
+      writes s.regs.rdi.toBitVec[*...<s.regs.rdx.toBitVec.toNat] := by
   refine Program.Triple.cfg
     (fun s₀ => fun
       | "memmove", s' => s' = s₀
