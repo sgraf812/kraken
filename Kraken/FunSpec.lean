@@ -284,11 +284,11 @@ meta def funspecTheorem (sig : TSyntax `funspecSig) (group : Array (TSyntax `fun
     | none => pure #[]
   let guardBinders ← guards.mapM fun (g, ty, _) => `(bracketedBinder| ($g:ident : $ty))
   let go := mkIdent (name.getId ++ `go)
-  let proof ← if x.auto || x.hasWhere then `(open $name:ident in $x.proof) else pure x.proof
-  let goCmd ← `(command|
+  let goThm ← `(command|
     theorem $go:ident $binders* ($c : MachineData) (ra : Int64) $guardBinders* :
         Std.WP.Triple $p (fun s₀ => s₀ = MachineData.push64 $c ra ∧ $P) (fun _ _ => False) $post :=
-      $proof)
+      $x.proof)
+  let goCmd ← if x.auto || x.hasWhere then `(command| open $name:ident in $goThm) else pure goThm
   let goApp := mkApp' go
     ((← forwardArgs binders) ++ #[c.raw, (← `(ra)).raw] ++ guards.map (·.2.2.raw))
   let pf ← if !x.auto then
