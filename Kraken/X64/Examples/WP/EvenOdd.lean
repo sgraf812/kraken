@@ -43,36 +43,36 @@ mutual
 funspec even_spec "even" [Host] [FunDecls] [Embeds even] [Embeds odd]
     (he : FunDecls.at (label "even") = some ⟨even⟩) (ho : FunDecls.at (label "odd") = some ⟨odd⟩)
     (base : BitVec 64) (sz : Nat) at s
-    requires 8 * (s.regs.rdi.toBitVec.toNat + 1) ≤ (s.regs.rsp.toBitVec - base).toNat
-      ∧ (s.regs.rsp.toBitVec - base).toNat ≤ sz ∧ Mem.Mapped [(base, sz)] s.dmem
-    ensures s' => s'.regs.rax.toBitVec.toNat = (s.regs.rdi.toBitVec.toNat + 1) % 2
-    autoframes calling_conv SysV reserve s.regs.rdi.toBitVec.toNat
+    requires 8 * (s.regs.rdi.toNat + 1) ≤ (s.regs.rsp - base).toNat
+      ∧ (s.regs.rsp - base).toNat ≤ sz ∧ Mem.Mapped [(base, sz)] s.dmem
+    ensures s' => s'.regs.rax.toNat = (s.regs.rdi.toNat + 1) % 2
+    autoframes calling_conv SysV reserve s.regs.rdi.toNat
       preserves rcx rdx rsi r8 r9 r10 r11 := by
   refine Program.Triple.cfg
     (fun s₀ => fun
       | "even", s' => s' = s₀
-      | _, s' => s'.regs = s₀.regs ∧ s'.dmem = s₀.dmem ∧ s.regs.rdi.toBitVec.toNat = 0)
+      | _, s' => s'.regs = s₀.regs ∧ s'.dmem = s₀.dmem ∧ s.regs.rdi.toNat = 0)
     (fun _ _ _ => 0) fun s₀ ⟨h₀, _⟩ => ?_
   cfg_cases
   all_goals kvcgen64 [odd_spec] with finish
-termination_by s.regs.rdi.toBitVec.toNat
+termination_by s.regs.rdi.toNat
 
 funspec odd_spec "odd" [Host] [FunDecls] [Embeds even] [Embeds odd]
     (he : FunDecls.at (label "even") = some ⟨even⟩) (ho : FunDecls.at (label "odd") = some ⟨odd⟩)
     (base : BitVec 64) (sz : Nat) at s
-    requires 8 * (s.regs.rdi.toBitVec.toNat + 1) ≤ (s.regs.rsp.toBitVec - base).toNat
-      ∧ (s.regs.rsp.toBitVec - base).toNat ≤ sz ∧ Mem.Mapped [(base, sz)] s.dmem
-    ensures s' => s'.regs.rax.toBitVec.toNat = s.regs.rdi.toBitVec.toNat % 2
-    autoframes calling_conv SysV reserve s.regs.rdi.toBitVec.toNat
+    requires 8 * (s.regs.rdi.toNat + 1) ≤ (s.regs.rsp - base).toNat
+      ∧ (s.regs.rsp - base).toNat ≤ sz ∧ Mem.Mapped [(base, sz)] s.dmem
+    ensures s' => s'.regs.rax.toNat = s.regs.rdi.toNat % 2
+    autoframes calling_conv SysV reserve s.regs.rdi.toNat
       preserves rcx rdx rsi r8 r9 r10 r11 := by
   refine Program.Triple.cfg
     (fun s₀ => fun
       | "odd", s' => s' = s₀
-      | _, s' => s'.regs = s₀.regs ∧ s'.dmem = s₀.dmem ∧ s.regs.rdi.toBitVec.toNat = 0)
+      | _, s' => s'.regs = s₀.regs ∧ s'.dmem = s₀.dmem ∧ s.regs.rdi.toNat = 0)
     (fun _ _ _ => 0) fun s₀ ⟨h₀, _⟩ => ?_
   cfg_cases
   all_goals kvcgen64 [even_spec] with finish
-termination_by s.regs.rdi.toBitVec.toNat
+termination_by s.regs.rdi.toNat
 
 end
 
@@ -87,10 +87,10 @@ done:
 
 theorem evenOdd_correct [Host] (hp : evenOddProg.IsInfix Host.prog)
     (hne : label "even" ≠ label "odd") (s : MachineData) (base : BitVec 64) (sz : Nat)
-    (hstack : 8 * (s.regs.rdi.toBitVec.toNat + 1) ≤ (s.regs.rsp.toBitVec - base).toNat)
-    (hsz : (s.regs.rsp.toBitVec - base).toNat ≤ sz) (hmap : Mem.Mapped [(base, sz)] s.dmem) :
+    (hstack : 8 * (s.regs.rdi.toNat + 1) ≤ (s.regs.rsp - base).toNat)
+    (hsz : (s.regs.rsp - base).toNat ≤ sz) (hmap : Mem.Mapped [(base, sz)] s.dmem) :
     Eventually (step1 Host.exe)
-      (fun st => st.data.regs.rax.toBitVec.toNat = (s.regs.rdi.toBitVec.toNat + 1) % 2)
+      (fun st => st.data.regs.rax.toNat = (s.regs.rdi.toNat + 1) % 2)
       ⟨s, startAddr hp⟩ := by
   have hk := List.isInfixAt_infixIdx hp
   generalize evenOddProg.infixIdx Host.prog hp = k at hk
@@ -112,7 +112,7 @@ theorem evenOdd_correct [Host] (hp : evenOddProg.IsInfix Host.prog)
   apply Program.WP.step1_of_wp hp
   refine Triple.le_wp (Program.Triple.cfg (P := (· = s)) (fun _ l s' => match l with
       | "start" => s' = s
-      | "done" => s'.regs.rax.toBitVec.toNat = (s.regs.rdi.toBitVec.toNat + 1) % 2
+      | "done" => s'.regs.rax.toNat = (s.regs.rdi.toNat + 1) % 2
       | _ => False)
     (fun _ _ _ => 0) fun _ h₀ => ?_) s rfl
   subst h₀

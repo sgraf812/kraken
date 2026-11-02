@@ -181,10 +181,10 @@ funspec scalarproduct_fma3_funspec "ff_scalarproduct_float_fma3" [Host] [FunDecl
     autoframes calling_conv SysV preserves rax rsi rdi r9 r10 r11 := by
   refine Program.Triple.cfg
     (fun s₀ l s' =>
-      let r8 := s'.regs.r8.toBitVec.toNat
-      let rcx := s'.regs.rcx.toBitVec.toNat
+      let r8 := s'.regs.r8.toNat
+      let rcx := s'.regs.rcx.toNat
       let L := len * 4
-      let inv := s'.regs.rdx.toBitVec.toNat = L ∧ s'.dmem = s₀.dmem ∧ Frame.Regs s s'
+      let inv := s'.regs.rdx.toNat = L ∧ s'.dmem = s₀.dmem ∧ Frame.Regs s s'
         ∧ s'.regs.rsp.toBitVec = s.regs.rsp.toBitVec - 8#64
       match l with
       | "ff_scalarproduct_float_fma3" => s' = s₀
@@ -199,7 +199,7 @@ funspec scalarproduct_fma3_funspec "ff_scalarproduct_float_fma3" [Host] [FunDecl
       | _ => False)
     (fun _ l s' => match l with
       | "ff_scalarproduct_float_fma3" => 2 ^ 64
-      | ".loop128" => s'.regs.rcx.toBitVec.toNat - s'.regs.r8.toBitVec.toNat
+      | ".loop128" => s'.regs.rcx.toNat - s'.regs.r8.toNat
       | _ => 0) fun s₀ ⟨h₀, _⟩ => ?_
   cfg_cases
   all_goals kvcgen64 with finish

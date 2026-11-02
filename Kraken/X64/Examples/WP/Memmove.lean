@@ -66,18 +66,18 @@ done:
 
 funspec memmove_spec "memmove" [Host] [FunDecls] [Embeds memmove]
     (hm : FunDecls.at (label "memmove") = some ⟨memmove⟩) at s
-    requires s.regs.rsi.toBitVec.toNat + s.regs.rdx.toBitVec.toNat < 2 ^ 64
-      ∧ s.regs.rdi.toBitVec.toNat + s.regs.rdx.toBitVec.toNat < 2 ^ 64
-      ∧ Mem.Mapped [(s.regs.rsi.toBitVec, s.regs.rdx.toBitVec.toNat),
-          (s.regs.rsp.toBitVec - 8#64, 8), (s.regs.rdi.toBitVec, s.regs.rdx.toBitVec.toNat)] s.dmem
+    requires s.regs.rsi.toNat + s.regs.rdx.toNat < 2 ^ 64
+      ∧ s.regs.rdi.toNat + s.regs.rdx.toNat < 2 ^ 64
+      ∧ Mem.Mapped [(s.regs.rsi.toBitVec, s.regs.rdx.toNat),
+          (s.regs.rsp.toBitVec - 8#64, 8), (s.regs.rdi.toBitVec, s.regs.rdx.toNat)] s.dmem
       ∧ Mem.Blocks.Disjoint
-          [(s.regs.rsi.toBitVec, s.regs.rdx.toBitVec.toNat),
-            (s.regs.rdi.toBitVec, s.regs.rdx.toBitVec.toNat)]
+          [(s.regs.rsi.toBitVec, s.regs.rdx.toNat),
+            (s.regs.rdi.toBitVec, s.regs.rdx.toNat)]
           [(s.regs.rsp.toBitVec - 8#64, 8)]
-    ensures s' => s'.dmem.loadBytes s.regs.rdi.toBitVec s.regs.rdx.toBitVec.toNat
-      = s.dmem.loadBytes s.regs.rsi.toBitVec s.regs.rdx.toBitVec.toNat
+    ensures s' => s'.dmem.loadBytes s.regs.rdi.toBitVec s.regs.rdx.toNat
+      = s.dmem.loadBytes s.regs.rsi.toBitVec s.regs.rdx.toNat
     autoframes calling_conv SysV preserves rcx r8 r9 r10 r11
-      writes s.regs.rdi.toBitVec[*...<s.regs.rdx.toBitVec.toNat] := by
+      writes s.regs.rdi.toBitVec[*...<s.regs.rdx.toNat] := by
   refine Program.Triple.cfg
     (fun s₀ => fun
       | "memmove", s' => s' = s₀
@@ -86,48 +86,48 @@ funspec memmove_spec "memmove" [Host] [FunDecls] [Embeds memmove]
       | "fwd", s' => MMFwd s s₀ s'
       | "fdone", s' => MMFwd s s₀ s' ∧ s'.regs.rdx.toBitVec = 0
       | _, _ => False)
-    (fun _ _ s' => s'.regs.rdx.toBitVec.toNat) fun s₀ ⟨h₀, _⟩ => ?_
+    (fun _ _ s' => s'.regs.rdx.toNat) fun s₀ ⟨h₀, _⟩ => ?_
   cfg_cases
   all_goals kvcgen64 with finish
 where
   MMFwd (s s₀ s' : MachineData) : Prop :=
-    s.regs.rdi.toBitVec.toNat ≤ s.regs.rsi.toBitVec.toNat
-      ∧ s'.regs.rdx.toBitVec.toNat ≤ s.regs.rdx.toBitVec.toNat
+    s.regs.rdi.toNat ≤ s.regs.rsi.toNat
+      ∧ s'.regs.rdx.toNat ≤ s.regs.rdx.toNat
       ∧ s'.regs.rsi.toBitVec
-        = s.regs.rsi.toBitVec + .ofNat 64 (s.regs.rdx.toBitVec.toNat - s'.regs.rdx.toBitVec.toNat)
+        = s.regs.rsi.toBitVec + .ofNat 64 (s.regs.rdx.toNat - s'.regs.rdx.toNat)
       ∧ s'.regs.rdi.toBitVec
-        = s.regs.rdi.toBitVec + .ofNat 64 (s.regs.rdx.toBitVec.toNat - s'.regs.rdx.toBitVec.toNat)
+        = s.regs.rdi.toBitVec + .ofNat 64 (s.regs.rdx.toNat - s'.regs.rdx.toNat)
       ∧ Frame s s' ∧ s'.regs.rsp.toBitVec = s.regs.rsp.toBitVec - 8#64
-      ∧ Mem.Contains s'.dmem s.regs.rdi.toBitVec ((s.dmem.loadBytes s.regs.rsi.toBitVec s.regs.rdx.toBitVec.toNat).get!.take
-          (s.regs.rdx.toBitVec.toNat - s'.regs.rdx.toBitVec.toNat))
-      ∧ Mem.Contains s'.dmem s'.regs.rsi.toBitVec ((s.dmem.loadBytes s.regs.rsi.toBitVec s.regs.rdx.toBitVec.toNat).get!.drop
-          (s.regs.rdx.toBitVec.toNat - s'.regs.rdx.toBitVec.toNat))
-      ∧ Mem.WritesOnly [(s.regs.rdi.toBitVec, s.regs.rdx.toBitVec.toNat)] s₀.dmem s'.dmem
+      ∧ Mem.Contains s'.dmem s.regs.rdi.toBitVec ((s.dmem.loadBytes s.regs.rsi.toBitVec s.regs.rdx.toNat).get!.take
+          (s.regs.rdx.toNat - s'.regs.rdx.toNat))
+      ∧ Mem.Contains s'.dmem s'.regs.rsi.toBitVec ((s.dmem.loadBytes s.regs.rsi.toBitVec s.regs.rdx.toNat).get!.drop
+          (s.regs.rdx.toNat - s'.regs.rdx.toNat))
+      ∧ Mem.WritesOnly [(s.regs.rdi.toBitVec, s.regs.rdx.toNat)] s₀.dmem s'.dmem
   MMBwd (s s₀ s' : MachineData) : Prop :=
-    s.regs.rsi.toBitVec.toNat < s.regs.rdi.toBitVec.toNat
-      ∧ s'.regs.rdx.toBitVec.toNat ≤ s.regs.rdx.toBitVec.toNat
+    s.regs.rsi.toNat < s.regs.rdi.toNat
+      ∧ s'.regs.rdx.toNat ≤ s.regs.rdx.toNat
       ∧ s'.regs.rsi.toBitVec = s.regs.rsi.toBitVec + s'.regs.rdx.toBitVec
       ∧ s'.regs.rdi.toBitVec = s.regs.rdi.toBitVec + s'.regs.rdx.toBitVec
       ∧ Frame s s' ∧ s'.regs.rsp.toBitVec = s.regs.rsp.toBitVec - 8#64
-      ∧ Mem.Contains s'.dmem s'.regs.rdi.toBitVec ((s.dmem.loadBytes s.regs.rsi.toBitVec s.regs.rdx.toBitVec.toNat).get!.drop
-          s'.regs.rdx.toBitVec.toNat)
-      ∧ Mem.Contains s'.dmem s.regs.rsi.toBitVec ((s.dmem.loadBytes s.regs.rsi.toBitVec s.regs.rdx.toBitVec.toNat).get!.take
-          s'.regs.rdx.toBitVec.toNat)
-      ∧ Mem.WritesOnly [(s.regs.rdi.toBitVec, s.regs.rdx.toBitVec.toNat)] s₀.dmem s'.dmem
+      ∧ Mem.Contains s'.dmem s'.regs.rdi.toBitVec ((s.dmem.loadBytes s.regs.rsi.toBitVec s.regs.rdx.toNat).get!.drop
+          s'.regs.rdx.toNat)
+      ∧ Mem.Contains s'.dmem s.regs.rsi.toBitVec ((s.dmem.loadBytes s.regs.rsi.toBitVec s.regs.rdx.toNat).get!.take
+          s'.regs.rdx.toNat)
+      ∧ Mem.WritesOnly [(s.regs.rdi.toBitVec, s.regs.rdx.toNat)] s₀.dmem s'.dmem
 
 theorem memmove_correct [Host] (hp : memmoveProg.IsInfix Host.prog)
     (s : MachineData) (bs : List UInt8)
-    (hsrc : s.regs.rsi.toBitVec.toNat + s.regs.rdx.toBitVec.toNat < 2 ^ 64)
-    (hdst : s.regs.rdi.toBitVec.toNat + s.regs.rdx.toBitVec.toNat < 2 ^ 64)
-    (hbs : s.dmem.loadBytes s.regs.rsi.toBitVec s.regs.rdx.toBitVec.toNat = some bs)
-    (hmap : Mem.Mapped [(s.regs.rsi.toBitVec, s.regs.rdx.toBitVec.toNat), (s.regs.rsp.toBitVec - 8#64, 8),
-      (s.regs.rdi.toBitVec, s.regs.rdx.toBitVec.toNat)] s.dmem)
+    (hsrc : s.regs.rsi.toNat + s.regs.rdx.toNat < 2 ^ 64)
+    (hdst : s.regs.rdi.toNat + s.regs.rdx.toNat < 2 ^ 64)
+    (hbs : s.dmem.loadBytes s.regs.rsi.toBitVec s.regs.rdx.toNat = some bs)
+    (hmap : Mem.Mapped [(s.regs.rsi.toBitVec, s.regs.rdx.toNat), (s.regs.rsp.toBitVec - 8#64, 8),
+      (s.regs.rdi.toBitVec, s.regs.rdx.toNat)] s.dmem)
     (hdisj : Mem.Blocks.Disjoint
-      [(s.regs.rsi.toBitVec, s.regs.rdx.toBitVec.toNat), (s.regs.rdi.toBitVec, s.regs.rdx.toBitVec.toNat)]
+      [(s.regs.rsi.toBitVec, s.regs.rdx.toNat), (s.regs.rdi.toBitVec, s.regs.rdx.toNat)]
       [(s.regs.rsp.toBitVec - 8#64, 8)]) :
     Eventually (step1 Host.exe)
-      (fun st => st.data.dmem.loadBytes s.regs.rdi.toBitVec s.regs.rdx.toBitVec.toNat = some bs
-        ∧ Mem.WritesOnly [Mem.Block.ofStackSlots s.regs.rsp 0, (s.regs.rdi.toBitVec, s.regs.rdx.toBitVec.toNat)]
+      (fun st => st.data.dmem.loadBytes s.regs.rdi.toBitVec s.regs.rdx.toNat = some bs
+        ∧ Mem.WritesOnly [Mem.Block.ofStackSlots s.regs.rsp 0, (s.regs.rdi.toBitVec, s.regs.rdx.toNat)]
             s.dmem st.data.dmem)
       ⟨s, startAddr hp⟩ := by
   have hk := List.isInfixAt_infixIdx hp
@@ -144,8 +144,8 @@ theorem memmove_correct [Host] (hp : memmoveProg.IsInfix Host.prog)
   refine Triple.le_wp (Program.Triple.cfg (P := (· = s)) (fun _ l s' => match l with
       | "start" => s' = s
       | "done" => s'.regs.rsp = s.regs.rsp
-          ∧ s'.dmem.loadBytes s.regs.rdi.toBitVec s.regs.rdx.toBitVec.toNat = some bs
-          ∧ Mem.WritesOnly [Mem.Block.ofStackSlots s.regs.rsp 0, (s.regs.rdi.toBitVec, s.regs.rdx.toBitVec.toNat)]
+          ∧ s'.dmem.loadBytes s.regs.rdi.toBitVec s.regs.rdx.toNat = some bs
+          ∧ Mem.WritesOnly [Mem.Block.ofStackSlots s.regs.rsp 0, (s.regs.rdi.toBitVec, s.regs.rdx.toNat)]
               s.dmem s'.dmem
       | _ => False)
     (fun _ _ _ => 0) fun _ h₀ => ?_) s rfl

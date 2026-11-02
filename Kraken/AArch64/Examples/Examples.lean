@@ -158,7 +158,7 @@ def reg_offset_example : Program := parseAArch64("
 
 theorem reg_offset_example_correct [layout : Layout] (s₀ : MachineData)
     (v : UInt64) (R : DataMem → Prop)
-    (h_mem : s₀.dmem =⋆ Eq (v.At (s₀.regs.X1.toBitVec + BitVec.ofInt 64 (s₀.regs.X2.toBitVec.toNat <<< 3))) ⋆ R) :
+    (h_mem : s₀.dmem =⋆ Eq (v.At (s₀.regs.X1.toBitVec + BitVec.ofInt 64 (s₀.regs.X2.toNat <<< 3))) ⋆ R) :
     Eventually (straightlineStep (layout reg_offset_example))
       (fun s' => s'.1.regs.X3 = 42)
       ⟨s₀, layout.start⟩ := by
@@ -166,7 +166,7 @@ theorem reg_offset_example_correct [layout : Layout] (s₀ : MachineData)
   kprologue reg_offset_example with s₀
   have h_bs : v.toBytes.length = 8 := UInt64.toBytes_length v
   simp at h_mem
-  have h_mem' := Mem.storeInt_sep (X1.toBitVec + BitVec.ofInt 64 (X2.toBitVec.toNat <<< 3)) 8 v.toBytes R mem ⟨h_mem, h_bs⟩ 42
+  have h_mem' := Mem.storeInt_sep (X1.toBitVec + BitVec.ofInt 64 (X2.toNat <<< 3)) 8 v.toBytes R mem ⟨h_mem, h_bs⟩ 42
   sym =>
   kstep
   case h_mem => tactic => simp; exact h_mem
