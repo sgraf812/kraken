@@ -162,6 +162,32 @@ public theorem Host.label_eq [Host] {p : Program} {k i : Nat} {l : Label}
   rw [heq.1] at hd'
   exact absurd (Host.labels_nodup.eq_of_getElem?_label hd' hP) (by omega)
 
+public theorem Host.label_ne [Host] {p : Program} {k : Nat} (i j : Nat) {l l' : Label} {ins : Instr}
+    (hp : p.IsInfixAt Host.prog k) (hij : i < j := by omega)
+    (hi : p[i]? = some (.label l) := by rfl) (hi1 : p[i + 1]? = some (.instr ins) := by rfl)
+    (hj : p[j]? = some (.label l') := by rfl) (hpad : ¬ ins.IsPadding := by nofun) :
+    label l ≠ label l' := by
+  rw [Host.label_eq hp hi, Host.label_eq hp hj]
+  intro h
+  have hj1 : i + 1 < j := by
+    refine Nat.lt_of_le_of_ne hij fun e => ?_
+    rw [e, hj] at hi1
+    cases hi1
+  obtain ⟨hlt, hpm⟩ := List.getElem?_eq_some_iff.mp hi1
+  have hP : Host.prog[k + (i + 1)]? = some (.instr ins) := by
+    rw [List.isInfixAt_iff_getElem?.mp hp (i + 1) hlt, hpm]
+  have hc : Host.exe.program[k + (i + 1)]? =
+      some {directive := .instr ins, size := Kraken.Layout.size Directive (k + (i + 1))} := by
+    rw [Host.exe_getElem?, hP]
+    rfl
+  have := Host.exe.sizeBefore_succ hc
+  have := Host.exe.sizeBefore_mono (show k + i ≤ k + (i + 1) by omega)
+  have := Host.exe.sizeBefore_mono (show k + (i + 1) + 1 ≤ k + j by omega)
+  have := Host.instr_size_pos (k + (i + 1)) ins hP hpad
+  have := Host.sizeBefore_eq_of_addrOf_eq h
+  simp only at *
+  omega
+
 public theorem Host.label_cases [Host] (l : Label) :
     label l = -1 ∨ ∃ i, Host.prog[i]? = some (.label l) ∧ label l = Host.addrOf i := by
   have hl : label l = (Host.exe.withAddresses.findSome?

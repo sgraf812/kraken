@@ -144,6 +144,30 @@ public abbrev Embeds.ofIsInfixAt [Host] {p q : Program} (hq : Embeds q) {i : Nat
 public abbrev Embeds.ofIsInfix [Host] {p : Program} (h : p.IsInfix Host.prog) : Embeds p :=
   ⟨⟨p.infixIdx Host.prog h, List.isInfixAt_infixIdx h⟩⟩
 
+public theorem Embeds.label_ne [Host] (p q : Program) [hp : Embeds p] [hq : Embeds q] {l l' : Label}
+    {ins ins' : Instr} (hl : l ≠ l' := by decide)
+    (hp0 : p[0]? = some (.label l) := by rfl) (hp1 : p[1]? = some (.instr ins) := by rfl)
+    (hq0 : q[0]? = some (.label l') := by rfl) (hq1 : q[1]? = some (.instr ins') := by rfl)
+    (hpad : ¬ ins.IsPadding := by nofun) (hpad' : ¬ ins'.IsPadding := by nofun) :
+    label l ≠ label l' := by
+  have hH : Host.prog.IsInfixAt Host.prog 0 := List.prefix_refl _
+  have hget : ∀ {r : Program} {a i : Nat} {d : Directive}, r.IsInfixAt Host.prog a → r[i]? = some d →
+      Host.prog[a + i]? = some d := fun hr hd => by
+    obtain ⟨hlt, hrd⟩ := List.getElem?_eq_some_iff.mp hd
+    rw [List.isInfixAt_iff_getElem?.mp hr _ hlt, hrd]
+  have hp0' := hget hp.embedding.isInfixAt hp0
+  have hp1' := hget hp.embedding.isInfixAt hp1
+  have hq0' := hget hq.embedding.isInfixAt hq0
+  have hq1' := hget hq.embedding.isInfixAt hq1
+  rw [Nat.add_zero] at hp0' hq0'
+  rcases Nat.lt_trichotomy hp.embedding.start hq.embedding.start with h | h | h
+  · exact Host.label_ne _ _ hH h hp0' hp1' hq0' hpad
+  · rw [h] at hp0'
+    rw [hp0'] at hq0'
+    cases hq0'
+    exact absurd rfl hl
+  · exact (Host.label_ne _ _ hH h hq0' hq1' hp0' hpad').symm
+
 public class NoLabels (p : Program) : Prop where
   out : p.labels = []
 

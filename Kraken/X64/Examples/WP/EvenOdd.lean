@@ -86,7 +86,7 @@ done:
 ")
 
 theorem evenOdd_correct [Host] (hp : evenOddProg.IsInfix Host.prog)
-    (hne : label "even" ≠ label "odd") (s : MachineData) (base : BitVec 64) (sz : Nat)
+    (s : MachineData) (base : BitVec 64) (sz : Nat)
     (hstack : 8 * (s.regs.rdi.toNat + 1) ≤ (s.regs.rsp - base).toNat)
     (hsz : (s.regs.rsp - base).toNat ≤ sz) (hmap : Mem.Mapped [(base, sz)] s.dmem) :
     Eventually (step1 Host.exe)
@@ -101,6 +101,7 @@ theorem evenOdd_correct [Host] (hp : evenOddProg.IsInfix Host.prog)
   letI : Embeds even := ⟨⟨k + 3, hev⟩⟩
   letI : Embeds odd := ⟨⟨k + 12, hod⟩⟩
   letI : FunDecls := ⟨[Fragment.mk even, Fragment.mk odd]⟩
+  have hne : label "even" ≠ label "odd" := Embeds.label_ne even odd
   have hse : (Fragment.mk even).startAddr = label "even" := (Host.label_eq (i := 0) hev rfl).symm
   have hso : (Fragment.mk odd).startAddr = label "odd" := (Host.label_eq (i := 0) hod rfl).symm
   have he : FunDecls.at (label "even") = some (Fragment.mk even) := by
