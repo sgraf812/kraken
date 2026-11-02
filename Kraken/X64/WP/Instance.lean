@@ -623,15 +623,20 @@ end Program.WP
 namespace Program.WP
 
 public theorem step1_of_wp_at [Host] [FunDecls] {p : Program} [h : Embeds p] {s : MachineData}
-    {post : @Post MachineState} (hw : WP.wp p (fun _ s' => post ⟨s', h.embedding.endAddr⟩) ⊥ s) :
+    {post : @Post MachineState} {E : Int64 → MachineData → Prop}
+    (hw : WP.wp p (fun _ s' => post ⟨s', h.embedding.endAddr⟩) E s)
+    (hE : ∀ a s', E a s' → False := by
+      intro _ _ h; first | exact h | exact bot_le (α := Int64 → MachineData → Prop) (fun _ _ => False) _ _ h) :
     Eventually (step1 Host.exe) post ⟨s, Host.addrOf h.embedding.start⟩ :=
   Program.step1_of_wp hw (fun ⟨_, _⟩ hu hq => by subst hu; exact hq)
-    (fun u hE => ((bot_le (α := Int64 → MachineData → Prop) fun _ _ => False) u.pc u.data hE).elim)
+    (fun u hu => (hE u.pc u.data hu).elim)
 
 public theorem step1_of_wp [Host] [FunDecls] {p : Program} {s : MachineData}
-    {post : @Post MachineState} (hp : p.IsInfix Host.prog)
-    (hw : WP.wp p (fun _ s' => post ⟨s', endAddr hp⟩) ⊥ s) :
+    {post : @Post MachineState} {E : Int64 → MachineData → Prop} (hp : p.IsInfix Host.prog)
+    (hw : WP.wp p (fun _ s' => post ⟨s', endAddr hp⟩) E s)
+    (hE : ∀ a s', E a s' → False := by
+      intro _ _ h; first | exact h | exact bot_le (α := Int64 → MachineData → Prop) (fun _ _ => False) _ _ h) :
     Eventually (step1 Host.exe) post ⟨s, startAddr hp⟩ :=
-  @step1_of_wp_at _ _ p (Embeds.ofIsInfix hp) s post hw
+  @step1_of_wp_at _ _ p (Embeds.ofIsInfix hp) s post E hw hE
 
 end Program.WP
