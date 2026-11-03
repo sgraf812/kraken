@@ -173,14 +173,6 @@ public theorem Embeds.label_ne [Host] (p q : Program) [hp : Embeds p] [hq : Embe
     exact absurd rfl hl
   · exact (Host.label_ne _ _ hH h hq0' hq1' hp0' hpad').symm
 
-public class NoLabels (p : Program) : Prop where
-  out : p.labels = []
-
-public instance : NoLabels [] := ⟨rfl⟩
-
-public instance {i : Instr} {p : Program} [h : NoLabels p] : NoLabels (.instr i :: p) :=
-  ⟨by simpa using h.out⟩
-
 @[expose] public def Program.InternalTarget [Host] (p : Program) (a : Int64) : Prop :=
   ∃ l ∈ p.labels, label l = a
 

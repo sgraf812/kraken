@@ -54,9 +54,9 @@ variable [Host] [FunDecls] {Q : Unit → MachineData → Prop} {E : Int64 → Ma
 @[spec] public theorem nil_spec : ⦃ fun s => Q () s ⦄ ([] : Program) ⦃ Q; E ⦄ :=
   Triple.intro fun _ hq => Program.wp_nil fun _ => hq
 
-@[spec] public theorem cons_spec (d : Directive) (p : Program) [hN : NoLabels (d :: p)] :
-    ⦃ WP.wp d (fun _ => WP.wp p Q E) E ⦄ (d :: p) ⦃ Q; E ⦄ :=
-  Triple.intro fun _ hw => Program.wp_cons hN.out hw
+@[spec] public theorem cons_spec (d : Directive) (p : Program) :
+    ⦃ fun s => Program.labels (d :: p) = [] ∧ WP.wp d (fun _ => WP.wp p Q E) E s ⦄ (d :: p) ⦃ Q; E ⦄ :=
+  Triple.intro fun _ ⟨hN, hw⟩ => Program.wp_cons hN hw
 
 @[spec] public theorem mov_reg_imm_spec (asz : Width) (r : Reg64) (i : Int64) :
     ⦃ fun s => Q () { s with regs := s.regs.set64 r (BitVec.setWidth 64 i.toBitVec) } ⦄

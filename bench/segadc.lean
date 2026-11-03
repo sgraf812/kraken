@@ -15,4 +15,4 @@ open scoped Program.WP
 
 #eval runBenchUsingTactic ``SegAdcChain.Goal [``SegAdcChain.prog, ``SegAdcChain.chain]
   `(tactic| (intros; vcgen)) `(tactic| fail)
-  [40, 80, 120]
+  [40, 160, 640]
