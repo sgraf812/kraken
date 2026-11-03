@@ -299,6 +299,11 @@ theorem BitVec.toNat_sub_cases {w} (a b : BitVec w) :
     { cf, af := ((a - 1).take 4).unsigned != (a.take 4).unsigned - 1,
       of := (a - 1).signed != a.signed - 1 }
 
+@[expose] def StatusFlags.ofInc (a : BitVec 64) (cf : Bool) : StatusFlags :=
+  StatusFlags.from_result (a + 1)
+    { cf, af := ((a + 1).take 4).unsigned != (a.take 4).unsigned + 1,
+      of := (a + 1).signed != a.signed + 1 }
+
 @[expose] def StatusFlags.ofLogic {w} (v : BitVec w) (af : Bool) : StatusFlags :=
   StatusFlags.from_result v { cf := false, of := false, af }
 
@@ -401,6 +406,19 @@ grind_pattern StatusFlags.neg_ofAdd => StatusFlags.neg (StatusFlags.ofAdd (OfNat
     (StatusFlags.ofDec a cf).pf = (((a - 1).take 8).cpop_ % 2 == BitVec.zero _) := rfl
 @[simp, vcgen_simp] theorem StatusFlags.af_ofDec (a : BitVec 64) (cf : Bool) :
     (StatusFlags.ofDec a cf).af = (((a - 1).take 4).unsigned != (a.take 4).unsigned - 1) := rfl
+
+@[simp, grind =, vcgen_simp] theorem StatusFlags.zf_ofInc (a : BitVec 64) (cf : Bool) :
+    (StatusFlags.ofInc a cf).zf = (a + 1 == BitVec.zero 64) := rfl
+@[simp, grind =, vcgen_simp] theorem StatusFlags.cf_ofInc (a : BitVec 64) (cf : Bool) :
+    (StatusFlags.ofInc a cf).cf = cf := rfl
+@[simp, vcgen_simp] theorem StatusFlags.sf_ofInc (a : BitVec 64) (cf : Bool) :
+    (StatusFlags.ofInc a cf).sf = (a + 1).msb := rfl
+@[simp, vcgen_simp] theorem StatusFlags.of_ofInc (a : BitVec 64) (cf : Bool) :
+    (StatusFlags.ofInc a cf).of = ((a + 1).signed != a.signed + 1) := rfl
+@[simp, vcgen_simp] theorem StatusFlags.pf_ofInc (a : BitVec 64) (cf : Bool) :
+    (StatusFlags.ofInc a cf).pf = (((a + 1).take 8).cpop_ % 2 == BitVec.zero _) := rfl
+@[simp, vcgen_simp] theorem StatusFlags.af_ofInc (a : BitVec 64) (cf : Bool) :
+    (StatusFlags.ofInc a cf).af = (((a + 1).take 4).unsigned != (a.take 4).unsigned + 1) := rfl
 
 @[simp, grind =, vcgen_simp] theorem StatusFlags.zf_ofLogic {w} (v : BitVec w) (af : Bool) :
     (StatusFlags.ofLogic v af).zf = (v == BitVec.zero w) := rfl

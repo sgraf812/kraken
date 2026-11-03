@@ -105,6 +105,57 @@ variable [Host] [FunDecls] {Q : Unit → MachineData → Prop} {E : Int64 → Ma
     hload, Effects.All, ite_true]
   exact hn _ (by rwa [hload, Option.get!_some] at hpre)
 
+@[spec] public theorem mov_load_qword_sib_spec (r b i : Reg64) (d : Int64) :
+    ⦃ fun s =>
+        let a := s.regs.get64 b + s.regs.get64 i * 8 + BitVec.ofInt 64 d.toInt
+        (Mem.loadInt s.dmem a 8).isSome = true
+          ∧ Q () { s with regs := s.regs.set64 r (BitVec.ofInt 64 (Mem.loadInt s.dmem a 8).get!) } ⦄
+      (Directive.instr (.regular .W64 .W64
+          (.mov (.reg (.low r .W64)) (.regOrMem (.mem ⟨some (.reg b), some ⟨i, .W64⟩, .int64 d⟩)))))
+    ⦃ Q; E ⦄ := by
+  refine Triple.intro fun s ⟨hsome, hq⟩ => ?_
+  obtain ⟨v, hv⟩ := Option.isSome_iff_exists.mp hsome
+  refine Program.wp_single fun _ _ _ _ hn _ => ?_
+  simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
+    RegOrMem.interp, MachineData.load, MachineData.set, MachineData.setReg, Reg64s.set_low_W64,
+    AddrExpr.zeroExtend_interp_sib, hv, Effects.All, ite_true]
+  exact hn _ (by rwa [hv, Option.get!_some] at hq)
+
+@[spec] public theorem mov_store_qword_sib_spec (b i : Reg64) (d : Int64) (rs : Reg64) :
+    ⦃ fun s =>
+        let a := s.regs.get64 b + s.regs.get64 i * 8 + BitVec.ofInt 64 d.toInt
+        (Mem.loadInt s.dmem a 8).isSome = true
+          ∧ Q () { s with dmem := Mem.storeInt s.dmem a 8 (s.regs.get64 rs).toInt } ⦄
+      (Directive.instr (.regular .W64 .W64
+          (.mov (.mem ⟨some (.reg b), some ⟨i, .W64⟩, .int64 d⟩) (.regOrMem (.reg (.low rs .W64))))))
+    ⦃ Q; E ⦄ := by
+  refine Triple.intro fun s ⟨hsome, hq⟩ => ?_
+  obtain ⟨v, hv⟩ := Option.isSome_iff_exists.mp hsome
+  refine Program.wp_single fun _ _ _ _ hn _ => ?_
+  simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
+    RegOrMem.interp, MachineData.set, MachineData.store, Reg64s.get_low_W64,
+    AddrExpr.zeroExtend_interp_sib, hv, Effects.All, ite_true]
+  exact hn _ hq
+
+@[spec] public theorem add_reg_mem_sib_spec (rd b i : Reg64) (d : Int64) :
+    ⦃ fun s =>
+        let a := s.regs.get64 b + s.regs.get64 i * 8 + BitVec.ofInt 64 d.toInt
+        (Mem.loadInt s.dmem a 8).isSome = true ∧
+          let x := BitVec.ofInt 64 (Mem.loadInt s.dmem a 8).get!
+          let y := s.regs.get64 rd
+          Q () { s with regs := s.regs.set64 rd (x + y), status := StatusFlags.ofAdd x y } ⦄
+      (Directive.instr (.regular .W64 .W64
+          (.add (.reg (.low rd .W64)) (.regOrMem (.mem ⟨some (.reg b), some ⟨i, .W64⟩, .int64 d⟩)))))
+    ⦃ Q; E ⦄ := by
+  refine Triple.intro fun s ⟨hsome, hq⟩ => ?_
+  obtain ⟨v, hv⟩ := Option.isSome_iff_exists.mp hsome
+  refine Program.wp_single fun _ _ _ _ hn _ => ?_
+  simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
+    RegOrMem.interp, MachineData.load, MachineData.set, MachineData.setReg,
+    Reg64s.get_low_W64, Reg64s.set_low_W64, AddrExpr.zeroExtend_interp_sib,
+    hv, Effects.All, ite_true]
+  exact hn _ (by rwa [hv, Option.get!_some] at hq)
+
 local macro "run_step" : tactic =>
   `(tactic| simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
       RegOrMem.interp, RelRegOrMem.interp, ConstExpr.interp, MachineData.set, MachineData.setReg,
@@ -355,6 +406,32 @@ local macro "run_step" : tactic =>
   refine Program.wp_single fun _ _ _ _ hn _ => ?_
   run_step
   exact hn _ hpre
+
+@[spec] public theorem inc_reg_spec (asz : Width) (r : Reg64) :
+    ⦃ fun s =>
+        let a := s.regs.get64 r
+        Q () { s with regs := s.regs.set64 r (a + 1), status := StatusFlags.ofInc a s.status.cf } ⦄
+      (Directive.instr (.regular asz .W64 (.inc (.reg (.low r .W64)))))
+    ⦃ Q; E ⦄ := by
+  refine Triple.intro fun s hpre => ?_
+  refine Program.wp_single fun _ _ _ _ hn _ => ?_
+  run_step
+  exact hn _ hpre
+
+@[spec] public theorem xor_reg32_reg32_spec (asz : Width) (rd rs : Reg64) :
+    ⦃ fun s =>
+        let v := (s.regs.get64 rd).take 32 ^^^ (s.regs.get64 rs).take 32
+        ∀ af : Bool,
+          Q () { s with regs := s.regs.set64 rd (v.zeroExtend 64), status := StatusFlags.ofLogic v af } ⦄
+      (Directive.instr (.regular asz .W32
+          (.xor (.reg (.low rd .W32)) (.regOrMem (.reg (.low rs .W32))))))
+    ⦃ Q; E ⦄ := by
+  refine Triple.intro fun s hpre => ?_
+  refine Program.wp_single fun _ _ _ _ hn _ => ?_
+  run_step
+  simp only [Reg64s.get_low_W32, Reg64s.set_low_W32]
+  intro af
+  exact hn _ (hpre af)
 
 @[spec] public theorem cmp_reg_imm_spec (asz : Width) (r : Reg64) (i : Int64) :
     ⦃ fun s =>
