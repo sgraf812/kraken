@@ -117,7 +117,7 @@ theorem p₁_ends_rax8_eventually {k : Nat} (hk : (p₁ ++ q₁).IsInfixAt Host.
 
 theorem p₁_ends_rax7 (s : MachineData) :
     WP.wp p₁ (fun _ t => t.regs.get64 .rax = 7) (fun _ _ => False) s := by
-  kvcgen64 [p₁] with finish
+  vcgen [p₁] with kfinish
 
 theorem p₁_not_ends_rax8 [H : Embeds p₁] (s : MachineData) :
     ¬ WP.wp p₁ (fun _ t => t.regs.get64 .rax = 8) (fun _ _ => False) s := by

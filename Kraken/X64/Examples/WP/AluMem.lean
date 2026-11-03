@@ -4,7 +4,7 @@ module
 `alu_mem_example` in the state wp: the baseline's four-instruction program,
 with the slot at `136(%rdx)` mapped and holding `v`. The proposition is the
 baseline statement `alu_mem_example_correct`, over the same program and any
-layout, proved by `kvcgen64` on the wp of the program at the start state.
+layout, proved by `vcgen` on the wp of the program at the start state.
 -/
 public import Kraken.X64.WP.Instance
 import Kraken.SeparationMem
@@ -27,6 +27,6 @@ theorem alu_mem_example_correct [Host] (hp : alu_mem_example.IsInfix Host.prog) 
       ⟨s₀, startAddr hp⟩ := by
   have hload := Mem.loadInt_sep _ _ 8 _ _ h_mem (UInt64.toBytes_length v) (by decide)
   apply Program.WP.step1_of_wp hp
-  kvcgen64 [alu_mem_example] with finish
+  vcgen [alu_mem_example] with kfinish
 
 end State

@@ -167,7 +167,7 @@ theorem scalarproduct_fma3_spec [Host] [FunDecls] (s : MachineData) (len : Nat)
       | _ => 0) fun _ h₀ => ?_) s rfl
   subst h₀
   cfg_cases
-  all_goals kvcgen64 with finish
+  all_goals vcgen with kfinish
 
 funspec scalarproduct_fma3_funspec "ff_scalarproduct_float_fma3" [Host] [FunDecls]
     [Embeds scalarproduct_fma3]
@@ -202,6 +202,6 @@ funspec scalarproduct_fma3_funspec "ff_scalarproduct_float_fma3" [Host] [FunDecl
       | ".loop128" => s'.regs.rcx.toNat - s'.regs.r8.toNat
       | _ => 0) fun s₀ ⟨h₀, _⟩ => ?_
   cfg_cases
-  all_goals kvcgen64 with finish
+  all_goals vcgen with kfinish
 
 end State.FfScalarproductFloatFma3

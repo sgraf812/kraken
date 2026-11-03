@@ -50,7 +50,7 @@ example [Host] [FunDecls] (s : MachineData) (hc : s.regs.rcx.toNat = 2) :
     (fun _ _ s' => s' = s) (fun _ _ _ => 0) fun _ h₀ => ?_) s rfl
   subst h₀
   cfg_cases
-  all_goals kvcgen64 with finish
+  all_goals vcgen with kfinish
 
 /-! ## C1: a call made by hand is a jump
 
@@ -66,7 +66,7 @@ def manualCall : Program := parse("
 
 example [Host] [FunDecls] :
     ⦃ fun _ => True ⦄ manualCall ⦃ fun _ _ => False; fun a _ => a = label "f" ⦄ := by
-  kvcgen64 [manualCall] with finish
+  vcgen [manualCall] with kfinish
 
 /-! ## C2: a tail call is a jump
 
@@ -80,6 +80,6 @@ def tailCall : Program := parse("
 
 example [Host] [FunDecls] :
     ⦃ fun _ => True ⦄ tailCall ⦃ fun _ _ => False; fun a s => a = label "f" ∧ s.regs.rax = 1 ⦄ := by
-  kvcgen64 [tailCall] with finish
+  vcgen [tailCall] with kfinish
 
 end State.Surprises

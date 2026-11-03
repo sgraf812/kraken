@@ -88,7 +88,7 @@ funspec memmove_spec "memmove" [Host] [FunDecls] [Embeds memmove]
       | _, _ => False)
     (fun _ _ s' => s'.regs.rdx.toNat) fun s₀ ⟨h₀, _⟩ => ?_
   cfg_cases
-  all_goals kvcgen64 with finish
+  all_goals vcgen with kfinish
 where
   MMFwd (s s₀ s' : MachineData) : Prop :=
     s.regs.rdi.toNat ≤ s.regs.rsi.toNat
@@ -151,6 +151,6 @@ theorem memmove_correct [Host] (hp : memmoveProg.IsInfix Host.prog)
     (fun _ _ _ => 0) fun _ h₀ => ?_) s rfl
   subst h₀
   cfg_cases
-  all_goals kvcgen64 with finish
+  all_goals vcgen with kfinish
 
 end State

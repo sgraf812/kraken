@@ -54,7 +54,7 @@ funspec even_spec "even" [Host] [FunDecls] [Embeds even] [Embeds odd]
       | _, s' => s'.regs = s₀.regs ∧ s'.dmem = s₀.dmem ∧ s.regs.rdi.toNat = 0)
     (fun _ _ _ => 0) fun s₀ ⟨h₀, _⟩ => ?_
   cfg_cases
-  all_goals kvcgen64 [odd_spec] with finish
+  all_goals vcgen [odd_spec] with kfinish
 termination_by s.regs.rdi.toNat
 
 funspec odd_spec "odd" [Host] [FunDecls] [Embeds even] [Embeds odd]
@@ -71,7 +71,7 @@ funspec odd_spec "odd" [Host] [FunDecls] [Embeds even] [Embeds odd]
       | _, s' => s'.regs = s₀.regs ∧ s'.dmem = s₀.dmem ∧ s.regs.rdi.toNat = 0)
     (fun _ _ _ => 0) fun s₀ ⟨h₀, _⟩ => ?_
   cfg_cases
-  all_goals kvcgen64 [even_spec] with finish
+  all_goals vcgen [even_spec] with kfinish
 termination_by s.regs.rdi.toNat
 
 end
@@ -118,6 +118,6 @@ theorem evenOdd_correct [Host] (hp : evenOddProg.IsInfix Host.prog)
     (fun _ _ _ => 0) fun _ h₀ => ?_) s rfl
   subst h₀
   cfg_cases
-  all_goals kvcgen64 [even_spec he ho base sz] with finish
+  all_goals vcgen [even_spec he ho base sz] with kfinish
 
 end State.EvenOdd

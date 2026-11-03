@@ -44,7 +44,7 @@ funspec swap_spec "swap" [Host] [FunDecls] [Embeds swap]
       | _, _ => False)
     (fun _ _ _ => 0) fun s₀ ⟨h₀, _⟩ => ?_
   cfg_cases
-  all_goals kvcgen64 with finish
+  all_goals vcgen with kfinish
 
 theorem pswap_correct [Host] (hp : pswap.IsInfix Host.prog)
     (s : MachineData)
@@ -72,6 +72,6 @@ theorem pswap_correct [Host] (hp : pswap.IsInfix Host.prog)
     (fun _ _ _ => 0) fun _ h₀ => ?_) s rfl
   subst h₀
   cfg_cases
-  all_goals kvcgen64 with finish
+  all_goals vcgen with kfinish
 
 end State

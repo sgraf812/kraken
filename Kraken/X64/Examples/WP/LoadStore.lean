@@ -23,7 +23,7 @@ theorem storeLoad64_correct [Host] (hp : storeLoad64.IsInfix Host.prog) (s : Mac
     (hmap : Mem.Mapped [(s.regs.rsp.toBitVec + 8#64, 8)] s.dmem) :
     Eventually (step1 Host.exe) (fun s' => s'.data.regs.rcx = s.regs.rax) ⟨s, startAddr hp⟩ := by
   apply Program.WP.step1_of_wp hp
-  kvcgen64 [storeLoad64] with finish
+  vcgen [storeLoad64] with kfinish
 
 def storeLoad32 : Program := parse("
   movl %eax, 8(%rsp)
@@ -35,7 +35,7 @@ theorem storeLoad32_correct [Host] (hp : storeLoad32.IsInfix Host.prog) (s : Mac
     Eventually (step1 Host.exe)
       (fun s' => s'.data.regs.get (.low .rcx .W32) = s.regs.get (.low .rax .W32)) ⟨s, startAddr hp⟩ := by
   apply Program.WP.step1_of_wp hp
-  kvcgen64 [storeLoad32] with finish
+  vcgen [storeLoad32] with kfinish
 
 def storeLoad16 : Program := parse("
   movw %ax, 8(%rsp)
@@ -47,7 +47,7 @@ theorem storeLoad16_correct [Host] (hp : storeLoad16.IsInfix Host.prog) (s : Mac
     Eventually (step1 Host.exe)
       (fun s' => s'.data.regs.get (.low .rcx .W16) = s.regs.get (.low .rax .W16)) ⟨s, startAddr hp⟩ := by
   apply Program.WP.step1_of_wp hp
-  kvcgen64 [storeLoad16] with finish
+  vcgen [storeLoad16] with kfinish
 
 def storeLoad8 : Program := parse("
   movb %al, 8(%rsp)
@@ -59,7 +59,7 @@ theorem storeLoad8_correct [Host] (hp : storeLoad8.IsInfix Host.prog) (s : Machi
     Eventually (step1 Host.exe)
       (fun s' => s'.data.regs.get (.low .rcx .W8) = s.regs.get (.low .rax .W8)) ⟨s, startAddr hp⟩ := by
   apply Program.WP.step1_of_wp hp
-  kvcgen64 [storeLoad8] with finish
+  vcgen [storeLoad8] with kfinish
 
 def twoSlots : Program := parse("
   movq %rax, 8(%rsp)
@@ -75,7 +75,7 @@ theorem twoSlots_correct [Host] (hp : twoSlots.IsInfix Host.prog) (s : MachineDa
     Eventually (step1 Host.exe)
       (fun s' => s'.data.regs.rcx = s.regs.rax ∧ s'.data.regs.rdx = s.regs.rbx) ⟨s, startAddr hp⟩ := by
   apply Program.WP.step1_of_wp hp
-  kvcgen64 [twoSlots] with finish
+  vcgen [twoSlots] with kfinish
 
 def disjointBuffers : Program := parse("
   movq %rax, 8(%rdi)
@@ -90,7 +90,7 @@ theorem disjointBuffers_correct [Host] (hp : disjointBuffers.IsInfix Host.prog) 
       (fun s' => s'.data.regs.rcx.toBitVec
         = BitVec.ofInt 64 (s.dmem.loadInt (s.regs.rsi.toBitVec + 8#64) 8).get!) ⟨s, startAddr hp⟩ := by
   apply Program.WP.step1_of_wp hp
-  kvcgen64 [disjointBuffers] with finish
+  vcgen [disjointBuffers] with kfinish
 
 theorem disjointBuffers_correct' [Host] (hp : disjointBuffers.IsInfix Host.prog) (s : MachineData)
     (hmap : Mem.Mapped [(s.regs.rdi.toBitVec, 16), (s.regs.rsi.toBitVec, 16)] s.dmem)
@@ -99,6 +99,6 @@ theorem disjointBuffers_correct' [Host] (hp : disjointBuffers.IsInfix Host.prog)
       (fun s' => s'.data.regs.rcx.toBitVec
         = BitVec.ofInt 64 (s.dmem.loadInt (s.regs.rsi.toBitVec + 8#64) 8).get!) ⟨s, startAddr hp⟩ := by
   apply Program.WP.step1_of_wp hp
-  kvcgen64 [disjointBuffers] with finish
+  vcgen [disjointBuffers] with kfinish
 
 end State

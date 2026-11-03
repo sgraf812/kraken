@@ -24,7 +24,7 @@ theorem p1_correct [Host] (hp : p1.IsInfix Host.prog) (s : MachineData) :
     (fun _ _ s' => s' = s) (fun _ _ _ => 0) fun _ h₀ => ?_) s rfl
   subst h₀
   cfg_cases
-  all_goals kvcgen64 with finish
+  all_goals vcgen with kfinish
 
 theorem swap_correct [Host] (hp : swap.IsInfix Host.prog) (d : MachineData) :
     Eventually (step1 Host.exe)
@@ -33,7 +33,7 @@ theorem swap_correct [Host] (hp : swap.IsInfix Host.prog) (d : MachineData) :
           s'.data.regs.get Reg.rbx = d.regs.get Reg.rax)
       ⟨d, startAddr hp⟩ := by
   apply Program.WP.step1_of_wp hp
-  kvcgen64 [swap] with finish
+  vcgen [swap] with kfinish
 
 theorem p2_correct [Host] (hp : p2.IsInfix Host.prog) (s : MachineData) :
     Eventually (step1 Host.exe) (fun s => s.data.regs.rax = 2) ⟨s, startAddr hp⟩ := by
@@ -42,7 +42,7 @@ theorem p2_correct [Host] (hp : p2.IsInfix Host.prog) (s : MachineData) :
     (fun _ _ s' => s' = s) (fun _ _ _ => 0) fun _ h₀ => ?_) s rfl
   subst h₀
   cfg_cases
-  all_goals kvcgen64 with finish
+  all_goals vcgen with kfinish
 
 theorem p4_correct [Host] (hp : p4.IsInfix Host.prog) (s : MachineData) :
     Eventually (step1 Host.exe) (fun s => s.data.regs.rax = 1) ⟨s, startAddr hp⟩ := by
@@ -51,7 +51,7 @@ theorem p4_correct [Host] (hp : p4.IsInfix Host.prog) (s : MachineData) :
     (fun _ _ s' => s' = s) (fun _ _ _ => 0) fun _ h₀ => ?_) s rfl
   subst h₀
   cfg_cases
-  all_goals kvcgen64 with finish
+  all_goals vcgen with kfinish
 
 theorem p5_correct [Host] (hp : p5.IsInfix Host.prog) (s : MachineData) :
     Eventually (step1 Host.exe) (fun s => s.data.regs.rax = 0) ⟨s, startAddr hp⟩ := by
@@ -63,6 +63,6 @@ theorem p5_correct [Host] (hp : p5.IsInfix Host.prog) (s : MachineData) :
     (fun _ _ _ => 0) fun _ h₀ => ?_) s rfl
   subst h₀
   cfg_cases
-  all_goals kvcgen64 with finish
+  all_goals vcgen with kfinish
 
 end State

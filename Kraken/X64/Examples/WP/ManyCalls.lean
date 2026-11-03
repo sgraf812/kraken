@@ -45,7 +45,7 @@ funspec touch_spec "touch" [Host] [FunDecls] [Embeds touch]
       | _, _ => False)
     (fun _ _ _ => 0) fun s₀ ⟨h₀, _⟩ => ?_
   cfg_cases
-  all_goals kvcgen64 with finish
+  all_goals vcgen with kfinish
 
 funspec many_spec "many" [Host] [FunDecls] [Embeds touch] [Embeds many]
     (ht : FunDecls.at (label "touch") = some ⟨touch⟩)
@@ -63,6 +63,6 @@ funspec many_spec "many" [Host] [FunDecls] [Embeds touch] [Embeds many]
       | _, _ => False)
     (fun _ _ _ => 0) fun s₀ ⟨h₀, _⟩ => ?_
   cfg_cases
-  all_goals kvcgen64 [touch_spec] with finish
+  all_goals vcgen [touch_spec] with kfinish
 
 end State.ManyCalls

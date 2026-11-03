@@ -7,7 +7,7 @@ computes `rdx = 2 ^ 2 ^ rbx`. The proposition is the baseline's
 `p3_correct` with two more hypotheses: `rax` starts at zero, which the
 statement needs when the loop does not run, and the layout is valid, which
 places the loop's labels. `p3_table` gives the assertion at each label,
-`rbx` is the variant, and `Program.Triple.cfg` leaves one `kvcgen64` obligation per
+`rbx` is the variant, and `Program.Triple.cfg` leaves one `vcgen` obligation per
 block.
 -/
 public import Kraken.StateCfg
@@ -60,6 +60,6 @@ theorem p3_correct [Host] (hp : p3.IsInfix Host.prog)
     fun _ h₀ => ?_) s rfl
   subst h₀
   cfg_cases
-  all_goals kvcgen64 with finish
+  all_goals vcgen with kfinish
 
 end State

@@ -189,9 +189,31 @@ the projections of a literal reduce by the lemmas below. -/
 @[simp, vcgen_simp] theorem StatusFlags.from_result.Remaining.cf_mk (c a o : Bool) :
     (StatusFlags.from_result.Remaining.mk c a o).cf = c := rfl
 
-@[simp, grind =] theorem StatusFlags.zf_from_result {w} (v : BitVec w)
+@[simp, grind =, vcgen_simp] theorem StatusFlags.zf_from_result {w} (v : BitVec w)
     (f : StatusFlags.from_result.Remaining) :
     (StatusFlags.from_result v f).zf = (v == BitVec.zero w) := rfl
+
+@[simp, vcgen_simp] theorem StatusFlags.sf_from_result {w} (v : BitVec w)
+    (f : StatusFlags.from_result.Remaining) :
+    (StatusFlags.from_result v f).sf = v.msb := rfl
+
+@[simp, vcgen_simp] theorem StatusFlags.pf_from_result {w} (v : BitVec w)
+    (f : StatusFlags.from_result.Remaining) :
+    (StatusFlags.from_result v f).pf = ((v.take 8).cpop_ % 2 == BitVec.zero _) := rfl
+
+@[simp, vcgen_simp] theorem StatusFlags.af_from_result {w} (v : BitVec w)
+    (f : StatusFlags.from_result.Remaining) :
+    (StatusFlags.from_result v f).af = f.af := rfl
+
+@[simp, vcgen_simp] theorem StatusFlags.of_from_result {w} (v : BitVec w)
+    (f : StatusFlags.from_result.Remaining) :
+    (StatusFlags.from_result v f).of = f.of := rfl
+
+@[simp, vcgen_simp] theorem StatusFlags.from_result.Remaining.af_mk (c a o : Bool) :
+    (StatusFlags.from_result.Remaining.mk c a o).af = a := rfl
+
+@[simp, vcgen_simp] theorem StatusFlags.from_result.Remaining.of_mk (c a o : Bool) :
+    (StatusFlags.from_result.Remaining.mk c a o).of = o := rfl
 
 @[simp, grind =] theorem CondCode.interp_z (s : StatusFlags) :
     CondCode.z.interp s = s.zf := rfl
@@ -280,14 +302,18 @@ theorem BitVec.toNat_sub_cases {w} (a b : BitVec w) :
 @[expose] def StatusFlags.ofLogic {w} (v : BitVec w) (af : Bool) : StatusFlags :=
   StatusFlags.from_result v { cf := false, of := false, af }
 
-@[simp, grind =] theorem StatusFlags.zf_ofSub {w} (a b : BitVec w) :
+@[simp, grind =, vcgen_simp] theorem StatusFlags.zf_ofSub {w} (a b : BitVec w) :
     (StatusFlags.ofSub a b).zf = (a - b == BitVec.zero w) := rfl
-@[simp, grind =] theorem StatusFlags.cf_ofSub {w} (a b : BitVec w) :
+@[simp, grind =, vcgen_simp] theorem StatusFlags.cf_ofSub {w} (a b : BitVec w) :
     (StatusFlags.ofSub a b).cf = ((a - b).unsigned != a.unsigned - b.unsigned) := rfl
-@[simp] theorem StatusFlags.sf_ofSub {w} (a b : BitVec w) :
+@[simp, vcgen_simp] theorem StatusFlags.sf_ofSub {w} (a b : BitVec w) :
     (StatusFlags.ofSub a b).sf = (a - b).msb := rfl
-@[simp] theorem StatusFlags.of_ofSub {w} (a b : BitVec w) :
+@[simp, vcgen_simp] theorem StatusFlags.of_ofSub {w} (a b : BitVec w) :
     (StatusFlags.ofSub a b).of = ((a - b).signed != a.signed - b.signed) := rfl
+@[simp, vcgen_simp] theorem StatusFlags.pf_ofSub {w} (a b : BitVec w) :
+    (StatusFlags.ofSub a b).pf = (((a - b).take 8).cpop_ % 2 == BitVec.zero _) := rfl
+@[simp, vcgen_simp] theorem StatusFlags.af_ofSub {w} (a b : BitVec w) :
+    (StatusFlags.ofSub a b).af = (((a - b).take 4).unsigned != (a.take 4).unsigned - (b.take 4).unsigned) := rfl
 theorem StatusFlags.neg_ofSub (a b : BitVec 64) :
     (StatusFlags.ofSub a b).neg
       = decide ((a.toNat + 2 ^ 63) % 2 ^ 64 < (b.toNat + 2 ^ 63) % 2 ^ 64) := by
@@ -336,14 +362,18 @@ theorem StatusFlags.neg_ofSub (a b : BitVec 64) :
   revert h
   cases (StatusFlags.ofSub a b).cf <;> cases (StatusFlags.ofSub a b).zf <;> simp <;> omega
 
-@[simp, grind =] theorem StatusFlags.zf_ofAdd {w} (a b : BitVec w) :
+@[simp, grind =, vcgen_simp] theorem StatusFlags.zf_ofAdd {w} (a b : BitVec w) :
     (StatusFlags.ofAdd a b).zf = (a + b == BitVec.zero w) := rfl
-@[simp, grind =] theorem StatusFlags.cf_ofAdd {w} (a b : BitVec w) :
+@[simp, grind =, vcgen_simp] theorem StatusFlags.cf_ofAdd {w} (a b : BitVec w) :
     (StatusFlags.ofAdd a b).cf = ((a + b).unsigned != a.unsigned + b.unsigned) := rfl
-@[simp] theorem StatusFlags.sf_ofAdd {w} (a b : BitVec w) :
+@[simp, vcgen_simp] theorem StatusFlags.sf_ofAdd {w} (a b : BitVec w) :
     (StatusFlags.ofAdd a b).sf = (a + b).msb := rfl
-@[simp] theorem StatusFlags.of_ofAdd {w} (a b : BitVec w) :
+@[simp, vcgen_simp] theorem StatusFlags.of_ofAdd {w} (a b : BitVec w) :
     (StatusFlags.ofAdd a b).of = ((a + b).signed != a.signed + b.signed) := rfl
+@[simp, vcgen_simp] theorem StatusFlags.pf_ofAdd {w} (a b : BitVec w) :
+    (StatusFlags.ofAdd a b).pf = (((a + b).take 8).cpop_ % 2 == BitVec.zero _) := rfl
+@[simp, vcgen_simp] theorem StatusFlags.af_ofAdd {w} (a b : BitVec w) :
+    (StatusFlags.ofAdd a b).af = (((a + b).take 4).unsigned != (a.take 4).unsigned + (b.take 4).unsigned) := rfl
 theorem StatusFlags.neg_ofAdd (n : Nat) (b : BitVec 64) (hn : n % 2 ^ 64 ≠ 2 ^ 63) :
     (StatusFlags.ofAdd (OfNat.ofNat n) b).neg
       = decide ((b.toNat + 2 ^ 63) % 2 ^ 64 < ((2 ^ 64 - n % 2 ^ 64) % 2 ^ 64 + 2 ^ 63) % 2 ^ 64) := by
@@ -359,19 +389,31 @@ theorem StatusFlags.neg_ofAdd (n : Nat) (b : BitVec 64) (hn : n % 2 ^ 64 ≠ 2 ^
 
 grind_pattern StatusFlags.neg_ofAdd => StatusFlags.neg (StatusFlags.ofAdd (OfNat.ofNat n) b)
 
-@[simp, grind =] theorem StatusFlags.zf_ofDec (a : BitVec 64) (cf : Bool) :
+@[simp, grind =, vcgen_simp] theorem StatusFlags.zf_ofDec (a : BitVec 64) (cf : Bool) :
     (StatusFlags.ofDec a cf).zf = (a - 1 == BitVec.zero 64) := rfl
-@[simp, grind =] theorem StatusFlags.cf_ofDec (a : BitVec 64) (cf : Bool) :
+@[simp, grind =, vcgen_simp] theorem StatusFlags.cf_ofDec (a : BitVec 64) (cf : Bool) :
     (StatusFlags.ofDec a cf).cf = cf := rfl
+@[simp, vcgen_simp] theorem StatusFlags.sf_ofDec (a : BitVec 64) (cf : Bool) :
+    (StatusFlags.ofDec a cf).sf = (a - 1).msb := rfl
+@[simp, vcgen_simp] theorem StatusFlags.of_ofDec (a : BitVec 64) (cf : Bool) :
+    (StatusFlags.ofDec a cf).of = ((a - 1).signed != a.signed - 1) := rfl
+@[simp, vcgen_simp] theorem StatusFlags.pf_ofDec (a : BitVec 64) (cf : Bool) :
+    (StatusFlags.ofDec a cf).pf = (((a - 1).take 8).cpop_ % 2 == BitVec.zero _) := rfl
+@[simp, vcgen_simp] theorem StatusFlags.af_ofDec (a : BitVec 64) (cf : Bool) :
+    (StatusFlags.ofDec a cf).af = (((a - 1).take 4).unsigned != (a.take 4).unsigned - 1) := rfl
 
-@[simp, grind =] theorem StatusFlags.zf_ofLogic {w} (v : BitVec w) (af : Bool) :
+@[simp, grind =, vcgen_simp] theorem StatusFlags.zf_ofLogic {w} (v : BitVec w) (af : Bool) :
     (StatusFlags.ofLogic v af).zf = (v == BitVec.zero w) := rfl
-@[simp, grind =] theorem StatusFlags.cf_ofLogic {w} (v : BitVec w) (af : Bool) :
+@[simp, grind =, vcgen_simp] theorem StatusFlags.cf_ofLogic {w} (v : BitVec w) (af : Bool) :
     (StatusFlags.ofLogic v af).cf = false := rfl
-@[simp] theorem StatusFlags.sf_ofLogic {w} (v : BitVec w) (af : Bool) :
+@[simp, vcgen_simp] theorem StatusFlags.sf_ofLogic {w} (v : BitVec w) (af : Bool) :
     (StatusFlags.ofLogic v af).sf = v.msb := rfl
-@[simp] theorem StatusFlags.of_ofLogic {w} (v : BitVec w) (af : Bool) :
+@[simp, vcgen_simp] theorem StatusFlags.of_ofLogic {w} (v : BitVec w) (af : Bool) :
     (StatusFlags.ofLogic v af).of = false := rfl
+@[simp, vcgen_simp] theorem StatusFlags.pf_ofLogic {w} (v : BitVec w) (af : Bool) :
+    (StatusFlags.ofLogic v af).pf = ((v.take 8).cpop_ % 2 == BitVec.zero _) := rfl
+@[simp, vcgen_simp] theorem StatusFlags.af_ofLogic {w} (v : BitVec w) (af : Bool) :
+    (StatusFlags.ofLogic v af).af = af := rfl
 @[grind =] theorem StatusFlags.neg_ofLogic {w} (v : BitVec w) (af : Bool) :
     (StatusFlags.ofLogic v af).neg = v.msb := by
   simp [StatusFlags.neg]

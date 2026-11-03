@@ -46,6 +46,6 @@ theorem pushPop_spec [Host] [FunDecls] (n : Nat) (R : DataMem → Prop) (s : Mac
       | _ => (s'.regs.get64 .rdx).toNat) fun _ h₀ => ?_) s rfl
   subst h₀
   cfg_cases
-  all_goals kvcgen64 with finish
+  all_goals vcgen with kfinish
 
 end State

@@ -19,7 +19,7 @@ example [Host] [FunDecls] (l : Label) (Q : Unit → MachineData → Prop)
     (fun _ _ s' => Q () s') (fun _ _ _ => 0) fun _ h₀ => ?_) s rfl
   subst h₀
   cfg_cases
-  all_goals kvcgen64 with finish
+  all_goals vcgen with kfinish
 
 def jmpNext : Program := parse("
   jmp next
@@ -32,7 +32,7 @@ example [Host] [FunDecls] (s : MachineData) :
     (fun _ _ s' => s'.regs.rsp = s.regs.rsp) (fun _ _ _ => 0) fun _ h₀ => ?_) s rfl
   subst h₀
   cfg_cases
-  all_goals kvcgen64 with finish
+  all_goals vcgen with kfinish
 
 def decMid : Program := parse("
 top:
@@ -46,7 +46,7 @@ example [Host] [FunDecls] (s : MachineData) (h : 0 < s.regs.rcx.toNat) :
     (fun _ _ s' => 0 < s'.regs.rcx.toNat ∧ s'.regs.rsp = s.regs.rsp) (fun _ _ s' => s'.regs.rcx.toNat) fun _ h₀ => ?_) s rfl
   subst h₀
   cfg_cases
-  all_goals kvcgen64 with finish
+  all_goals vcgen with kfinish
 
 def jmpOver : Program := parse("
   jmp done
@@ -60,7 +60,7 @@ example [Host] [FunDecls] (s : MachineData) (h : s.regs.rbx = 0) :
     (fun _ _ s' => s'.regs.rbx = 0 ∧ s'.regs.rsp = s.regs.rsp) (fun _ _ _ => 0) fun _ h₀ => ?_) s rfl
   subst h₀
   cfg_cases
-  all_goals kvcgen64 with finish
+  all_goals vcgen with kfinish
 
 def jmpGap : Program := parse("
   jmp b
@@ -74,7 +74,7 @@ example [Host] [FunDecls] (s : MachineData) :
     (fun _ _ s' => s'.regs.rsp = s.regs.rsp) (fun _ _ _ => 0) fun _ h₀ => ?_) s rfl
   subst h₀
   cfg_cases
-  all_goals kvcgen64 with finish
+  all_goals vcgen with kfinish
 
 def jccOver : Program := parse("
   dec %rcx
@@ -89,7 +89,7 @@ example [Host] [FunDecls] (s : MachineData) :
     (fun _ _ s' => s'.regs.rsp = s.regs.rsp) (fun _ _ _ => 0) fun _ h₀ => ?_) s rfl
   subst h₀
   cfg_cases
-  all_goals kvcgen64 with finish
+  all_goals vcgen with kfinish
 
 def countdown : Program := parse("
 top:
@@ -103,7 +103,7 @@ example [Host] (hp : countdown.IsInfix Host.prog) (s : MachineData) (h : 0 < s.r
     (fun _ _ s' => 0 < s'.regs.rcx.toNat ∧ s'.regs.rsp = s.regs.rsp) (fun _ _ s' => s'.regs.rcx.toNat) fun _ h₀ => ?_) s rfl
   subst h₀
   cfg_cases
-  all_goals kvcgen64 with finish
+  all_goals vcgen with kfinish
 
 def skip : Program := parse("
 start:
@@ -120,7 +120,7 @@ example [Host] (hp : skip.IsInfix Host.prog) (s : MachineData) :
     (fun _ _ s' => s'.regs.rsp = s.regs.rsp) (fun _ _ _ => 0) fun _ h₀ => ?_) s rfl
   subst h₀
   cfg_cases
-  all_goals kvcgen64 with finish
+  all_goals vcgen with kfinish
 
 def fnReuse : Program := parse("
 entry:
@@ -164,7 +164,7 @@ example [Host] (hp : fnReuse.IsInfix Host.prog) (s : MachineData) :
     fun _ h₀ => ?_) s rfl
   subst h₀
   cfg_cases
-  all_goals kvcgen64 with finish
+  all_goals vcgen with kfinish
 
 def retJump : Program := parse("
   leaq target(%rip), %rax
@@ -180,6 +180,6 @@ example [Host] [FunDecls] (s : MachineData) (hm : Mem.Mapped [(s.regs.get64 .rsp
     (fun _ _ s' => s'.regs.get64 .rsp = s.regs.get64 .rsp) (fun _ _ _ => 0) fun _ h₀ => ?_) s rfl
   subst h₀
   cfg_cases
-  all_goals kvcgen64 with finish
+  all_goals vcgen with kfinish
 
 end State.Jumps

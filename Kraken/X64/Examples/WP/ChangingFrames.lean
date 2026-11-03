@@ -54,7 +54,7 @@ funspec poke_spec "poke" [Host] [FunDecls] [Embeds poke]
       | _, _ => False)
     (fun _ _ _ => 0) fun s₀ ⟨h₀, _⟩ => ?_
   cfg_cases
-  all_goals kvcgen64 with finish
+  all_goals vcgen with kfinish
 
 funspec many_spec "many" [Host] [FunDecls] [Embeds poke] [Embeds many]
     (hp : FunDecls.at (label "poke") = some ⟨poke⟩)
@@ -73,6 +73,6 @@ funspec many_spec "many" [Host] [FunDecls] [Embeds poke] [Embeds many]
       | _, _ => False)
     (fun _ _ _ => 0) fun s₀ ⟨h₀, _⟩ => ?_
   cfg_cases
-  all_goals kvcgen64 [poke_spec] with finish
+  all_goals vcgen [poke_spec] with kfinish
 
 end State.ChangingFrames

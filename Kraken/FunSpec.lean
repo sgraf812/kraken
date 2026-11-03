@@ -106,9 +106,9 @@ syntax ident ppSpace str (ppSpace bracketedBinder)* " at " ident
   (" autoframes" (ppSpace funspecClause)*)? " := " term Lean.Parser.Termination.suffix
   (Lean.Parser.Term.whereDecls)? : funspecSig
 
-syntax (name := funspecCmd) "funspec " funspecSig : command
+syntax (name := funspecCmd) (Lean.Parser.Command.visibility)? "funspec " funspecSig : command
 
-syntax (name := funspecPrelude) "funspec_prelude " funspecSig : command
+syntax (name := funspecPrelude) "funspec_prelude " (Lean.Parser.Command.visibility)? funspecSig : command
 
 meta def regOrder : List Name :=
   [`rax, `rbx, `rcx, `rdx, `rsi, `rdi, `rsp, `rbp, `r8, `r9, `r10, `r11, `r12, `r13, `r14, `r15]
@@ -280,7 +280,8 @@ meta def guardOf (μc : Term) (g : Parts) : MacroM (Option (Ident × Term × Ter
   let pf ← `(fun $g.c:ident (ra : Int64) => $lam)
   return some (g.name, ty, pf)
 
-meta def funspecTheorem (sig : TSyntax `funspecSig) (group : Array (TSyntax `funspecSig)) :
+meta def funspecTheorem (vis? : Option (TSyntax ``Lean.Parser.Command.visibility))
+    (sig : TSyntax `funspecSig) (group : Array (TSyntax `funspecSig)) :
     MacroM (TSyntax `command × TSyntax `command) := do
   let x ← parts sig
   let (name, binders, c, h, p, P, tQ, Q, aX, sfx) :=
@@ -317,11 +318,12 @@ meta def funspecTheorem (sig : TSyntax `funspecSig) (group : Array (TSyntax `fun
           (Fr := $frame) (Hv := $(← havocOf name)) $(← havocEqOf name) $goApp Q' E')
   let (bs, t) ← specStmt x none
   return (goCmd, ← `(command|
-    @[spec] theorem $name:ident $binders* ($c : MachineData) (ra : Int64) $bs* : $t := $pf
+    @[spec] $[$vis?:visibility]? theorem $name:ident $binders* ($c : MachineData) (ra : Int64) $bs* :
+        $t := $pf
     $sfx:suffix))
 
 @[command_elab funspecPrelude] public meta def elabFunspecPrelude : CommandElab := fun stx => do
-  let `(funspec_prelude $sig:funspecSig) := stx | throwUnsupportedSyntax
+  let `(funspec_prelude $[$vis?:visibility]? $sig:funspecSig) := stx | throwUnsupportedSyntax
   let `(funspecSig| $name:ident $_f:str $_binders* at $c $[requires $_P?]? ensures $tQ => $_Q
       $[exits $_aX? $_tX? => $_X?]? $[autoframes $clauses?*]? := $_proof $_sfx:suffix
       $[$wds?]?) := sig
@@ -369,20 +371,20 @@ meta def funspecTheorem (sig : TSyntax `funspecSig) (group : Array (TSyntax `fun
     | some e => conj eqs.pop e
     | none => `(True)
   elabCommand (← `(command|
-    abbrev $regs:ident ($c:ident $tQ:ident : MachineData) : Prop := $regsBody))
+    $[$vis?:visibility]? abbrev $regs:ident ($c:ident $tQ:ident : MachineData) : Prop := $regsBody))
   elabCommand (← `(command|
-    abbrev $blks:ident ($c:ident : MachineData) : List (BitVec 64 × Nat) := [$blocks,*]))
+    $[$vis?:visibility]? abbrev $blks:ident ($c:ident : MachineData) : List (BitVec 64 × Nat) := [$blocks,*]))
   elabCommand (← `(command|
-    abbrev $frame:ident ($c:ident $tQ:ident : MachineData) : Prop :=
+    $[$vis?:visibility]? abbrev $frame:ident ($c:ident $tQ:ident : MachineData) : Prop :=
       $regs $c $tQ ∧ Mem.WritesOnly ($blks $c) $cDmem $tDmem))
   let fields ← (kept.toArray.push `rsp).mapM fun f =>
     `(Lean.Parser.Term.structInstField| $(mkIdent f):ident := $(regField c f))
   let regsVal ← `({ $(mkIdent (tQ.getId ++ `regs)):ident with $fields,* })
   let stateVal ← `({ $tQ:ident with regs := $regsVal, dmem := Mem.havoc $cDmem ($blks $c) $tDmem })
   elabCommand (← `(command|
-    abbrev $havoc:ident ($c:ident $tQ:ident : MachineData) : MachineData := $stateVal))
+    $[$vis?:visibility]? abbrev $havoc:ident ($c:ident $tQ:ident : MachineData) : MachineData := $stateVal))
   elabCommand (← `(command|
-    theorem $havocEq:ident ($c $tQ : MachineData) (h : $frame $c $tQ)
+    $[$vis?:visibility]? theorem $havocEq:ident ($c $tQ : MachineData) (h : $frame $c $tQ)
         (hr : $(regField tQ `rsp) = $(regField c `rsp)) : $havoc $c $tQ = $tQ := by
       obtain ⟨hR, hW⟩ := h
       simp only [$havoc:ident]
@@ -392,23 +394,24 @@ meta def funspecTheorem (sig : TSyntax `funspecSig) (group : Array (TSyntax `fun
   elabWhere name wdecls
 
 macro_rules
-  | `(funspec $sig:funspecSig) => do
-    let (go, thm) ← funspecTheorem sig #[sig]
-    return mkNullNode #[← `(funspec_prelude $sig:funspecSig), go, thm]
+  | `($[$vis?:visibility]? funspec $sig:funspecSig) => do
+    let (go, thm) ← funspecTheorem vis? sig #[sig]
+    return mkNullNode #[← `(funspec_prelude $[$vis?:visibility]? $sig:funspecSig), go, thm]
 
 macro_rules
   | `(mutual $elems* end) => do
     unless elems.any (·.raw.isOfKind ``funspecCmd) do Macro.throwUnsupported
     let group : Array (TSyntax `funspecSig) :=
-      elems.filterMap fun e => if e.raw.isOfKind ``funspecCmd then some ⟨e.raw[1]⟩ else none
+      elems.filterMap fun e => if e.raw.isOfKind ``funspecCmd then some ⟨e.raw[2]⟩ else none
     let mut pre : Array Syntax := #[]
     let mut inner : Array Syntax := #[]
     let mut auxs : Array Syntax := #[]
     for e in elems do
       if e.raw.isOfKind ``funspecCmd then
-        let sig : TSyntax `funspecSig := ⟨e.raw[1]⟩
-        pre := pre.push (← `(funspec_prelude $sig:funspecSig))
-        let (go, thm) ← funspecTheorem sig group
+        let sig : TSyntax `funspecSig := ⟨e.raw[2]⟩
+        let vis? : Option (TSyntax ``Lean.Parser.Command.visibility) := e.raw[0].getOptional?.map (⟨·⟩)
+        pre := pre.push (← `(funspec_prelude $[$vis?:visibility]? $sig:funspecSig))
+        let (go, thm) ← funspecTheorem vis? sig group
         auxs := auxs.push go
         inner := inner.push thm
       else
