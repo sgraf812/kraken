@@ -419,7 +419,8 @@ grind_pattern Blocks.Inside.base_add_sub => Blocks.Inside (a + x - y) n ((a, len
 grind_pattern Blocks.Inside.base_add_add => Blocks.Inside (a + c + x) n ((a, len) :: bs)
 grind_pattern Blocks.Inside.sub => Blocks.Inside (p - x) n ((a, len) :: bs), p - a
 grind_pattern Blocks.Inside.sub_sub => Blocks.Inside (p - x - y) n ((a, len) :: bs), p - a
-grind_pattern Blocks.Inside.mono => Blocks.Inside addr n ((a, len) :: bs), Blocks.Inside addr n ((a, len') :: bs)
+grind_pattern Blocks.Inside.mono => Blocks.Inside addr n ((a, len) :: bs), Blocks.Inside addr n ((a, len') :: bs) where
+  len =/= len'
 grind_pattern Blocks.Inside.add_base_add => Blocks.Inside (c + a + x) n ((a, len) :: bs)
 grind_pattern Blocks.Inside.base_add_add_wrap => Blocks.Inside (a + c + x) n ((a, len) :: bs)
 grind_pattern Blocks.Inside.add_base_add_wrap => Blocks.Inside (c + a + x) n ((a, len) :: bs)
@@ -917,6 +918,11 @@ theorem Mapped.of_inside_pair {w : Nat} {m : Mem w} {x d : BitVec w} {n k : Nat}
     (h : Mapped [(d, k)] m) (hx : Blocks.Inside x n [(d, k)]) : Mapped [(x, n)] m :=
   h.of_inside hx
 
+theorem Mapped.of_inside_cons_cons {w : Nat} {m : Mem w} {x : BitVec w} {n : Nat} {p q : BitVec w × Nat}
+    {bs : List (BitVec w × Nat)} (h : Mapped (p :: q :: bs) m) (hx : Blocks.Inside x n (p :: q :: bs)) :
+    Mapped [(x, n)] m :=
+  h.of_inside hx
+
 grind_pattern Blocks.Inside.ofStackSlots => Blocks.Inside (UInt64.toBitVec rsp - x) n (Block.ofStackSlots rsp k :: bs)
 grind_pattern Blocks.Disjoint.ofStackSlots => Blocks.Disjoint [(a, n)] [Block.ofStackSlots (UInt64.ofBitVec a) k]
 grind_pattern WritesOnly.refl => WritesOnly bs m m
@@ -935,6 +941,7 @@ grind_pattern WritesOnly.loadInt => WritesOnly bs m m', Mem.loadInt m' a n
 grind_pattern Blocks.Disjoint.of_inside_left =>
   Blocks.Disjoint [(x, n)] [(d, k)], Blocks.Disjoint bs [(d, k)] where
   guard Blocks.Disjoint bs [(d, k)]
+  bs =/= [(x, n)]
 grind_pattern Blocks.Disjoint.of_inside_right_pair =>
   Blocks.Disjoint [(x, n)] [(d, k)], Blocks.Disjoint [(x, n)] [(d', k')] where
   guard Blocks.Disjoint [(x, n)] [(d', k')]
@@ -945,6 +952,8 @@ grind_pattern Blocks.Disjoint.of_inside_right' =>
 grind_pattern Mapped.of_inside_pair => Mapped [(x, n)] m, Mapped [(d, k)] m where
   guard Mapped [(d, k)] m
   k =/= n
+grind_pattern Mapped.of_inside_cons_cons => Mapped [(x, n)] m, Mapped (p :: q :: bs) m where
+  guard Mapped (p :: q :: bs) m
 
 theorem loadInt_storeInt_of_disjoint {w : Nat} {m : Mem w} {a x : BitVec w} {n k : Nat}
     (hd : Blocks.Disjoint [(x, k)] [(a, n)]) (v : Int) :
@@ -980,6 +989,8 @@ theorem loadInt_storeInt_add {w : Nat} {m : Mem w} {b c d : BitVec w} {n k : Nat
       (by rwa [show b + c - (b + d) = c - d by grind])) v
 
 grind_pattern loadInt_storeInt_add => Mem.loadInt (Mem.storeInt m (b + c) n v) (b + d) k
+
+grind_pattern loadInt_storeInt_of_disjoint => Mem.loadInt (Mem.storeInt m a n v) x k
 
 theorem loadInt_storeInt_of_inside {w : Nat} {m : Mem w} {a x : BitVec w} {n k : Nat}
     {bs₁ bs₂ : List (BitVec w × Nat)} (hd : Blocks.Disjoint bs₁ bs₂) (hx : Blocks.Inside x k bs₁)
@@ -1162,6 +1173,12 @@ theorem WritesOnly.loadBytes {w : Nat} {bs : List (BitVec w × Nat)} {m m' : Mem
     (h : WritesOnly bs m m') (hd : Blocks.Disjoint [(a, n)] bs) : m'.loadBytes a n = m.loadBytes a n :=
   loadBytes_congr fun _ hi => h.1 _ (hd _ ((Blocks.Inside.base (Nat.le_refl n)).add_ofNat hi))
 
+theorem loadBytes_storeInt_of_disjoint {w : Nat} {m : Mem w} {a x : BitVec w} {n k : Nat}
+    (hd : Blocks.Disjoint [(x, k)] [(a, n)]) (v : Int) : (m.storeInt a n v).loadBytes x k = m.loadBytes x k :=
+  loadBytes_congr fun _ hi =>
+    (Blocks.Inside.base (Nat.le_refl n)).get?_storeInt
+      (hd _ ((Blocks.Inside.base (Nat.le_refl k)).add_ofNat hi)) v
+
 theorem loadBytes_storeInt_of_inside {w : Nat} {m : Mem w} {a x : BitVec w} {n k : Nat}
     {bs₁ bs₂ : List (BitVec w × Nat)} (hd : Blocks.Disjoint bs₁ bs₂) (hx : Blocks.Inside x k bs₁)
     (ha : Blocks.Inside a n bs₂) (v : Int) : (m.storeInt a n v).loadBytes x k = m.loadBytes x k :=
@@ -1186,8 +1203,9 @@ grind_pattern loadInt_restrict_of_inside => Mem.loadInt (restrict y bs) a n
 grind_pattern loadBytes_havoc_of_disjoint => Mem.loadBytes (havoc m bs y) a n
 grind_pattern loadBytes_havoc_of_inside => Mem.loadBytes (havoc m bs y) a n
 grind_pattern loadBytes_restrict_of_inside => Mem.loadBytes (restrict y bs) a n
-grind_pattern Mapped.havoc => Mapped cs m, havoc m bs y
-grind_pattern WritesOnly.havoc => havoc m bs y
+grind_pattern WritesOnly.havoc => havoc m bs y where
+  m =/= restrict _ _
+grind_pattern loadBytes_storeInt_of_disjoint => Mem.loadBytes (Mem.storeInt m a n v) x k
 grind_pattern WritesOnly.loadBytes => WritesOnly bs m m', Mem.loadBytes m' a n
 grind_pattern loadBytes_storeInt_of_inside => Mem.loadBytes (Mem.storeInt m a n v) x k, Blocks.Disjoint bs₁ bs₂ where
   guard Blocks.Disjoint bs₁ bs₂

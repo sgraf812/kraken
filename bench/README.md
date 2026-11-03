@@ -27,11 +27,11 @@ stepping tactic and a discharge tactic.
 | segadc | 40 | 64 | 20 |
 | segadc | 80 | 121 | 37 |
 | segadc | 120 | 192 | 79 |
-| manycalls | 8 | 922 | 17 |
-| manycalls | 16 | 1596 | 30 |
-| manycalls | 32 | 3150 | 78 |
-| changingframes | 8 | 2019 | 25 |
-| changingframes | 16 | 4817 | 48 |
+| manycalls | 8 | 891 | 21 |
+| manycalls | 16 | 1393 | 41 |
+| manycalls | 32 | 2476 | 119 |
+| changingframes | 8 | 1920 | 25 |
+| changingframes | 16 | 4263 | 72 |
 
 `segadc` states a triple for `mov $0, %rax; add $0, %rax; mov $3, %rbx`
 followed by `n` copies of `adc %rbx, %rax`, with the post

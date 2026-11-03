@@ -188,21 +188,28 @@ theorem wp_call_iff {f : Label} {g : Fragment} (hg : FunDecls.at (label f) = som
     · simp only [hpc, ite_false] at hu ⊢
       exact hu
 
-@[spec] theorem call_spec {f : Label} (hf : (FunDecls.at (label f)).isSome = true) (asz osz : Width)
+@[spec] theorem call_spec {f : Label} (asz osz : Width)
     {Q : Unit → MachineData → Prop} {E : Int64 → MachineData → Prop} :
-    ⦃ fun s => (Mem.loadInt s.dmem (s.regs.get64 .rsp - 8#64) 8).isSome = true
+    ⦃ fun s => Mem.Mapped [(s.regs.rsp.toBitVec - 8#64, 8)] s.dmem
         ∧ ∀ ra, WP.wp (FunDecls.body f) (fun _ _ => False)
           (fun a s' => (a = ra → Q () s') ∧ (a ≠ ra → E a s')) (s.push64 ra) ⦄
       (Directive.instr (.regular asz osz (.call (.rel (.sub (.label f) .after_current_instruction)))))
     ⦃ Q; E ⦄ := by
-  obtain ⟨g, hg⟩ := Option.isSome_iff_exists.mp hf
-  refine Triple.intro fun s ⟨hmapped, hbody⟩ => (wp_call_iff hg).mpr fun [h : Embeds _] => ⟨hmapped, ?_⟩
-  refine Program.wp_mono (fun _ h => h) (fun u hu => ?_) (hbody h.embedding.endAddr)
-  by_cases hpc : u.pc = h.embedding.endAddr
-  · simp only [hpc, ite_true]
-    exact hu.1 hpc
-  · simp only [hpc, ite_false]
-    exact hu.2 hpc
+  cases hg : FunDecls.at (label f) with
+  | none =>
+    refine Triple.intro fun s ⟨_, hbody⟩ => ?_
+    have hw := hbody 0
+    simp only [FunDecls.body, hg, Option.map_none, Option.getD_none] at hw
+    exact (Program.wp_nil_elim hw ⟨0, List.nil_isInfixAt _ _⟩).elim
+  | some g =>
+    refine Triple.intro fun s ⟨hmapped, hbody⟩ => (wp_call_iff hg).mpr fun [h : Embeds _] =>
+      ⟨Mem.Mapped.loadInt_isSome hmapped (Mem.Blocks.Inside.base (Nat.le_refl _)), ?_⟩
+    refine Program.wp_mono (fun _ h => h) (fun u hu => ?_) (hbody h.embedding.endAddr)
+    by_cases hpc : u.pc = h.embedding.endAddr
+    · simp only [hpc, ite_true]
+      exact hu.1 hpc
+    · simp only [hpc, ite_false]
+      exact hu.2 hpc
 
 
 end Program.WP

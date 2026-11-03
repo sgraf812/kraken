@@ -26,6 +26,11 @@ variable {σ : Type} {cond : σ → Prop} {body : (σ → Prop) → σ → Prop}
 public theorem While.stop {x : σ} (hc : ¬ cond x) (hd : done x) : While cond body done x :=
   Eventually.done _ ⟨hc, hd⟩
 
+public theorem While.done_of_not {x : σ} (h : While cond body done x) (hc : ¬ cond x) : done x := by
+  cases h with
+  | done _ h => exact h.2
+  | step _ _ ht _ => exact absurd ht.1 hc
+
 public theorem While.step {x : σ} {«continue» : σ → Prop} (hc : cond x) (hb : body «continue» x)
     (h : ∀ y, «continue» y → While cond body done y) : While cond body done x :=
   Eventually.step _ _ ⟨hc, hb⟩ h
@@ -203,7 +208,7 @@ public instance [Host] : FunDecls := ⟨[]⟩
 @[expose] public def FunDecls.at [Host] [FunDecls] (a : Int64) : Option Fragment :=
   FunDecls.funs.find? (·.startAddr == a)
 
-@[simp, grind =] public theorem FunDecls.at_default [Host] (a : Int64) :
+@[simp] public theorem FunDecls.at_default [Host] (a : Int64) :
     (FunDecls.at a : Option Fragment) = none := rfl
 
 public theorem FunDecls.startAddr_of_at [Host] [FunDecls] {a : Int64} {f : Fragment}
@@ -434,6 +439,11 @@ public theorem Program.wp_nil {done exit : MachineState → Prop} {s : MachineDa
   rw [Program.wp_eq]
   intro h
   exact While.stop (by simp [Embedding.endAddr, Embedding.startAddr]) (hd _)
+
+public theorem Program.wp_nil_elim {done exit : MachineState → Prop} {s : MachineData}
+    (h : Program.wp [] done exit s) (e : Embedding []) : done ⟨s, e.startAddr⟩ := by
+  rw [Program.wp_eq] at h
+  exact (@h ⟨e⟩).done_of_not (by simp [Embedding.endAddr, Embedding.startAddr])
 
 end
 
