@@ -1,24 +1,24 @@
 /-
 Carry chain on the deep embedding: `n` add-with-carry instructions stepped by
-the specs of the state wp of Kraken/StateWP.lean. The chain holds no jump, so
-the goal quantifies over the label table: the run computes the sum under
-every table.
+the directive specs of `Program.WP`. The chain holds no label, so the goal
+holds under every host and every function table.
 -/
-import Kraken.StateWP
+module
 
-open Kraken
+public import Kraken.StateCfg
+
 open Std.WP
-open scoped StateWP
+open scoped Program.WP
 
 namespace SegAdcChain
 
-def chain : Nat → Program
+@[expose] public def chain : Nat → Program
   | 0 => []
   | n + 1 =>
     Directive.instr (.regular .W64 .W64
       (.adc (.reg (.low .rax .W64)) (.regOrMem (.reg (.low .rbx .W64))))) :: chain n
 
-def prog (n : Nat) : Program :=
+@[expose] public def prog (n : Nat) : Program :=
   Directive.instr (.regular .W64 .W64
       (.mov (.reg (.low .rax .W64)) (.imm (.int64 0))))
     :: Directive.instr (.regular .W64 .W64
@@ -27,10 +27,10 @@ def prog (n : Nat) : Program :=
       (.mov (.reg (.low .rbx .W64)) (.imm (.int64 3))))
     :: chain n
 
-def Goal (n : Nat) : Prop :=
-  ∀ [LinkedProgram],
-    ⦃ fun _ => True ⦄
-    prog n
-    ⦃ fun _ s => s.regs.get64 .rax = BitVec.ofNat 64 (3 * n) ⦄
+@[expose] public def Goal (n : Nat) : Prop :=
+  ∀ [Host] [FunDecls],
+    Triple (prog n) (fun (_ : MachineData) => True)
+      (fun (_ : Unit) (s' : MachineData) => s'.regs.rax.toNat = 3 * n)
+      (fun (_ : Int64) (_ : MachineData) => False)
 
 end SegAdcChain

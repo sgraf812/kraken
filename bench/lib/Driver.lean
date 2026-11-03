@@ -40,7 +40,11 @@ def driver (goal : Name) (unfold : List Name) (n : Nat) (discharge : MetaM (TSyn
       for mvarId in mvarIds do
         let ([], _) ← Lean.Elab.runTactic mvarId discharge.raw {} {}
           | throwError "{dischargePp} failed to solve {mvarId}"
+  if (← getThe Core.State).messages.hasErrors then
+    throwError "errors logged at {goal} {n}"
   let (expr, instMs) ← timeItMs (instantiateMVars mvar)
+  if expr.hasSorry then
+    throwError "the proof of {goal} {n} contains sorry"
   -- Apply the `shareCommonPreDefs` structural sharing before sending the term to the
   -- kernel. If we don't do this, kernel checking time balloons.
   let expr := Lean.ShareCommon.shareCommon expr
@@ -69,6 +73,7 @@ def driver (goal : Name) (unfold : List Name) (n : Nat) (discharge : MetaM (TSyn
     while stack.size > 0 do
       let (t, d) := stack.back!; stack := stack.pop
       if d > maxD then maxD := d
+      if let .const n _ := t then counts := counts.insert n (counts.getD n 0 + 1)
       if seen.contains t then continue
       seen := seen.insert t
       match t with
@@ -76,7 +81,6 @@ def driver (goal : Name) (unfold : List Name) (n : Nat) (discharge : MetaM (TSyn
       | .lam _ ty b _ | .forallE _ ty b _ => stack := (stack.push (ty, d+1)).push (b, d+1)
       | .letE _ ty v b _ => stack := ((stack.push (ty, d+1)).push (v, d+1)).push (b, d+1)
       | .proj _ _ b | .mdata _ b => stack := stack.push (b, d+1)
-      | .const n _ => counts := counts.insert n (counts.getD n 0 + 1)
       | _ => pure ()
     let arr := counts.toArray.qsort (fun a b => a.2 > b.2)
     return (maxD, arr.take 8)

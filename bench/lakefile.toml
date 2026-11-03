@@ -19,13 +19,13 @@ precompileModules = true
 srcDir = "lib"
 globs = ["Driver"]
 
-# One recursive family per module: add, dec, adc, multireg, mov.
+# One recursive family per module.
 [[lean_lib]]
 name = "Cases"
-globs = ["Cases", "Cases.*"]
+globs = ["Cases.*"]
 
 # One openable benchmark per module; open a file to run its `#eval`.
 [[lean_lib]]
 name = "Bench"
-globs = ["add", "dec", "adc", "segadc", "multireg", "mov", "letspec"]
+globs = ["segadc", "manycalls", "changingframes"]
 moreLeanArgs = ["--tstack=102400"]
