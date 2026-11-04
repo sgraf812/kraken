@@ -39,7 +39,9 @@ syntax (name := cfgExit) "cfg_exit" : grind
 macro_rules
   | `(grind| cfg_exit) => `(grind| skip)
 
-syntax (name := kfinish) "kfinish" : grind
+syntax (name := kfinish) "kfinish" (ppSpace Lean.Parser.Tactic.configItem)*
+    (ppSpace &"only")? (" [" withoutPosition(Lean.Parser.Tactic.grindParam,*) "]")? : grind
 
 macro_rules
-  | `(grind| kfinish) => `(grind| (cfg_exit; finish))
+  | `(grind| kfinish $cfg* $[only%$o]? $[[$ps,*]]?) =>
+    `(grind| (cfg_exit; finish $cfg* $[only%$o]? $[[$ps,*]]?))
