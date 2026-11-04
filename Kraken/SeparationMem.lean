@@ -365,6 +365,11 @@ theorem Blocks.Inside.ptr_add {w : Nat} {a p x : BitVec w} {n len : Nat}
   have := Nat.mod_le ((p - a).toNat + x.toNat) (2 ^ w)
   omega
 
+theorem Blocks.Inside.ptr {w : Nat} {a p : BitVec w} {n len : Nat}
+    {bs : List (BitVec w × Nat)} (h : (p - a).toNat + n ≤ len) :
+    Blocks.Inside p n ((a, len) :: bs) := by
+  simpa using Blocks.Inside.ptr_add (x := 0#w) (bs := bs) (by simpa using h)
+
 /-- A load inside one of the blocks succeeds. -/
 theorem Blocks.loadInt_isSome {w : Nat} {bs : List (BitVec w × Nat)} {F : Mem w → Prop}
     {m : Mem w} {addr : BitVec w} {n : Nat}
@@ -428,6 +433,7 @@ grind_pattern Blocks.Inside.add_base_add_wrap => Blocks.Inside (c + a + x) n ((a
 -- invariant about the pointer puts there. Otherwise any pointer into any block
 -- would match, and ruling out the wrong blocks swamps the arithmetic.
 grind_pattern Blocks.Inside.ptr_add => Blocks.Inside (p + x) n ((a, len) :: bs), p - a
+grind_pattern Blocks.Inside.ptr => Blocks.Inside p n ((a, len) :: bs), p - a
 grind_pattern Blocks.loadInt_isSome => sep (Blocks bs) F m, Mem.loadInt m addr n
 grind_pattern Blocks.storeInt => sep (Blocks bs) F m, Mem.storeInt m addr n v
 
@@ -517,7 +523,7 @@ theorem Contains.iff {w : Nat} {m : Mem w} {a : BitVec w} {bs : List UInt8} :
 theorem Contains.of_length {w : Nat} {m : Mem w} {a : BitVec w} {bs : List UInt8}
     (h : bs.length = 0) : Contains m a bs := Contains.iff.mpr fun i hi => by omega
 
-private theorem Contains.loadInt {w : Nat} {m : Mem w} {a addr : BitVec w} {bs : List UInt8}
+theorem Contains.loadInt {w : Nat} {m : Mem w} {a addr : BitVec w} {bs : List UInt8}
     (h : Contains m a bs) (hi : (addr - a).toNat < bs.length) :
     m.loadInt addr 1 = some (bs[(addr - a).toNat]!.toNat : Int) := by
   have := Contains.iff.mp h _ hi
@@ -618,6 +624,14 @@ theorem Contains.extend_back {w : Nat} {m : Mem w} {b q : BitVec w} {bs : List U
 theorem Contains.loadBytes_eq {w : Nat} {m : Mem w} {a : BitVec w} {bs : List UInt8} {n : Nat}
     (h : Contains m a bs) (hn : bs.length = n) : m.loadBytes a n = some bs := hn ▸ h
 
+theorem Contains.loadInt_eq {w : Nat} {m : Mem w} {a : BitVec w} {bs : List UInt8} {n : Nat}
+    (h : Contains m a bs) (hn : bs.length = n) : m.loadInt a n = some (Int.ofBytes bs) := by
+  rw [Mem.loadInt, h.loadBytes_eq hn]; rfl
+
+theorem Contains.of_sep {w : Nat} {m : Mem w} {a : BitVec w} {bs : List UInt8} {F : Mem w → Prop}
+    (h : m =⋆ Bytes a bs ⋆ F) (hw : bs.length ≤ 2 ^ w) : Contains m a bs :=
+  loadBytes_sep bs a bs.length _ m h rfl hw
+
 attribute [grind =] Int.toBytes_length
 
 grind_pattern Blocks.storeInt_head => sep (Blocks ((a, n) :: l)) F m, Mem.storeInt m a n v
@@ -651,6 +665,12 @@ def WritesOnly {w : Nat} (bs : List (BitVec w × Nat)) (m m' : Mem w) : Prop :=
 
 def Mapped {w : Nat} (bs : List (BitVec w × Nat)) (m : Mem w) : Prop :=
   ∀ b, Blocks.Inside b 1 bs → (m.get? b).isSome
+
+theorem Blocks.mapped {w : Nat} {bs : List (BitVec w × Nat)} {F : Mem w → Prop} {m : Mem w}
+    (h : m =⋆ Blocks bs ⋆ F) : Mapped bs m := fun b hb => by
+  have := Blocks.loadInt_isSome h hb
+  rw [Mem.loadInt_one] at this
+  simpa using this
 
 theorem UnchangedOutside.loadInt_singleton {w : Nat} {m m' : Mem w} {a b : BitVec w} {n len : Nat}
     (h : UnchangedOutside [(b, len)] m m') (hl : len ≤ (a - b).toNat) (hw : (a - b).toNat + n ≤ 2 ^ w) :
