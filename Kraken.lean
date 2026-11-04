@@ -21,6 +21,7 @@ public import Kraken.X64.Registers
 public import Kraken.X64.WP
 public import Kraken.KVCGen
 public import Kraken.X64.WP.Instance
+public import Kraken.X64.WP.Spec
 public import Kraken.StateCfg
 import Kraken.X64.Examples.Examples
 import Kraken.X64.Examples.WP.AluMem

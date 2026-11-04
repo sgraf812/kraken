@@ -6,7 +6,7 @@ with the slot at `136(%rdx)` mapped and holding `v`. The proposition is the
 baseline statement `alu_mem_example_correct`, over the same program and any
 layout, proved by `vcgen` on the wp of the program at the start state.
 -/
-public import Kraken.X64.WP.Instance
+public import Kraken.X64.WP.Spec
 import Kraken.SeparationMem
 import Kraken.X64.Examples.Examples
 
