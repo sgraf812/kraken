@@ -28,13 +28,14 @@ public funspec poke_spec "poke" [Host] [FunDecls] [Embeds poke]
     ensures s' => True
     autoframes calling_conv SysV preserves rax rcx rdx rsi rdi r8 r9 r10 r11
       writes s.regs.rdi.toBitVec[*...<8] := by
-  refine Program.Triple.cfg
-    (fun s₀ => fun
-      | "poke", s' => s' = s₀
-      | _, _ => False)
-    (fun _ _ _ => 0) fun s₀ ⟨h₀, _⟩ => ?_
-  cfg_cases
-  all_goals vcgen with kfinish
+  refine Triple.intro fun s₀ ⟨h₀, _⟩ => ?_
+  vcgen
+    invariants
+    · fun l s' => match l with
+        | "poke" => s' = s₀
+        | _ => False
+    · fun _ _ => 0
+    simp [poke] with kfinish
 
 @[expose] public def pokes : Nat → Program
   | 0 => [Directive.instr (.regular .W64 .W64 .ret)]

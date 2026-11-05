@@ -38,13 +38,14 @@ funspec swap_spec "swap" [Host] [FunDecls] [Embeds swap]
     ensures s' => s'.regs.rax.toBitVec = s.regs.rbx.toBitVec
       ∧ s'.regs.rbx.toBitVec = s.regs.rax.toBitVec
     autoframes preserves rcx rdx rsi rdi rbp r8 r9 r10 r11 r12 r13 r14 r15 := by
-  refine Program.Triple.cfg
-    (fun s₀ => fun
-      | "swap", s' => s' = s₀
-      | _, _ => False)
-    (fun _ _ _ => 0) fun s₀ ⟨h₀, _⟩ => ?_
-  cfg_cases
-  all_goals vcgen with kfinish
+  refine Triple.intro fun s₀ ⟨h₀, _⟩ => ?_
+  vcgen
+    invariants
+    · fun l s' => match l with
+        | "swap" => s' = s₀
+        | _ => False
+    · fun _ _ => 0
+    simp [swap] with kfinish
 
 theorem pswap_correct [Host] (hp : pswap.IsInfix Host.prog)
     (s : MachineData)
@@ -64,14 +65,14 @@ theorem pswap_correct [Host] (hp : pswap.IsInfix Host.prog)
     show List.find? _ [_] = _
     simp [hstart]
   apply Program.WP.step1_of_wp hp
-  refine Triple.le_wp (Program.Triple.cfg (P := (· = s)) (fun _ l s' => match l with
+  vcgen
+    invariants
+    · fun l s' => match l with
       | "start" => s' = s
       | "done" => s'.regs.rax.toBitVec = s.regs.rax.toBitVec
           ∧ s'.regs.rbx.toBitVec = s.regs.rbx.toBitVec ∧ s'.regs.rsp.toBitVec = s.regs.rsp.toBitVec
-      | _ => False)
-    (fun _ _ _ => 0) fun _ h₀ => ?_) s rfl
-  subst h₀
-  cfg_cases
-  all_goals vcgen with kfinish
+      | _ => False
+    · fun _ _ => 0
+    simp [pswap, swap] with kfinish
 
 end State

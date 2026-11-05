@@ -15,11 +15,11 @@ namespace State.Jumps
 example [Host] [FunDecls] (l : Label) (Q : Unit → MachineData → Prop)
     (E : Int64 → MachineData → Prop) (s : MachineData) (hq : Q () s) :
     WP.wp ([Directive.label l]) Q E s := by
-  refine Triple.le_wp (Program.Triple.cfg (P := (· = s))
-    (fun _ _ s' => Q () s') (fun _ _ _ => 0) fun _ h₀ => ?_) s rfl
-  subst h₀
-  cfg_cases
-  all_goals vcgen with kfinish
+  vcgen [-Program.WP.Spec.cons]
+    invariants
+    · fun _ s' => Q () s'
+    · fun _ _ => 0
+    with kfinish
 
 def jmpNext : Program := parse("
   jmp next
@@ -28,11 +28,11 @@ next:
 
 example [Host] [FunDecls] (s : MachineData) :
     WP.wp jmpNext (fun _ t => t.regs.get64 .rax = 2) (fun _ _ => False) s := by
-  refine Triple.le_wp (Program.Triple.cfg (P := (· = s))
-    (fun _ _ s' => s'.regs.rsp = s.regs.rsp) (fun _ _ _ => 0) fun _ h₀ => ?_) s rfl
-  subst h₀
-  cfg_cases
-  all_goals vcgen with kfinish
+  vcgen
+    invariants
+    · fun _ s' => s'.regs.rsp = s.regs.rsp
+    · fun _ _ => 0
+    simp [jmpNext] with kfinish
 
 def decMid : Program := parse("
 top:
@@ -42,11 +42,11 @@ top:
 
 example [Host] [FunDecls] (s : MachineData) (h : 0 < s.regs.rcx.toNat) :
     WP.wp decMid (fun _ t => t.regs.rcx = 0 ∧ t.regs.rax = 1) (fun _ _ => False) s := by
-  refine Triple.le_wp (Program.Triple.cfg (P := (· = s))
-    (fun _ _ s' => 0 < s'.regs.rcx.toNat ∧ s'.regs.rsp = s.regs.rsp) (fun _ _ s' => s'.regs.rcx.toNat) fun _ h₀ => ?_) s rfl
-  subst h₀
-  cfg_cases
-  all_goals vcgen with kfinish
+  vcgen
+    invariants
+    · fun _ s' => 0 < s'.regs.rcx.toNat ∧ s'.regs.rsp = s.regs.rsp
+    · fun _ s' => s'.regs.rcx.toNat
+    simp [decMid] with kfinish
 
 def jmpOver : Program := parse("
   jmp done
@@ -56,11 +56,11 @@ done:
 
 example [Host] [FunDecls] (s : MachineData) (h : s.regs.rbx = 0) :
     WP.wp jmpOver (fun _ t => t.regs.rbx = 0 ∧ t.regs.rax = 2) (fun _ _ => False) s := by
-  refine Triple.le_wp (Program.Triple.cfg (P := (· = s))
-    (fun _ _ s' => s'.regs.rbx = 0 ∧ s'.regs.rsp = s.regs.rsp) (fun _ _ _ => 0) fun _ h₀ => ?_) s rfl
-  subst h₀
-  cfg_cases
-  all_goals vcgen with kfinish
+  vcgen
+    invariants
+    · fun _ s' => s'.regs.rbx = 0 ∧ s'.regs.rsp = s.regs.rsp
+    · fun _ _ => 0
+    simp [jmpOver] with kfinish
 
 def jmpGap : Program := parse("
   jmp b
@@ -70,11 +70,11 @@ b:
 
 example [Host] [FunDecls] (s : MachineData) :
     WP.wp jmpGap (fun _ t => t.regs.rax = 2) (fun _ _ => False) s := by
-  refine Triple.le_wp (Program.Triple.cfg (P := (· = s))
-    (fun _ _ s' => s'.regs.rsp = s.regs.rsp) (fun _ _ _ => 0) fun _ h₀ => ?_) s rfl
-  subst h₀
-  cfg_cases
-  all_goals vcgen with kfinish
+  vcgen
+    invariants
+    · fun _ s' => s'.regs.rsp = s.regs.rsp
+    · fun _ _ => 0
+    simp [jmpGap] with kfinish
 
 def jccOver : Program := parse("
   dec %rcx
@@ -85,11 +85,11 @@ done:
 
 example [Host] [FunDecls] (s : MachineData) :
     WP.wp jccOver (fun _ t => t.regs.rax = 2) (fun _ _ => False) s := by
-  refine Triple.le_wp (Program.Triple.cfg (P := (· = s))
-    (fun _ _ s' => s'.regs.rsp = s.regs.rsp) (fun _ _ _ => 0) fun _ h₀ => ?_) s rfl
-  subst h₀
-  cfg_cases
-  all_goals vcgen with kfinish
+  vcgen
+    invariants
+    · fun _ s' => s'.regs.rsp = s.regs.rsp
+    · fun _ _ => 0
+    simp [jccOver] with kfinish
 
 def countdown : Program := parse("
 top:
@@ -99,11 +99,11 @@ top:
 example [Host] (hp : countdown.IsInfix Host.prog) (s : MachineData) (h : 0 < s.regs.rcx.toNat) :
     Eventually (step1 Host.exe) (fun st => st.data.regs.rcx = 0) ⟨s, startAddr hp⟩ := by
   apply Program.WP.step1_of_wp hp
-  refine Triple.le_wp (Program.Triple.cfg (P := (· = s))
-    (fun _ _ s' => 0 < s'.regs.rcx.toNat ∧ s'.regs.rsp = s.regs.rsp) (fun _ _ s' => s'.regs.rcx.toNat) fun _ h₀ => ?_) s rfl
-  subst h₀
-  cfg_cases
-  all_goals vcgen with kfinish
+  vcgen
+    invariants
+    · fun _ s' => 0 < s'.regs.rcx.toNat ∧ s'.regs.rsp = s.regs.rsp
+    · fun _ s' => s'.regs.rcx.toNat
+    simp [countdown] with kfinish
 
 def skip : Program := parse("
 start:
@@ -116,11 +116,11 @@ done:
 example [Host] (hp : skip.IsInfix Host.prog) (s : MachineData) :
     Eventually (step1 Host.exe) (fun st => st.data.regs.rax = 2) ⟨s, startAddr hp⟩ := by
   apply Program.WP.step1_of_wp hp
-  refine Triple.le_wp (Program.Triple.cfg (P := (· = s))
-    (fun _ _ s' => s'.regs.rsp = s.regs.rsp) (fun _ _ _ => 0) fun _ h₀ => ?_) s rfl
-  subst h₀
-  cfg_cases
-  all_goals vcgen with kfinish
+  vcgen
+    invariants
+    · fun _ s' => s'.regs.rsp = s.regs.rsp
+    · fun _ _ => 0
+    simp [skip] with kfinish
 
 def fnReuse : Program := parse("
 entry:
@@ -150,8 +150,9 @@ example [Host] (hp : fnReuse.IsInfix Host.prog) (s : MachineData) :
     exact Host.addrOf_ne (m := k + 6) (List.isInfixAt_iff_getElem?.mp hk 6 (by decide))
       (by rintro ⟨⟩) (by omega) (by omega)
   apply Program.WP.step1_of_wp hp
-  refine Triple.le_wp (Program.Triple.cfg (P := (· = s))
-    (fun _ l s' => match l with
+  vcgen
+    invariants
+    · fun l s' => match l with
       | "entry" => s' = s
       | "cont1" => s'.regs.rsp = s.regs.rsp ∧ s'.regs.rax = s.regs.r8 + s.regs.r9
       | "add" => s'.regs.rsp = s.regs.rsp
@@ -159,12 +160,9 @@ example [Host] (hp : fnReuse.IsInfix Host.prog) (s : MachineData) :
             ∨ (Int64.ofBitVec (s'.regs.get64 .rcx) = label "cont2" ∧ s'.regs.rdi = s.regs.r8 + s.regs.r9
               ∧ s'.regs.rsi = s.regs.r8 + s.regs.r9))
       | "cont2" => s'.regs.rax = 2 * (s.regs.r8 + s.regs.r9)
-      | _ => False)
-    (fun _ l s' => if l = "entry" ∨ (l = "add" ∧ Int64.ofBitVec (s'.regs.get64 .rcx) = label "cont1") then 1 else 0)
-    fun _ h₀ => ?_) s rfl
-  subst h₀
-  cfg_cases
-  all_goals vcgen with kfinish
+      | _ => False
+    · fun l s' => if l = "entry" ∨ (l = "add" ∧ Int64.ofBitVec (s'.regs.get64 .rcx) = label "cont1") then 1 else 0
+    simp [fnReuse] with kfinish
 
 def retJump : Program := parse("
   leaq target(%rip), %rax
@@ -176,10 +174,10 @@ target:
 
 example [Host] [FunDecls] (s : MachineData) (hm : Mem.Mapped [(s.regs.get64 .rsp - 8#64, 8)] s.dmem) :
     WP.wp retJump (fun _ t => t.regs.get64 .rbx = 1) (fun _ _ => False) s := by
-  refine Triple.le_wp (Program.Triple.cfg (P := (· = s))
-    (fun _ _ s' => s'.regs.get64 .rsp = s.regs.get64 .rsp) (fun _ _ _ => 0) fun _ h₀ => ?_) s rfl
-  subst h₀
-  cfg_cases
-  all_goals vcgen with kfinish
+  vcgen
+    invariants
+    · fun _ s' => s'.regs.get64 .rsp = s.regs.get64 .rsp
+    · fun _ _ => 0
+    simp [retJump] with kfinish
 
 end State.Jumps

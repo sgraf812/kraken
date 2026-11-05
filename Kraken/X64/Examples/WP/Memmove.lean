@@ -78,17 +78,18 @@ funspec memmove_spec "memmove" [Host] [FunDecls] [Embeds memmove]
       = s.dmem.loadBytes s.regs.rsi.toBitVec s.regs.rdx.toNat
     autoframes calling_conv SysV preserves rcx r8 r9 r10 r11
       writes s.regs.rdi.toBitVec[*...<s.regs.rdx.toNat] := by
-  refine Program.Triple.cfg
-    (fun s₀ => fun
-      | "memmove", s' => s' = s₀
-      | "bwd", s' => MMBwd s s₀ s'
-      | "bdone", s' => MMBwd s s₀ s' ∧ s'.regs.rdx.toBitVec = 0
-      | "fwd", s' => MMFwd s s₀ s'
-      | "fdone", s' => MMFwd s s₀ s' ∧ s'.regs.rdx.toBitVec = 0
-      | _, _ => False)
-    (fun _ _ s' => s'.regs.rdx.toNat) fun s₀ ⟨h₀, _⟩ => ?_
-  cfg_cases
-  all_goals vcgen with kfinish
+  refine Triple.intro fun s₀ ⟨h₀, _⟩ => ?_
+  vcgen
+    invariants
+    · fun l s' => match l with
+        | "memmove" => s' = s₀
+        | "bwd" => MMBwd s s₀ s'
+        | "bdone" => MMBwd s s₀ s' ∧ s'.regs.rdx.toBitVec = 0
+        | "fwd" => MMFwd s s₀ s'
+        | "fdone" => MMFwd s s₀ s' ∧ s'.regs.rdx.toBitVec = 0
+        | _ => False
+    · fun _ s' => s'.regs.rdx.toNat
+    simp [memmove] with kfinish
 where
   MMFwd (s s₀ s' : MachineData) : Prop :=
     s.regs.rdi.toNat ≤ s.regs.rsi.toNat
@@ -141,16 +142,16 @@ theorem memmove_correct [Host] (hp : memmoveProg.IsInfix Host.prog)
     show List.find? _ [_] = _
     simp [hstart]
   apply Program.WP.step1_of_wp hp
-  refine Triple.le_wp (Program.Triple.cfg (P := (· = s)) (fun _ l s' => match l with
+  vcgen
+    invariants
+    · fun l s' => match l with
       | "start" => s' = s
       | "done" => s'.regs.rsp = s.regs.rsp
           ∧ s'.dmem.loadBytes s.regs.rdi.toBitVec s.regs.rdx.toNat = some bs
           ∧ Mem.WritesOnly [Mem.Block.ofStackSlots s.regs.rsp 0, (s.regs.rdi.toBitVec, s.regs.rdx.toNat)]
               s.dmem s'.dmem
-      | _ => False)
-    (fun _ _ _ => 0) fun _ h₀ => ?_) s rfl
-  subst h₀
-  cfg_cases
-  all_goals vcgen with kfinish
+      | _ => False
+    · fun _ _ => 0
+    simp [memmoveProg, memmove] with kfinish
 
 end State

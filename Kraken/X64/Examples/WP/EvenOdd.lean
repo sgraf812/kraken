@@ -48,13 +48,14 @@ funspec even_spec "even" [Host] [FunDecls] [Embeds even] [Embeds odd]
     ensures s' => s'.regs.rax.toNat = (s.regs.rdi.toNat + 1) % 2
     autoframes calling_conv SysV reserve s.regs.rdi.toNat
       preserves rcx rdx rsi r8 r9 r10 r11 := by
-  refine Program.Triple.cfg
-    (fun s₀ => fun
-      | "even", s' => s' = s₀
-      | _, s' => s'.regs = s₀.regs ∧ s'.dmem = s₀.dmem ∧ s.regs.rdi.toNat = 0)
-    (fun _ _ _ => 0) fun s₀ ⟨h₀, _⟩ => ?_
-  cfg_cases
-  all_goals vcgen [odd_spec] with kfinish
+  refine Triple.intro fun s₀ ⟨h₀, _⟩ => ?_
+  vcgen [odd_spec]
+    invariants
+    · fun l s' => match l with
+        | "even" => s' = s₀
+        | _ => s'.regs = s₀.regs ∧ s'.dmem = s₀.dmem ∧ s.regs.rdi.toNat = 0
+    · fun _ _ => 0
+    simp [even] with kfinish
 termination_by s.regs.rdi.toNat
 
 funspec odd_spec "odd" [Host] [FunDecls] [Embeds even] [Embeds odd]
@@ -65,13 +66,14 @@ funspec odd_spec "odd" [Host] [FunDecls] [Embeds even] [Embeds odd]
     ensures s' => s'.regs.rax.toNat = s.regs.rdi.toNat % 2
     autoframes calling_conv SysV reserve s.regs.rdi.toNat
       preserves rcx rdx rsi r8 r9 r10 r11 := by
-  refine Program.Triple.cfg
-    (fun s₀ => fun
-      | "odd", s' => s' = s₀
-      | _, s' => s'.regs = s₀.regs ∧ s'.dmem = s₀.dmem ∧ s.regs.rdi.toNat = 0)
-    (fun _ _ _ => 0) fun s₀ ⟨h₀, _⟩ => ?_
-  cfg_cases
-  all_goals vcgen [even_spec] with kfinish
+  refine Triple.intro fun s₀ ⟨h₀, _⟩ => ?_
+  vcgen [even_spec]
+    invariants
+    · fun l s' => match l with
+        | "odd" => s' = s₀
+        | _ => s'.regs = s₀.regs ∧ s'.dmem = s₀.dmem ∧ s.regs.rdi.toNat = 0
+    · fun _ _ => 0
+    simp [odd] with kfinish
 termination_by s.regs.rdi.toNat
 
 end
@@ -111,13 +113,13 @@ theorem evenOdd_correct [Host] (hp : evenOddProg.IsInfix Host.prog)
     show List.find? _ [_, _] = _
     simp [hse, hso, hne]
   apply Program.WP.step1_of_wp hp
-  refine Triple.le_wp (Program.Triple.cfg (P := (· = s)) (fun _ l s' => match l with
-      | "start" => s' = s
-      | "done" => s'.regs.rax.toNat = (s.regs.rdi.toNat + 1) % 2
-      | _ => False)
-    (fun _ _ _ => 0) fun _ h₀ => ?_) s rfl
-  subst h₀
-  cfg_cases
-  all_goals vcgen [even_spec he ho base sz] with kfinish
+  vcgen [even_spec he ho base sz]
+    invariants
+    · fun l s' => match l with
+        | "start" => s' = s
+        | "done" => s'.regs.rax.toNat = (s.regs.rdi.toNat + 1) % 2
+        | _ => False
+    · fun _ _ => 0
+    simp [evenOddProg, even, odd] with kfinish
 
 end State.EvenOdd

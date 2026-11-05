@@ -7,7 +7,7 @@ computes `rdx = 2 ^ 2 ^ rbx`. The proposition is the baseline's
 `p3_correct` with two more hypotheses: `rax` starts at zero, which the
 statement needs when the loop does not run, and the layout is valid, which
 places the loop's labels. `p3_table` gives the assertion at each label,
-`rbx` is the variant, and `Program.Triple.cfg` leaves one `vcgen` obligation per
+`rbx` is the variant, and `vcgen` through `Program.WP.Spec.cfg` leaves one obligation per
 block.
 -/
 public import Kraken.StateCfg
@@ -56,10 +56,10 @@ theorem p3_correct [Host] (hp : p3.IsInfix Host.prog)
       (fun st => st.data.regs.rdx.toNat = p3_spec s ∧ st.data.regs.rax = 0) ⟨s, startAddr hp⟩ := by
   simp only [p3_spec] at h_bounds ⊢
   apply Program.WP.step1_of_wp hp
-  refine Triple.le_wp (Program.Triple.cfg (P := (· = s)) p3_table (fun _ _ s' => s'.regs.rbx.toNat)
-    fun _ h₀ => ?_) s rfl
-  subst h₀
-  cfg_cases
-  all_goals vcgen with kfinish
+  vcgen
+    invariants
+    · p3_table s
+    · fun _ s' => s'.regs.rbx.toNat
+    simp [p3] with kfinish
 
 end State

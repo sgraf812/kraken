@@ -24,13 +24,14 @@ public funspec touch_spec "touch" [Host] [FunDecls] [Embeds touch]
     requires Mem.Mapped [(s.regs.rsp.toBitVec - 8#64, 8)] s.dmem
     ensures s' => True
     autoframes calling_conv SysV preserves rax rcx rdx rsi rdi r8 r9 r10 r11 := by
-  refine Program.Triple.cfg
-    (fun s₀ => fun
-      | "touch", s' => s' = s₀
-      | _, _ => False)
-    (fun _ _ _ => 0) fun s₀ ⟨h₀, _⟩ => ?_
-  cfg_cases
-  all_goals vcgen with kfinish
+  refine Triple.intro fun s₀ ⟨h₀, _⟩ => ?_
+  vcgen
+    invariants
+    · fun l s' => match l with
+        | "touch" => s' = s₀
+        | _ => False
+    · fun _ _ => 0
+    simp [touch] with kfinish
 
 @[expose] public def calls : Nat → Program
   | 0 =>

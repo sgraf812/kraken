@@ -12,12 +12,12 @@ open scoped Program.WP
 #eval runBenchUsingTactic ``ManyCalls.Goal [``ManyCalls.many, ``ManyCalls.calls]
   `(tactic| (
     intro _ _ _ _ _ _ _ _
-    refine Program.Triple.cfg
-      (fun s₀ => fun
-        | "many", s' => s' = s₀
-        | _, _ => False)
-      (fun _ _ _ => 0) fun s₀ ⟨h₀, _⟩ => ?_
-    cfg_cases
-    all_goals vcgen [ManyCalls.touch_spec] with kfinish))
+    refine Triple.intro fun s₀ ⟨h₀, _⟩ => ?_
+    refine Program.WP.cfg
+      (fun l s' => match l with
+        | "many" => s' = s₀
+        | _ => False)
+      (fun _ _ => 0) ?_
+    vcgen [ManyCalls.touch_spec] with kfinish))
   `(tactic| fail)
   [8, 16, 32]

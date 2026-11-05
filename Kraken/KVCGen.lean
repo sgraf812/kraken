@@ -32,6 +32,14 @@ attribute [vcgen_simp] UInt64.toBitVec_ofBitVec Int64.toBitVec_ofNat BitVec.ofNa
   BitVec.ofInt_toInt Int64.ofBitVec_toBitVec List.cons_append List.nil_append UInt64.toNat_ofBitVec
   Program.labels_nil Program.labels_cons_instr Program.labels_cons_label Program.labels_cons_byteArray
 
+@[vcgen_rintro] theorem List.forall_mem_cons_intro {α : Type _} {G : α → Prop} {a : α} {l : List α}
+    (ha : G a) (hl : ∀ x, x ∈ l → G x) : ∀ x, x ∈ a :: l → G x :=
+  List.forall_mem_cons.mpr ⟨ha, hl⟩
+
+@[vcgen_rintro] theorem List.forall_mem_nil_intro {α : Type _} {G : α → Prop} :
+    ∀ x, x ∈ ([] : List α) → G x :=
+  fun _ h => nomatch h
+
 @[vcgen_simp] theorem MachineState.data_mk (d : MachineData) (pc : Int64) : (⟨d, pc⟩ : MachineState).data = d := rfl
 
 syntax (name := cfgExit) "cfg_exit" : grind

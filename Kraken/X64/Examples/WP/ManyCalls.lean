@@ -39,13 +39,14 @@ funspec touch_spec "touch" [Host] [FunDecls] [Embeds touch]
     requires Mem.Mapped [(s.regs.rsp.toBitVec - 8#64, 8)] s.dmem
     ensures s' => True
     autoframes calling_conv SysV preserves rax rcx rdx rsi rdi r8 r9 r10 r11 := by
-  refine Program.Triple.cfg
-    (fun s₀ => fun
-      | "touch", s' => s' = s₀
-      | _, _ => False)
-    (fun _ _ _ => 0) fun s₀ ⟨h₀, _⟩ => ?_
-  cfg_cases
-  all_goals vcgen with kfinish
+  refine Triple.intro fun s₀ ⟨h₀, _⟩ => ?_
+  vcgen
+    invariants
+    · fun l s' => match l with
+        | "touch" => s' = s₀
+        | _ => False
+    · fun _ _ => 0
+    simp [touch] with kfinish
 
 funspec many_spec "many" [Host] [FunDecls] [Embeds touch] [Embeds many]
     (ht : FunDecls.at (label "touch") = some ⟨touch⟩)
@@ -57,12 +58,13 @@ funspec many_spec "many" [Host] [FunDecls] [Embeds touch] [Embeds many]
       ∧ Mem.Blocks.Disjoint [(s.regs.rdx.toBitVec, 16)] [Mem.Block.ofStackSlots s.regs.rsp 1]
     ensures s' => s'.dmem.loadInt s.regs.rdi.toBitVec 8 = s.dmem.loadInt s.regs.rdi.toBitVec 8
       ∧ s'.dmem.loadBytes s.regs.rdx.toBitVec 16 = s.dmem.loadBytes s.regs.rdx.toBitVec 16 := by
-  refine Program.Triple.cfg
-    (fun s₀ => fun
-      | "many", s' => s' = s₀
-      | _, _ => False)
-    (fun _ _ _ => 0) fun s₀ ⟨h₀, _⟩ => ?_
-  cfg_cases
-  all_goals vcgen [touch_spec] with kfinish
+  refine Triple.intro fun s₀ ⟨h₀, _⟩ => ?_
+  vcgen [touch_spec]
+    invariants
+    · fun l s' => match l with
+        | "many" => s' = s₀
+        | _ => False
+    · fun _ _ => 0
+    simp [many] with kfinish
 
 end State.ManyCalls

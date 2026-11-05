@@ -20,11 +20,11 @@ namespace State
 theorem p1_correct [Host] (hp : p1.IsInfix Host.prog) (s : MachineData) :
     Eventually (step1 Host.exe) (fun s => s.data.regs.rax = 1) ⟨s, startAddr hp⟩ := by
   apply Program.WP.step1_of_wp hp
-  refine Triple.le_wp (Program.Triple.cfg (P := (· = s))
-    (fun _ _ s' => s' = s) (fun _ _ _ => 0) fun _ h₀ => ?_) s rfl
-  subst h₀
-  cfg_cases
-  all_goals vcgen with kfinish
+  vcgen
+    invariants
+    · fun _ s' => s' = s
+    · fun _ _ => 0
+    simp [p1] with kfinish
 
 theorem swap_correct [Host] (hp : swap.IsInfix Host.prog) (d : MachineData) :
     Eventually (step1 Host.exe)
@@ -38,31 +38,30 @@ theorem swap_correct [Host] (hp : swap.IsInfix Host.prog) (d : MachineData) :
 theorem p2_correct [Host] (hp : p2.IsInfix Host.prog) (s : MachineData) :
     Eventually (step1 Host.exe) (fun s => s.data.regs.rax = 2) ⟨s, startAddr hp⟩ := by
   apply Program.WP.step1_of_wp hp
-  refine Triple.le_wp (Program.Triple.cfg (P := (· = s))
-    (fun _ _ s' => s' = s) (fun _ _ _ => 0) fun _ h₀ => ?_) s rfl
-  subst h₀
-  cfg_cases
-  all_goals vcgen with kfinish
+  vcgen
+    invariants
+    · fun _ s' => s' = s
+    · fun _ _ => 0
+    simp [p2] with kfinish
 
 theorem p4_correct [Host] (hp : p4.IsInfix Host.prog) (s : MachineData) :
     Eventually (step1 Host.exe) (fun s => s.data.regs.rax = 1) ⟨s, startAddr hp⟩ := by
   apply Program.WP.step1_of_wp hp
-  refine Triple.le_wp (Program.Triple.cfg (P := (· = s))
-    (fun _ _ s' => s' = s) (fun _ _ _ => 0) fun _ h₀ => ?_) s rfl
-  subst h₀
-  cfg_cases
-  all_goals vcgen with kfinish
+  vcgen
+    invariants
+    · fun _ s' => s' = s
+    · fun _ _ => 0
+    simp [p4] with kfinish
 
 theorem p5_correct [Host] (hp : p5.IsInfix Host.prog) (s : MachineData) :
     Eventually (step1 Host.exe) (fun s => s.data.regs.rax = 0) ⟨s, startAddr hp⟩ := by
   apply Program.WP.step1_of_wp hp
-  refine Triple.le_wp (Program.Triple.cfg (P := (· = s))
-    (fun _ l s' => match l with
+  vcgen
+    invariants
+    · fun l s' => match l with
       | "start" => s' = s
-      | _ => s'.regs.rax = 1 ∧ s'.regs.rsp = s.regs.rsp)
-    (fun _ _ _ => 0) fun _ h₀ => ?_) s rfl
-  subst h₀
-  cfg_cases
-  all_goals vcgen with kfinish
+      | _ => s'.regs.rax = 1 ∧ s'.regs.rsp = s.regs.rsp
+    · fun _ _ => 0
+    simp [p5] with kfinish
 
 end State

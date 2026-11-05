@@ -143,31 +143,39 @@ theorem scalarproduct_fma3_spec [Host] [FunDecls] (s : MachineData) (len : Nat)
     (h_v1 : s.dmem =⋆ Mem.Blocks [(s.regs.get64 .rdi, len * 4)] ⋆ R₁)
     (h_v2 : s.dmem =⋆ Mem.Blocks [(s.regs.get64 .rsi, len * 4)] ⋆ R₂) :
     WP.wp scalarproduct_fma3_prog (fun _ s' => s'.dmem = s.dmem) (fun _ _ => False) s := by
-  refine Triple.le_wp (Program.Triple.cfg (P := (· = s))
-    (fun _ l s' =>
-      let r8 := (s'.regs.get64 .r8).toNat
-      let rcx := (s'.regs.get64 .rcx).toNat
-      let L := len * 4
-      let inv := s'.regs.get64 .rdi = s.regs.get64 .rdi ∧ s'.regs.get64 .rsi = s.regs.get64 .rsi
-        ∧ (s'.regs.get64 .rdx).toNat = L ∧ s'.dmem = s.dmem ∧ s'.regs.get64 .rsp = s.regs.get64 .rsp
-      match l with
-      | "ff_scalarproduct_float_fma3" => s' = s
-      | ".loop128" => inv ∧ rcx % 128 = 0 ∧ rcx ≤ L ∧ L < rcx + 128 ∧ r8 % 128 = 0 ∧ r8 < rcx
-      | ".l64" => inv ∧ rcx + r8 = L ∧ 64 ≤ rcx ∧ rcx < 128 ∧ r8 % 128 = 0
-      | ".loop64" => inv ∧ rcx = r8 + 64 ∧ r8 + 64 ≤ L ∧ L < r8 + 128 ∧ r8 % 64 = 0
-      | ".l32" => inv ∧ rcx + r8 = L ∧ 32 ≤ rcx ∧ rcx < 64 ∧ r8 % 64 = 0
-      | ".loop32" => inv ∧ rcx = r8 + 32 ∧ r8 + 32 ≤ L ∧ L < r8 + 64 ∧ r8 % 32 = 0
-      | ".l16" => inv ∧ rcx + r8 = L ∧ 16 ≤ rcx ∧ rcx < 32 ∧ r8 % 32 = 0
-      | ".loop16" => inv ∧ rcx = r8 + 16 ∧ r8 + 16 ≤ L ∧ L < r8 + 32 ∧ r8 % 16 = 0
-      | "done" => s'.dmem = s.dmem ∧ s'.regs.get64 .rsp = s.regs.get64 .rsp
-      | _ => False)
-    (fun _ l s' => match l with
-      | "ff_scalarproduct_float_fma3" => 2 ^ 64
-      | ".loop128" => (s'.regs.get64 .rcx).toNat - (s'.regs.get64 .r8).toNat
-      | _ => 0) fun _ h₀ => ?_) s rfl
-  subst h₀
-  cfg_cases
-  all_goals vcgen with kfinish
+  vcgen
+    invariants
+    · fun l s' =>
+        match l with
+        | "ff_scalarproduct_float_fma3" => s' = s
+        | ".loop128" => s'.regs.get64 .rdi = s.regs.get64 .rdi ∧ s'.regs.get64 .rsi = s.regs.get64 .rsi
+            ∧ (s'.regs.get64 .rdx).toNat = len * 4 ∧ s'.dmem = s.dmem ∧ s'.regs.get64 .rsp = s.regs.get64 .rsp
+            ∧ (s'.regs.get64 .rcx).toNat % 128 = 0 ∧ (s'.regs.get64 .rcx).toNat ≤ len * 4 ∧ len * 4 < (s'.regs.get64 .rcx).toNat + 128 ∧ (s'.regs.get64 .r8).toNat % 128 = 0 ∧ (s'.regs.get64 .r8).toNat < (s'.regs.get64 .rcx).toNat
+        | ".l64" => s'.regs.get64 .rdi = s.regs.get64 .rdi ∧ s'.regs.get64 .rsi = s.regs.get64 .rsi
+            ∧ (s'.regs.get64 .rdx).toNat = len * 4 ∧ s'.dmem = s.dmem ∧ s'.regs.get64 .rsp = s.regs.get64 .rsp
+            ∧ (s'.regs.get64 .rcx).toNat + (s'.regs.get64 .r8).toNat = len * 4 ∧ 64 ≤ (s'.regs.get64 .rcx).toNat ∧ (s'.regs.get64 .rcx).toNat < 128 ∧ (s'.regs.get64 .r8).toNat % 128 = 0
+        | ".loop64" => s'.regs.get64 .rdi = s.regs.get64 .rdi ∧ s'.regs.get64 .rsi = s.regs.get64 .rsi
+            ∧ (s'.regs.get64 .rdx).toNat = len * 4 ∧ s'.dmem = s.dmem ∧ s'.regs.get64 .rsp = s.regs.get64 .rsp
+            ∧ (s'.regs.get64 .rcx).toNat = (s'.regs.get64 .r8).toNat + 64 ∧ (s'.regs.get64 .r8).toNat + 64 ≤ len * 4 ∧ len * 4 < (s'.regs.get64 .r8).toNat + 128 ∧ (s'.regs.get64 .r8).toNat % 64 = 0
+        | ".l32" => s'.regs.get64 .rdi = s.regs.get64 .rdi ∧ s'.regs.get64 .rsi = s.regs.get64 .rsi
+            ∧ (s'.regs.get64 .rdx).toNat = len * 4 ∧ s'.dmem = s.dmem ∧ s'.regs.get64 .rsp = s.regs.get64 .rsp
+            ∧ (s'.regs.get64 .rcx).toNat + (s'.regs.get64 .r8).toNat = len * 4 ∧ 32 ≤ (s'.regs.get64 .rcx).toNat ∧ (s'.regs.get64 .rcx).toNat < 64 ∧ (s'.regs.get64 .r8).toNat % 64 = 0
+        | ".loop32" => s'.regs.get64 .rdi = s.regs.get64 .rdi ∧ s'.regs.get64 .rsi = s.regs.get64 .rsi
+            ∧ (s'.regs.get64 .rdx).toNat = len * 4 ∧ s'.dmem = s.dmem ∧ s'.regs.get64 .rsp = s.regs.get64 .rsp
+            ∧ (s'.regs.get64 .rcx).toNat = (s'.regs.get64 .r8).toNat + 32 ∧ (s'.regs.get64 .r8).toNat + 32 ≤ len * 4 ∧ len * 4 < (s'.regs.get64 .r8).toNat + 64 ∧ (s'.regs.get64 .r8).toNat % 32 = 0
+        | ".l16" => s'.regs.get64 .rdi = s.regs.get64 .rdi ∧ s'.regs.get64 .rsi = s.regs.get64 .rsi
+            ∧ (s'.regs.get64 .rdx).toNat = len * 4 ∧ s'.dmem = s.dmem ∧ s'.regs.get64 .rsp = s.regs.get64 .rsp
+            ∧ (s'.regs.get64 .rcx).toNat + (s'.regs.get64 .r8).toNat = len * 4 ∧ 16 ≤ (s'.regs.get64 .rcx).toNat ∧ (s'.regs.get64 .rcx).toNat < 32 ∧ (s'.regs.get64 .r8).toNat % 32 = 0
+        | ".loop16" => s'.regs.get64 .rdi = s.regs.get64 .rdi ∧ s'.regs.get64 .rsi = s.regs.get64 .rsi
+            ∧ (s'.regs.get64 .rdx).toNat = len * 4 ∧ s'.dmem = s.dmem ∧ s'.regs.get64 .rsp = s.regs.get64 .rsp
+            ∧ (s'.regs.get64 .rcx).toNat = (s'.regs.get64 .r8).toNat + 16 ∧ (s'.regs.get64 .r8).toNat + 16 ≤ len * 4 ∧ len * 4 < (s'.regs.get64 .r8).toNat + 32 ∧ (s'.regs.get64 .r8).toNat % 16 = 0
+        | "done" => s'.dmem = s.dmem ∧ s'.regs.get64 .rsp = s.regs.get64 .rsp
+        | _ => False
+    · fun l s' => match l with
+        | "ff_scalarproduct_float_fma3" => 2 ^ 64
+        | ".loop128" => (s'.regs.get64 .rcx).toNat - (s'.regs.get64 .r8).toNat
+        | _ => 0
+    simp [scalarproduct_fma3_prog] with kfinish
 
 funspec scalarproduct_fma3_funspec "ff_scalarproduct_float_fma3" [Host] [FunDecls]
     [Embeds scalarproduct_fma3]
@@ -179,29 +187,38 @@ funspec scalarproduct_fma3_funspec "ff_scalarproduct_float_fma3" [Host] [FunDecl
           (s.regs.rsi.toBitVec, len * 4)] s.dmem
     ensures s' => True
     autoframes calling_conv SysV preserves rax rsi rdi r9 r10 r11 := by
-  refine Program.Triple.cfg
-    (fun s₀ l s' =>
-      let r8 := s'.regs.r8.toNat
-      let rcx := s'.regs.rcx.toNat
-      let L := len * 4
-      let inv := s'.regs.rdx.toNat = L ∧ s'.dmem = s₀.dmem ∧ Frame.Regs s s'
-        ∧ s'.regs.rsp.toBitVec = s.regs.rsp.toBitVec - 8#64
-      match l with
-      | "ff_scalarproduct_float_fma3" => s' = s₀
-      | ".loop128" => inv ∧ rcx % 128 = 0 ∧ rcx ≤ L ∧ L < rcx + 128 ∧ r8 % 128 = 0 ∧ r8 < rcx
-      | ".l64" => inv ∧ rcx + r8 = L ∧ 64 ≤ rcx ∧ rcx < 128 ∧ r8 % 128 = 0
-      | ".loop64" => inv ∧ rcx = r8 + 64 ∧ r8 + 64 ≤ L ∧ L < r8 + 128 ∧ r8 % 64 = 0
-      | ".l32" => inv ∧ rcx + r8 = L ∧ 32 ≤ rcx ∧ rcx < 64 ∧ r8 % 64 = 0
-      | ".loop32" => inv ∧ rcx = r8 + 32 ∧ r8 + 32 ≤ L ∧ L < r8 + 64 ∧ r8 % 32 = 0
-      | ".l16" => inv ∧ rcx + r8 = L ∧ 16 ≤ rcx ∧ rcx < 32 ∧ r8 % 32 = 0
-      | ".loop16" => inv ∧ rcx = r8 + 16 ∧ r8 + 16 ≤ L ∧ L < r8 + 32 ∧ r8 % 16 = 0
-      | "done" => s'.dmem = s₀.dmem ∧ Frame.Regs s s' ∧ s'.regs.rsp.toBitVec = s.regs.rsp.toBitVec - 8#64
-      | _ => False)
-    (fun _ l s' => match l with
-      | "ff_scalarproduct_float_fma3" => 2 ^ 64
-      | ".loop128" => s'.regs.rcx.toNat - s'.regs.r8.toNat
-      | _ => 0) fun s₀ ⟨h₀, _⟩ => ?_
-  cfg_cases
-  all_goals vcgen with kfinish
+  refine Triple.intro fun s₀ ⟨h₀, _⟩ => ?_
+  vcgen
+    invariants
+    · fun l s' => match l with
+        | "ff_scalarproduct_float_fma3" => s' = s₀
+        | ".loop128" => s'.regs.rdx.toNat = len * 4 ∧ s'.dmem = s₀.dmem ∧ Frame.Regs s s'
+            ∧ s'.regs.rsp.toBitVec = s.regs.rsp.toBitVec - 8#64
+            ∧ s'.regs.rcx.toNat % 128 = 0 ∧ s'.regs.rcx.toNat ≤ len * 4 ∧ len * 4 < s'.regs.rcx.toNat + 128 ∧ s'.regs.r8.toNat % 128 = 0 ∧ s'.regs.r8.toNat < s'.regs.rcx.toNat
+        | ".l64" => s'.regs.rdx.toNat = len * 4 ∧ s'.dmem = s₀.dmem ∧ Frame.Regs s s'
+            ∧ s'.regs.rsp.toBitVec = s.regs.rsp.toBitVec - 8#64
+            ∧ s'.regs.rcx.toNat + s'.regs.r8.toNat = len * 4 ∧ 64 ≤ s'.regs.rcx.toNat ∧ s'.regs.rcx.toNat < 128 ∧ s'.regs.r8.toNat % 128 = 0
+        | ".loop64" => s'.regs.rdx.toNat = len * 4 ∧ s'.dmem = s₀.dmem ∧ Frame.Regs s s'
+            ∧ s'.regs.rsp.toBitVec = s.regs.rsp.toBitVec - 8#64
+            ∧ s'.regs.rcx.toNat = s'.regs.r8.toNat + 64 ∧ s'.regs.r8.toNat + 64 ≤ len * 4 ∧ len * 4 < s'.regs.r8.toNat + 128 ∧ s'.regs.r8.toNat % 64 = 0
+        | ".l32" => s'.regs.rdx.toNat = len * 4 ∧ s'.dmem = s₀.dmem ∧ Frame.Regs s s'
+            ∧ s'.regs.rsp.toBitVec = s.regs.rsp.toBitVec - 8#64
+            ∧ s'.regs.rcx.toNat + s'.regs.r8.toNat = len * 4 ∧ 32 ≤ s'.regs.rcx.toNat ∧ s'.regs.rcx.toNat < 64 ∧ s'.regs.r8.toNat % 64 = 0
+        | ".loop32" => s'.regs.rdx.toNat = len * 4 ∧ s'.dmem = s₀.dmem ∧ Frame.Regs s s'
+            ∧ s'.regs.rsp.toBitVec = s.regs.rsp.toBitVec - 8#64
+            ∧ s'.regs.rcx.toNat = s'.regs.r8.toNat + 32 ∧ s'.regs.r8.toNat + 32 ≤ len * 4 ∧ len * 4 < s'.regs.r8.toNat + 64 ∧ s'.regs.r8.toNat % 32 = 0
+        | ".l16" => s'.regs.rdx.toNat = len * 4 ∧ s'.dmem = s₀.dmem ∧ Frame.Regs s s'
+            ∧ s'.regs.rsp.toBitVec = s.regs.rsp.toBitVec - 8#64
+            ∧ s'.regs.rcx.toNat + s'.regs.r8.toNat = len * 4 ∧ 16 ≤ s'.regs.rcx.toNat ∧ s'.regs.rcx.toNat < 32 ∧ s'.regs.r8.toNat % 32 = 0
+        | ".loop16" => s'.regs.rdx.toNat = len * 4 ∧ s'.dmem = s₀.dmem ∧ Frame.Regs s s'
+            ∧ s'.regs.rsp.toBitVec = s.regs.rsp.toBitVec - 8#64
+            ∧ s'.regs.rcx.toNat = s'.regs.r8.toNat + 16 ∧ s'.regs.r8.toNat + 16 ≤ len * 4 ∧ len * 4 < s'.regs.r8.toNat + 32 ∧ s'.regs.r8.toNat % 16 = 0
+        | "done" => s'.dmem = s₀.dmem ∧ Frame.Regs s s' ∧ s'.regs.rsp.toBitVec = s.regs.rsp.toBitVec - 8#64
+        | _ => False
+    · fun l s' => match l with
+        | "ff_scalarproduct_float_fma3" => 2 ^ 64
+        | ".loop128" => s'.regs.rcx.toNat - s'.regs.r8.toNat
+        | _ => 0
+    simp [scalarproduct_fma3, scalarproduct_fma3_prog] with kfinish
 
 end State.FfScalarproductFloatFma3

@@ -4,12 +4,10 @@ module
 The text of a program, as the control-flow rule reads it.
 `Program.fromLabel` is the scope suffix at a label: the text from the label's
 cell on. `Program.view` parses the text once into the label-free entry segment
-and one `(label, body)` pair per label cell. `Program.ForallBlocks` states an
-obligation for the entry block and for each labelled block, and `cfg_cases`
-splits it into one goal per block.
+and one `(label, body)` pair per label cell. `Program.blocks` lists the entry
+block and one block per label cell.
 -/
 public import Kraken.Specs
-public meta import Lean.Elab.Tactic
 
 @[expose] public section
 
@@ -75,8 +73,8 @@ def Directive.isLabel : Directive → Bool
 /-! ### Basic blocks
 
 `Program.view` cuts the text at its label cells. A `Program.Block` is a
-label-free body, the `CfgLabel` that enters it, and the `CfgLabel` it falls
-into. -/
+label-free body, the label that enters it, and the label it falls into. The
+entry segment has no entering label, and the last block falls into no label. -/
 
 /-- A nonempty scope suffix starts with its own label cell. -/
 theorem Program.fromLabel_head :
@@ -260,25 +258,19 @@ theorem Program.fromLabel_view {p : Program} (hnd : (Program.labels p).Nodup) :
 
 /-- A basic block: its label, its straight-line body, and the label it falls
 into, when one follows. -/
-inductive CfgLabel where
-  | entry
-  | label (l : Label)
-  | exit
-  deriving DecidableEq, Repr
-
 structure Program.Block where
-  label : CfgLabel
+  label : Option Label
   idx : Nat
   body : Program
-  next : CfgLabel
+  next : Option Label
   deriving DecidableEq, Repr
 
-def Program.firstLabel : List (Label × Program) → CfgLabel
-  | [] => .exit
-  | (l, _) :: _ => .label l
+def Program.firstLabel : List (Label × Program) → Option Label
+  | [] => none
+  | (l, _) :: _ => some l
 
 theorem Program.firstLabel_drop (bs : List (Label × Program)) (i : Nat) :
-    Program.firstLabel (bs.drop i) = ((bs[i]?).map fun lb => CfgLabel.label lb.1).getD .exit := by
+    Program.firstLabel (bs.drop i) = (bs[i]?).map (·.1) := by
   induction bs generalizing i with
   | nil => simp [Program.firstLabel]
   | cons lb bs ih =>
@@ -290,14 +282,14 @@ theorem Program.firstLabel_drop (bs : List (Label × Program)) (i : Nat) :
 def Program.blockAtAux (j : Nat) : List (Label × Program) → Label → Option Program.Block
   | [], _ => none
   | (l', b) :: bs, l =>
-    if l' = l then some ⟨.label l, j, b, Program.firstLabel bs⟩
+    if l' = l then some ⟨some l, j, b, Program.firstLabel bs⟩
     else Program.blockAtAux (j + 1) bs l
 
 def Program.blockAt (p : Program) (l : Label) : Option Program.Block :=
   Program.blockAtAux 1 (Program.view p).2 l
 
 def Program.entryBlock (p : Program) : Program.Block :=
-  ⟨.entry, 0, (Program.view p).1, Program.firstLabel (Program.view p).2⟩
+  ⟨none, 0, (Program.view p).1, Program.firstLabel (Program.view p).2⟩
 
 def Program.blockIdx (p : Program) (l : Label) : Nat :=
   (Program.labels p).idxOf l
@@ -324,7 +316,7 @@ theorem Program.isSome_blockAt_of_mem {p : Program} {l : Label} (h : l ∈ Progr
 
 theorem Program.blockAtAux_spec : ∀ {j : Nat} {bs : List (Label × Program)} {l : Label}
     {blk : Program.Block}, Program.blockAtAux j bs l = some blk →
-    blk.label = .label l ∧ ∃ i, bs[i]? = some (l, blk.body)
+    blk.label = some l ∧ ∃ i, bs[i]? = some (l, blk.body)
       ∧ blk.next = Program.firstLabel (bs.drop (i + 1)) ∧ blk.idx = j + i := by
   intro j bs
   induction bs generalizing j with
@@ -344,7 +336,7 @@ theorem Program.blockAtAux_spec : ∀ {j : Nat} {bs : List (Label × Program)} {
 theorem Program.blockAtAux_of_getElem : ∀ {j : Nat} {bs : List (Label × Program)}
     (_ : (bs.map (·.1)).Nodup) {i : Nat} {l : Label} {b : Program},
     bs[i]? = some (l, b) →
-    Program.blockAtAux j bs l = some ⟨.label l, j + i, b, Program.firstLabel (bs.drop (i + 1))⟩ := by
+    Program.blockAtAux j bs l = some ⟨some l, j + i, b, Program.firstLabel (bs.drop (i + 1))⟩ := by
   intro j bs
   induction bs generalizing j with
   | nil => intro _ i l b h; simp at h
@@ -417,19 +409,13 @@ theorem Program.fromLabel_split {p : Program} {l : Label}
     omega
 
 abbrev Program.Decreases (var : Label → MachineData → Nat) :
-    CfgLabel → Nat → MachineData → CfgLabel → Nat → MachineData → Prop
-  | .label l, i, t, .label l', j, s => var l' s < var l t ∨ (var l' s = var l t ∧ i < j)
-  | _, _, _, _, _, _ => True
-
-abbrev Program.Triple.cfg.Table (I : Label → MachineData → Prop) (Q : Unit → MachineData → Prop)
-    (s₀ : MachineData) : CfgLabel → MachineData → Prop
-  | .entry, s' => s' = s₀
-  | .label l, s' => I l s'
-  | .exit, s' => Q () s'
+    Option Label → Nat → MachineData → Label → Nat → MachineData → Prop
+  | none, _, _, _, _, _ => True
+  | some l, i, t, l', j, s => var l' s < var l t ∨ (var l' s = var l t ∧ i < j)
 
 theorem Program.blockAt_next {p : Program} (hnd : (Program.labels p).Nodup)
     {l : Label} {blk : Program.Block} (h : Program.blockAt p l = some blk)
-    {l' : Label} (hn : blk.next = .label l') :
+    {l' : Label} (hn : blk.next = some l') :
     (Program.blockAt p l').isSome ∧ Program.blockIdx p l' = Program.blockIdx p l + 1 := by
   obtain ⟨-, i, hi, hnext, -⟩ := Program.blockAtAux_spec h
   rw [hn, Program.firstLabel_drop] at hnext
@@ -439,7 +425,7 @@ theorem Program.blockAt_next {p : Program} (hnd : (Program.labels p).Nodup)
   | some lb =>
     obtain ⟨l₁, b₁⟩ := lb
     rw [hj] at hnext
-    simp only [Option.map_some, Option.getD_some, CfgLabel.label.injEq] at hnext
+    simp only [Option.map_some, Option.some.injEq] at hnext
     subst hnext
     refine ⟨?_, ?_⟩
     · show (Program.blockAtAux 1 (Program.view p).2 l').isSome = true
@@ -460,96 +446,71 @@ def Program.cfgMeasure (p : Program) (var : Label → MachineData → Nat)
   var x.1 x.2 * ((Program.view p).2.length + 1)
     + ((Program.view p).2.length - Program.blockIdx p x.1)
 
-def Program.forallBlocksFrom (P : Program.Block → Prop) (b : CfgLabel) (j : Nat) (body : Program) :
-    List (Label × Program) → Prop
-  | [] => P ⟨b, j, body, .exit⟩
-  | (l, body') :: bs => P ⟨b, j, body, .label l⟩ ∧ Program.forallBlocksFrom P (.label l) (j + 1) body' bs
+def Program.blocksFrom (b : Option Label) (j : Nat) (body : Program) :
+    List (Label × Program) → List Program.Block
+  | [] => [⟨b, j, body, none⟩]
+  | (l, body') :: bs => ⟨b, j, body, some l⟩ :: Program.blocksFrom (some l) (j + 1) body' bs
 
-def Program.ForallBlocks (p : Program) (P : Program.Block → Prop) : Prop :=
-  Program.forallBlocksFrom P .entry 0 (Program.view p).1 (Program.view p).2
+def Program.blocks (p : Program) : List Program.Block :=
+  Program.blocksFrom none 0 (Program.view p).1 (Program.view p).2
 
-theorem Program.forallBlocksFrom_head {P : Program.Block → Prop} {b : CfgLabel} {j : Nat}
-    {body : Program} :
-    ∀ {bs : List (Label × Program)}, Program.forallBlocksFrom P b j body bs →
-      P ⟨b, j, body, Program.firstLabel bs⟩
-  | [], h => h
-  | (_, _) :: _, h => h.1
+theorem Program.mem_blocksFrom_head {b : Option Label} {j : Nat} {body : Program} :
+    ∀ {bs : List (Label × Program)},
+      ⟨b, j, body, Program.firstLabel bs⟩ ∈ Program.blocksFrom b j body bs
+  | [] => List.mem_singleton_self _
+  | (_, _) :: _ => List.mem_cons_self
 
-theorem Program.forallBlocksFrom_blockAtAux {P : Program.Block → Prop} {l : Label}
-    {blk : Program.Block} :
-    ∀ {bs : List (Label × Program)} {b : CfgLabel} {j : Nat} {body : Program},
-      Program.forallBlocksFrom P b j body bs → Program.blockAtAux (j + 1) bs l = some blk → P blk
-  | [], _, _, _, _, hb => by cases hb
-  | (l', b') :: bs, _, _, _, h, hb => by
+theorem Program.mem_blocksFrom_of_blockAtAux {l : Label} {blk : Program.Block} :
+    ∀ {bs : List (Label × Program)} {b : Option Label} {j : Nat} {body : Program},
+      Program.blockAtAux (j + 1) bs l = some blk → blk ∈ Program.blocksFrom b j body bs
+  | [], _, _, _, hb => by cases hb
+  | (l', b') :: bs, _, _, _, hb => by
     simp only [Program.blockAtAux] at hb
+    refine List.mem_cons_of_mem _ ?_
     split at hb
     · rename_i hc
       subst hc
       cases hb
-      exact Program.forallBlocksFrom_head h.2
-    · exact Program.forallBlocksFrom_blockAtAux h.2 hb
+      exact Program.mem_blocksFrom_head
+    · exact Program.mem_blocksFrom_of_blockAtAux hb
 
-theorem Program.ForallBlocks.entry {p : Program} {P : Program.Block → Prop}
-    (h : Program.ForallBlocks p P) : P (Program.entryBlock p) :=
-  Program.forallBlocksFrom_head h
+theorem Program.entryBlock_mem_blocks (p : Program) : Program.entryBlock p ∈ Program.blocks p :=
+  Program.mem_blocksFrom_head
 
-theorem Program.ForallBlocks.blockAt {p : Program} {P : Program.Block → Prop}
-    (h : Program.ForallBlocks p P) {l : Label} {blk : Program.Block}
-    (hb : Program.blockAt p l = some blk) : P blk :=
-  Program.forallBlocksFrom_blockAtAux h hb
+theorem Program.mem_blocks_of_blockAt {p : Program} {l : Label} {blk : Program.Block}
+    (hb : Program.blockAt p l = some blk) : blk ∈ Program.blocks p :=
+  Program.mem_blocksFrom_of_blockAtAux hb
 
-open Lean Meta Elab Tactic in
-private meta partial def cfgDirectives (e : Expr) (acc : Array Expr := #[]) :
-    MetaM (Array Expr) := do
-  let e ← whnfD e
-  match_expr e with
-  | List.nil _ => return acc
-  | List.cons _ hd tl => cfgDirectives tl (acc.push hd)
-  | _ => throwError "cfg_view: cannot compute the directives of the text"
+@[vcgen_simp] theorem Program.Block.label_mk (b : Option Label) (j : Nat) (body : Program) (n : Option Label) :
+    (⟨b, j, body, n⟩ : Program.Block).label = b := rfl
 
-open Lean Meta Elab Tactic in
-elab "cfg_view" " as " n:ident : tactic => withMainContext do
-  let ty ← instantiateMVars (← (← getMainGoal).getType)
-  let_expr Program.ForallBlocks p _ := ty
-    | throwError "cfg_view: expected `Program.ForallBlocks p P`"
-  let dirTy := mkConst ``Directive
-  let mut entry : Array Expr := #[]
-  let mut blocks : Array (Expr × Array Expr) := #[]
-  for d in ← cfgDirectives p do
-    match_expr ← whnfD d with
-    | Directive.label l => blocks := blocks.push (l, #[])
-    | _ =>
-      match blocks.back? with
-      | some (l, body) => blocks := blocks.pop.push (l, body.push d)
-      | none => entry := entry.push d
-  let pairs ← blocks.mapM fun (l, body) => do
-    mkAppM ``Prod.mk #[l, ← mkListLit dirTy body.toList]
-  let bs ← mkListLit (← mkAppM ``Prod #[mkConst ``Label, mkConst ``Program]) pairs.toList
-  let v ← mkAppM ``Prod.mk #[← mkListLit dirTy entry.toList, bs]
-  let stmt ← mkEq (mkApp (mkConst ``Program.view) p) v
-  let pf ← mkAuxTheorem stmt (← mkEqRefl v)
-  let (_, g) ← (← getMainGoal).note n.getId pf stmt
-  replaceMainGoal [g]
+@[vcgen_simp] theorem Program.Block.idx_mk (b : Option Label) (j : Nat) (body : Program) (n : Option Label) :
+    (⟨b, j, body, n⟩ : Program.Block).idx = j := rfl
 
-open Lean Meta Simp in
-simproc_decl cfgMatch (_) := fun e => do
-  let .const declName _ := e.getAppFn | return .continue
-  let some info ← getMatcherInfo? declName | return .continue
-  let discrs := e.getAppArgs.extract (info.numParams + 1) (info.numParams + 1 + info.numDiscrs)
-  unless ← discrs.anyM fun d => return (← isConstructorApp? d).isSome do return .continue
-  simpMatchCore declName e
+@[vcgen_simp] theorem Program.Block.body_mk (b : Option Label) (j : Nat) (body : Program) (n : Option Label) :
+    (⟨b, j, body, n⟩ : Program.Block).body = body := rfl
 
-macro "cfg_cases" : tactic =>
-  `(tactic|
-    (cfg_view as hview
-     have hlabels : Program.labels _ = _ := (Program.labels_view _).trans (congrArg (fun v => List.map (·.1) v.2) hview)
-     simp only [List.map_cons, List.map_nil] at hlabels
-     rw [Program.ForallBlocks, hview]
-     clear hview
-     rw [hlabels]
-     dsimp only [Program.forallBlocksFrom]
-     clear hlabels
-     repeat' apply And.intro
-     all_goals intro t ht
-     all_goals try simp -iota only [Program.Triple.cfg.Table, cfgMatch, CfgLabel.label.injEq] at ht
-     all_goals try exact ht.elim))
+@[vcgen_simp] theorem Program.Block.next_mk (b : Option Label) (j : Nat) (body : Program) (n : Option Label) :
+    (⟨b, j, body, n⟩ : Program.Block).next = n := rfl
+
+@[vcgen_simp] theorem Program.view_nil : Program.view [] = ([], []) := rfl
+
+@[vcgen_simp] theorem Program.view_cons_label (l : Label) (p : Program) :
+    Program.view (.label l :: p) = ([], (l, (Program.view p).1) :: (Program.view p).2) := rfl
+
+@[vcgen_simp] theorem Program.view_cons_instr (i : Instr) (p : Program) :
+    Program.view (.instr i :: p) = (.instr i :: (Program.view p).1, (Program.view p).2) := rfl
+
+@[vcgen_simp] theorem Program.view_cons_byteArray (a : ByteArray) (p : Program) :
+    Program.view (.byteArray a :: p) = (.byteArray a :: (Program.view p).1, (Program.view p).2) := rfl
+
+@[vcgen_simp] theorem Program.blocks_eq (p : Program) :
+    Program.blocks p = Program.blocksFrom none 0 (Program.view p).1 (Program.view p).2 := rfl
+
+@[vcgen_simp] theorem Program.blocksFrom_nil (b : Option Label) (j : Nat) (body : Program) :
+    Program.blocksFrom b j body [] = [⟨b, j, body, none⟩] := rfl
+
+@[vcgen_simp] theorem Program.blocksFrom_cons (b : Option Label) (j : Nat) (body : Program) (l : Label)
+    (body' : Program) (bs : List (Label × Program)) :
+    Program.blocksFrom b j body ((l, body') :: bs)
+      = ⟨b, j, body, some l⟩ :: Program.blocksFrom (some l) (j + 1) body' bs := rfl
