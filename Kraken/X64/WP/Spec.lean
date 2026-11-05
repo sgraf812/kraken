@@ -193,8 +193,7 @@ variable [Host] [FunDecls] {Q : Unit → MachineData → Prop} {E : Int64 → Ma
 @[spec] public theorem add_reg_mem (rd b : Reg64) (d : Int64) :
     ⦃ fun s => (Mem.loadInt s.dmem (s.regs.get64 b + BitVec.ofInt 64 d.toInt) 8).isSome = true ∧
           let a := BitVec.ofInt 64 (Mem.loadInt s.dmem (s.regs.get64 b + BitVec.ofInt 64 d.toInt) 8).get!
-          let bv := s.regs.get64 rd
-          Q () { s with regs := s.regs.set64 rd (a + bv), status := StatusFlags.ofAdd a bv } ⦄
+          Q () { s with regs := s.regs.set64 rd (a + s.regs.get64 rd), status := StatusFlags.ofAdd a (s.regs.get64 rd) } ⦄
       (Directive.instr (.regular .W64 .W64
           (.add (.reg (.low rd .W64))
             (.regOrMem (.mem ⟨some (.reg b), none, .int64 d⟩)))))
@@ -246,8 +245,7 @@ variable [Host] [FunDecls] {Q : Unit → MachineData → Prop} {E : Int64 → Ma
         let a := s.regs.get64 b + s.regs.get64 i * 8 + BitVec.ofInt 64 d.toInt
         (Mem.loadInt s.dmem a 8).isSome = true ∧
           let x := BitVec.ofInt 64 (Mem.loadInt s.dmem a 8).get!
-          let y := s.regs.get64 rd
-          Q () { s with regs := s.regs.set64 rd (x + y), status := StatusFlags.ofAdd x y } ⦄
+          Q () { s with regs := s.regs.set64 rd (x + s.regs.get64 rd), status := StatusFlags.ofAdd x (s.regs.get64 rd) } ⦄
       (Directive.instr (.regular .W64 .W64
           (.add (.reg (.low rd .W64)) (.regOrMem (.mem ⟨some (.reg b), some ⟨i, .W64⟩, .int64 d⟩)))))
     ⦃ Q; E ⦄ := by
@@ -275,9 +273,8 @@ local macro "run_step" : tactic =>
 
 @[spec] public theorem sub_reg_imm (asz : Width) (r : Reg64) (i : Int64) :
     ⦃ fun s =>
-        let b := s.regs.get64 r
         let a := BitVec.setWidth 64 i.toBitVec
-        Q () { s with regs := s.regs.set64 r (b - a), status := StatusFlags.ofSub b a } ⦄
+        Q () { s with regs := s.regs.set64 r (s.regs.get64 r - a), status := StatusFlags.ofSub (s.regs.get64 r) a } ⦄
       (Directive.instr (.regular asz .W64 (.sub (.reg (.low r .W64)) (.imm (.int64 i)))))
     ⦃ Q; E ⦄ := by
   refine Triple.intro fun s hpre => ?_
@@ -297,8 +294,7 @@ local macro "run_step" : tactic =>
 @[spec] public theorem add_reg_imm (asz : Width) (r : Reg64) (i : Int64) :
     ⦃ fun s =>
         let a := BitVec.setWidth 64 i.toBitVec
-        let b := s.regs.get64 r
-        Q () { s with regs := s.regs.set64 r (a + b), status := StatusFlags.ofAdd a b } ⦄
+        Q () { s with regs := s.regs.set64 r (a + s.regs.get64 r), status := StatusFlags.ofAdd a (s.regs.get64 r) } ⦄
       (Directive.instr (.regular asz .W64 (.add (.reg (.low r .W64)) (.imm (.int64 i)))))
     ⦃ Q; E ⦄ := by
   refine Triple.intro fun s hpre => ?_
@@ -308,16 +304,14 @@ local macro "run_step" : tactic =>
 
 @[spec] public theorem adc_reg_reg (asz : Width) (rd rs : Reg64) :
     ⦃ fun s =>
-        let a := s.regs.get64 rs
-        let b := s.regs.get64 rd
         let c := s.status.cf
-        let v := a + b + BitVec.ofNat 64 c.toNat
+        let v := s.regs.get64 rs + s.regs.get64 rd + BitVec.ofNat 64 c.toNat
         Q () { s with
           regs := s.regs.set64 rd v
           status := StatusFlags.from_result v
-            { cf := v.unsigned != a.unsigned + b.unsigned + c,
-              af := (v.take 4).unsigned != (a.take 4).unsigned + (b.take 4).unsigned + c,
-              of := v.signed != a.signed + b.signed + c } } ⦄
+            { cf := v.unsigned != (s.regs.get64 rs).unsigned + (s.regs.get64 rd).unsigned + c,
+              af := (v.take 4).unsigned != ((s.regs.get64 rs).take 4).unsigned + ((s.regs.get64 rd).take 4).unsigned + c,
+              of := v.signed != (s.regs.get64 rs).signed + (s.regs.get64 rd).signed + c } } ⦄
       (Directive.instr (.regular asz .W64
           (.adc (.reg (.low rd .W64)) (.regOrMem (.reg (.low rs .W64))))))
     ⦃ Q; E ⦄ := by
@@ -328,9 +322,7 @@ local macro "run_step" : tactic =>
 
 @[spec] public theorem add_reg_reg (asz : Width) (rd rs : Reg64) :
     ⦃ fun s =>
-        let a := s.regs.get64 rs
-        let b := s.regs.get64 rd
-        Q () { s with regs := s.regs.set64 rd (a + b), status := StatusFlags.ofAdd a b } ⦄
+        Q () { s with regs := s.regs.set64 rd (s.regs.get64 rs + s.regs.get64 rd), status := StatusFlags.ofAdd (s.regs.get64 rs) (s.regs.get64 rd) } ⦄
       (Directive.instr (.regular asz .W64
           (.add (.reg (.low rd .W64)) (.regOrMem (.reg (.low rs .W64))))))
     ⦃ Q; E ⦄ := by
@@ -502,8 +494,7 @@ local macro "run_step" : tactic =>
 
 @[spec] public theorem dec_reg (asz : Width) (r : Reg64) :
     ⦃ fun s =>
-        let a := s.regs.get64 r
-        Q () { s with regs := s.regs.set64 r (a - 1), status := StatusFlags.ofDec a s.status.cf } ⦄
+        Q () { s with regs := s.regs.set64 r (s.regs.get64 r - 1), status := StatusFlags.ofDec (s.regs.get64 r) s.status.cf } ⦄
       (Directive.instr (.regular asz .W64 (.dec (.reg (.low r .W64)))))
     ⦃ Q; E ⦄ := by
   refine Triple.intro fun s hpre => ?_
@@ -513,8 +504,7 @@ local macro "run_step" : tactic =>
 
 @[spec] public theorem inc_reg (asz : Width) (r : Reg64) :
     ⦃ fun s =>
-        let a := s.regs.get64 r
-        Q () { s with regs := s.regs.set64 r (a + 1), status := StatusFlags.ofInc a s.status.cf } ⦄
+        Q () { s with regs := s.regs.set64 r (s.regs.get64 r + 1), status := StatusFlags.ofInc (s.regs.get64 r) s.status.cf } ⦄
       (Directive.instr (.regular asz .W64 (.inc (.reg (.low r .W64)))))
     ⦃ Q; E ⦄ := by
   refine Triple.intro fun s hpre => ?_
