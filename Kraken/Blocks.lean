@@ -485,21 +485,23 @@ def Program.cfgMeasure (p : Program) (var : Label → MachineData → Nat)
 
 def Program.blocksFrom (b : Option Label) (j : Nat) (body : Program) :
     List (Label × Program) → List Program.Block
-  | [] => [⟨b, j, body, none⟩]
-  | (l, body') :: bs => ⟨b, j, body, some l⟩ :: Program.blocksFrom (some l) (j + 1) body' bs
+  | [] => [⟨b, j, Program.straight body, none⟩]
+  | (l, body') :: bs =>
+    ⟨b, j, Program.straight body, some l⟩ :: Program.blocksFrom (some l) (j + 1) body' bs
 
 def Program.blocks (p : Program) : List Program.Block :=
   Program.blocksFrom none 0 (Program.view p).1 (Program.view p).2
 
 theorem Program.mem_blocksFrom_head {b : Option Label} {j : Nat} {body : Program} :
     ∀ {bs : List (Label × Program)},
-      ⟨b, j, body, Program.firstLabel bs⟩ ∈ Program.blocksFrom b j body bs
+      ⟨b, j, Program.straight body, Program.firstLabel bs⟩ ∈ Program.blocksFrom b j body bs
   | [] => List.mem_singleton_self _
   | (_, _) :: _ => List.mem_cons_self
 
 theorem Program.mem_blocksFrom_of_blockAtAux {l : Label} {blk : Program.Block} :
     ∀ {bs : List (Label × Program)} {b : Option Label} {j : Nat} {body : Program},
-      Program.blockAtAux (j + 1) bs l = some blk → blk ∈ Program.blocksFrom b j body bs
+      Program.blockAtAux (j + 1) bs l = some blk →
+        ⟨blk.label, blk.idx, Program.straight blk.body, blk.next⟩ ∈ Program.blocksFrom b j body bs
   | [], _, _, _, hb => by cases hb
   | (l', b') :: bs, _, _, _, hb => by
     simp only [Program.blockAtAux] at hb
@@ -511,12 +513,16 @@ theorem Program.mem_blocksFrom_of_blockAtAux {l : Label} {blk : Program.Block} :
       exact Program.mem_blocksFrom_head
     · exact Program.mem_blocksFrom_of_blockAtAux hb
 
-theorem Program.entryBlock_mem_blocks (p : Program) : Program.entryBlock p ∈ Program.blocks p :=
-  Program.mem_blocksFrom_head
+theorem Program.entryBlock_mem_blocks (p : Program) : Program.entryBlock p ∈ Program.blocks p := by
+  have h := Program.mem_blocksFrom_head (b := none) (j := 0) (body := (Program.view p).1)
+    (bs := (Program.view p).2)
+  rwa [Program.straight_eq_self (Program.view_free p).1] at h
 
 theorem Program.mem_blocks_of_blockAt {p : Program} {l : Label} {blk : Program.Block}
-    (hb : Program.blockAt p l = some blk) : blk ∈ Program.blocks p :=
-  Program.mem_blocksFrom_of_blockAtAux hb
+    (hb : Program.blockAt p l = some blk) : blk ∈ Program.blocks p := by
+  have h := Program.mem_blocksFrom_of_blockAtAux (b := none) (j := 0) (body := (Program.view p).1) hb
+  obtain ⟨-, i, hi, -, -⟩ := Program.blockAtAux_spec hb
+  rwa [Program.straight_eq_self ((Program.view_free p).2 _ (List.mem_of_getElem? hi))] at h
 
 @[vcgen_simp] theorem Program.Block.label_mk (b : Option Label) (j : Nat) (body : Program) (n : Option Label) :
     (⟨b, j, body, n⟩ : Program.Block).label = b := rfl
@@ -545,9 +551,9 @@ theorem Program.mem_blocks_of_blockAt {p : Program} {l : Label} {blk : Program.B
     Program.blocks p = Program.blocksFrom none 0 (Program.view p).1 (Program.view p).2 := rfl
 
 @[vcgen_simp] theorem Program.blocksFrom_nil (b : Option Label) (j : Nat) (body : Program) :
-    Program.blocksFrom b j body [] = [⟨b, j, body, none⟩] := rfl
+    Program.blocksFrom b j body [] = [⟨b, j, Program.straight body, none⟩] := rfl
 
 @[vcgen_simp] theorem Program.blocksFrom_cons (b : Option Label) (j : Nat) (body : Program) (l : Label)
     (body' : Program) (bs : List (Label × Program)) :
     Program.blocksFrom b j body ((l, body') :: bs)
-      = ⟨b, j, body, some l⟩ :: Program.blocksFrom (some l) (j + 1) body' bs := rfl
+      = ⟨b, j, Program.straight body, some l⟩ :: Program.blocksFrom (some l) (j + 1) body' bs := rfl

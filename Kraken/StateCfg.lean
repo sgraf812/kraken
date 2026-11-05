@@ -147,7 +147,7 @@ variable [Host] [FunDecls]
 theorem cfg {p : Program} {s₀ : MachineData} {Q : Unit → MachineData → Prop}
     {E : Int64 → MachineData → Prop} (I : Program.CfgInvariant) (var : Program.CfgVariant)
     (h : ∀ blk ∈ Program.blocks p, ∀ t, I.lift s₀ blk.label t →
-      WP.wp (Program.straight blk.body)
+      WP.wp blk.body
         (fun _ => Program.Next I Q (Program.Decreases var blk.label blk.idx t) blk.next (blk.idx + 1))
         (Program.Intercept (Program.labels p) s₀
           (fun l j s => I l s ∧ Program.Decreases var blk.label blk.idx t l j s) E) t) :
@@ -216,7 +216,7 @@ theorem cfg {p : Program} {s₀ : MachineData} {Q : Unit → MachineData → Pro
       have hbi : blk.idx = Program.blockIdx p l + 1 := by
         rw [hidx, Program.blockIdx_eq hnd hi', Nat.add_comm]
       have hb := h blk (Program.mem_blocks_of_blockAt hblk)
-      rw [hlab, hbi, Program.straight_eq_self ((Program.view_free p).2 _ (List.mem_of_getElem? hi'))] at hb
+      rw [hlab, hbi] at hb
       have htext := Program.fromLabel_block hnd hblk
       have hlen := congrArg List.length htext
       simp only [List.length_cons, List.length_append] at hlen
@@ -272,8 +272,7 @@ theorem cfg {p : Program} {s₀ : MachineData} {Q : Unit → MachineData → Pro
   have hlen0 := congrArg List.length (Program.view_eq_entry hnd)
   simp only [List.length_append] at hlen0
   refine Program.run_infix (o := 0) hq (by omega) (Program.entry_noInternal p)
-    (Program.straight_eq_self (p := (Program.entryBlock p).body) (Program.view_free p).1 ▸
-      h _ (Program.entryBlock_mem_blocks p) s₀ rfl) ?_ ?_
+    (h _ (Program.entryBlock_mem_blocks p) s₀ rfl) ?_ ?_
   · intro st hpc hnext
     simp only [Program.entryBlock] at hnext hlen0
     cases hv : (Program.view p).2 with
@@ -311,7 +310,7 @@ theorem cfg {p : Program} {s₀ : MachineData} {Q : Unit → MachineData → Pro
 @[spec] theorem Spec.cfg {p : Program} {s₀ : MachineData} {Q : Unit → MachineData → Prop}
     {E : Int64 → MachineData → Prop} (I : Program.CfgInvariant) (var : Program.CfgVariant)
     (h : ∀ blk ∈ Program.blocks p, ∀ t, I.lift s₀ blk.label t →
-      WP.wp (Program.straight blk.body)
+      WP.wp blk.body
         (fun _ => Program.Next I Q (Program.Decreases var blk.label blk.idx t) blk.next (blk.idx + 1))
         (Program.Intercept (Program.labels p) s₀
           (fun l j s => I l s ∧ Program.Decreases var blk.label blk.idx t l j s) E) t) :

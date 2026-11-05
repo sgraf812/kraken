@@ -177,10 +177,6 @@ variable [Host] [FunDecls] {Q : Unit → MachineData → Prop} {E : Int64 → Ma
 @[spec] public theorem straight_nil : ⦃ fun s => Q () s ⦄ Program.straight [] ⦃ Q; E ⦄ :=
   Triple.intro fun _ hq => Program.wp_nil fun _ => hq
 
-@[spec] public theorem straight_body (b : Option Label) (j : Nat) (body : Program) (n : Option Label) :
-    ⦃ fun s => WP.wp (Program.straight body) Q E s ⦄ Program.straight (Program.Block.body ⟨b, j, body, n⟩) ⦃ Q; E ⦄ :=
-  Triple.intro fun _ hw => hw
-
 @[spec] public theorem straight_instr (i : Instr) (p : Program) :
     ⦃ fun s => WP.wp (Directive.instr i) (fun _ => WP.wp (Program.straight p) Q E) E s ⦄
       Program.straight (Directive.instr i :: p) ⦃ Q; E ⦄ :=
