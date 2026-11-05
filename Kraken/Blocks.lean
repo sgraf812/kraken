@@ -70,6 +70,43 @@ def Directive.isLabel : Directive → Bool
   | .label _ => true
   | _ => false
 
+def Program.straight (p : Program) : Program := p.filter (!·.isLabel)
+
+theorem Program.straight_nil : Program.straight [] = [] := rfl
+
+theorem Program.straight_cons_instr (i : Instr) (p : Program) :
+    Program.straight (.instr i :: p) = .instr i :: Program.straight p := rfl
+
+theorem Program.straight_cons_label (l : Label) (p : Program) :
+    Program.straight (.label l :: p) = Program.straight p := rfl
+
+theorem Program.straight_cons_byteArray (a : ByteArray) (p : Program) :
+    Program.straight (.byteArray a :: p) = .byteArray a :: Program.straight p := rfl
+
+theorem Program.labels_straight (p : Program) : Program.labels (Program.straight p) = [] := by
+  induction p with
+  | nil => rfl
+  | cons d p ih =>
+    cases d with
+    | label l => rw [Program.straight_cons_label]; exact ih
+    | instr i => rw [Program.straight_cons_instr, Program.labels_cons_instr]; exact ih
+    | byteArray a => rw [Program.straight_cons_byteArray, Program.labels_cons_byteArray]; exact ih
+
+theorem Program.straight_eq_self {p : Program} (h : ∀ d ∈ p, d.isLabel = false) :
+    Program.straight p = p :=
+  List.filter_eq_self.mpr fun d hd => by simp [h d hd]
+
+theorem Program.straight_eq_self_of_labels {p : Program} (h : Program.labels p = []) :
+    Program.straight p = p :=
+  Program.straight_eq_self fun d hd => by
+    cases d with
+    | label l =>
+      have : l ∈ Program.labels p := Program.mem_labels.mpr hd
+      rw [h] at this
+      cases this
+    | instr i => rfl
+    | byteArray a => rfl
+
 /-! ### Basic blocks
 
 `Program.view` cuts the text at its label cells. A `Program.Block` is a

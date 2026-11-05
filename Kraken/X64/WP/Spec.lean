@@ -3,6 +3,7 @@ module
 public import Kraken.X64.WP.Instance
 public import Kraken.SeparationMem
 public import Kraken.Specs
+public import Kraken.Blocks
 
 open Std.WP
 open Lean.Order
@@ -164,13 +165,41 @@ variable [Host] [FunDecls] {Q : Unit → MachineData → Prop} {E : Int64 → Ma
   Triple.intro fun _ hq => Program.wp_nil fun _ => hq
 
 @[spec] public theorem cons (d : Directive) (p : Program) :
-    ⦃ fun s => (Program.labels (d :: p) = [] → WP.wp d (fun _ => WP.wp p Q E) E s)
+    ⦃ fun s => (Program.labels (d :: p) = [] → WP.wp (Program.straight (d :: p)) Q E s)
                ∧ (Program.labels (d :: p) ≠ [] → WP.wp (Program.cfg (d :: p)) Q E s) ⦄ (d :: p) ⦃ Q; E ⦄ :=
   Triple.intro fun _ ⟨hl, hc⟩ => by
     by_cases h : Program.labels (d :: p) = []
-    · exact Program.wp_cons h (hl h)
+    · rw [← Program.straight_eq_self_of_labels h]
+      exact hl h
     · rw [← Program.cfg_eq (d :: p)]
       exact hc h
+
+@[spec] public theorem straight_nil : ⦃ fun s => Q () s ⦄ Program.straight [] ⦃ Q; E ⦄ :=
+  Triple.intro fun _ hq => Program.wp_nil fun _ => hq
+
+@[spec] public theorem straight_body (b : Option Label) (j : Nat) (body : Program) (n : Option Label) :
+    ⦃ fun s => WP.wp (Program.straight body) Q E s ⦄ Program.straight (Program.Block.body ⟨b, j, body, n⟩) ⦃ Q; E ⦄ :=
+  Triple.intro fun _ hw => hw
+
+@[spec] public theorem straight_instr (i : Instr) (p : Program) :
+    ⦃ fun s => WP.wp (Directive.instr i) (fun _ => WP.wp (Program.straight p) Q E) E s ⦄
+      Program.straight (Directive.instr i :: p) ⦃ Q; E ⦄ :=
+  Triple.intro fun _ hw => by
+    rw [Program.straight_cons_instr]
+    exact Program.wp_cons (by rw [Program.labels_cons_instr]; exact Program.labels_straight p) hw
+
+@[spec] public theorem straight_label (l : Label) (p : Program) :
+    ⦃ fun s => WP.wp (Program.straight p) Q E s ⦄ Program.straight (Directive.label l :: p) ⦃ Q; E ⦄ :=
+  Triple.intro fun _ hw => by
+    rw [Program.straight_cons_label]
+    exact hw
+
+@[spec] public theorem straight_byteArray (a : ByteArray) (p : Program) :
+    ⦃ fun s => WP.wp (Directive.byteArray a) (fun _ => WP.wp (Program.straight p) Q E) E s ⦄
+      Program.straight (Directive.byteArray a :: p) ⦃ Q; E ⦄ :=
+  Triple.intro fun _ hw => by
+    rw [Program.straight_cons_byteArray]
+    exact Program.wp_cons (by rw [Program.labels_cons_byteArray]; exact Program.labels_straight p) hw
 
 @[spec] public theorem append (p q : Program) :
     ⦃ fun s => WP.wp (Program.cfg (p ++ q)) Q E s ⦄ (p ++ q) ⦃ Q; E ⦄ :=
