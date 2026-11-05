@@ -25,13 +25,13 @@ public funspec touch_spec "touch" [Host] [FunDecls] [Embeds touch]
     ensures s' => True
     autoframes calling_conv SysV preserves rax rcx rdx rsi rdi r8 r9 r10 r11 := by
   refine Triple.intro fun s₀ ⟨h₀, _⟩ => ?_
-  vcgen
+  vcgen [touch]
     invariants
     · fun l s' => match l with
         | "touch" => s' = s₀
         | _ => False
     · fun _ _ => 0
-    simp [touch] with kfinish
+    with kfinish
 
 @[expose] public def calls : Nat → Program
   | 0 =>

@@ -17,8 +17,8 @@ stepping tactic and a discharge tactic.
 | file | family | stepping | left for discharge |
 | --- | --- | --- | --- |
 | `segadc.lean` | carry chain, straight line | `vcgen` | none left |
-| `manycalls.lean` | `n` calls of `touch` | `Program.WP.cfg`, `vcgen [touch_spec] with kfinish` | none left |
-| `changingframes.lean` | `n` calls of `poke`, each followed by `addq $8, %rdi` | `Program.WP.cfg`, `vcgen [poke_spec] with kfinish` | none left |
+| `manycalls.lean` | `n` calls of `touch` | `vcgen [touch_spec] invariants … with kfinish` | none left |
+| `changingframes.lean` | `n` calls of `poke`, each followed by `addq $8, %rdi` | `vcgen [poke_spec] invariants … with kfinish` | none left |
 
 ## Phase split (ms: stepping / kernel)
 

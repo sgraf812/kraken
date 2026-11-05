@@ -30,7 +30,7 @@ theorem pushPop_spec [Host] [FunDecls] (n : Nat) (R : DataMem → Prop) (s : Mac
     (hrdx : (s.regs.get64 .rdx).toNat = n)
     (hmem : s.dmem =⋆ Mem.Blocks [(s.regs.get64 .rsp - BitVec.ofNat 64 (8 * n), 8 * n)] ⋆ R) :
     WP.wp pushPop (fun _ s' => s'.regs.get64 .rsp = s.regs.get64 .rsp) (fun _ _ => False) s := by
-  vcgen
+  vcgen [pushPop]
     invariants
     · fun l s' => match l with
       | "fill" => 0 < (s'.regs.get64 .rcx).toNat ∧ (s'.regs.get64 .rcx).toNat ≤ n
@@ -45,6 +45,6 @@ theorem pushPop_spec [Host] [FunDecls] (n : Nat) (R : DataMem → Prop) (s : Mac
     · fun l s' => match l with
       | "fill" => (s'.regs.get64 .rcx).toNat + (s'.regs.get64 .rdx).toNat
       | _ => (s'.regs.get64 .rdx).toNat
-    simp [pushPop] with kfinish
+    with kfinish
 
 end State

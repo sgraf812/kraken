@@ -143,7 +143,7 @@ theorem scalarproduct_fma3_spec [Host] [FunDecls] (s : MachineData) (len : Nat)
     (h_v1 : s.dmem =⋆ Mem.Blocks [(s.regs.get64 .rdi, len * 4)] ⋆ R₁)
     (h_v2 : s.dmem =⋆ Mem.Blocks [(s.regs.get64 .rsi, len * 4)] ⋆ R₂) :
     WP.wp scalarproduct_fma3_prog (fun _ s' => s'.dmem = s.dmem) (fun _ _ => False) s := by
-  vcgen
+  vcgen [scalarproduct_fma3_prog]
     invariants
     · fun l s' =>
         match l with
@@ -175,7 +175,7 @@ theorem scalarproduct_fma3_spec [Host] [FunDecls] (s : MachineData) (len : Nat)
         | "ff_scalarproduct_float_fma3" => 2 ^ 64
         | ".loop128" => (s'.regs.get64 .rcx).toNat - (s'.regs.get64 .r8).toNat
         | _ => 0
-    simp [scalarproduct_fma3_prog] with kfinish
+    with kfinish
 
 funspec scalarproduct_fma3_funspec "ff_scalarproduct_float_fma3" [Host] [FunDecls]
     [Embeds scalarproduct_fma3]
@@ -188,7 +188,7 @@ funspec scalarproduct_fma3_funspec "ff_scalarproduct_float_fma3" [Host] [FunDecl
     ensures s' => True
     autoframes calling_conv SysV preserves rax rsi rdi r9 r10 r11 := by
   refine Triple.intro fun s₀ ⟨h₀, _⟩ => ?_
-  vcgen
+  vcgen [scalarproduct_fma3]
     invariants
     · fun l s' => match l with
         | "ff_scalarproduct_float_fma3" => s' = s₀
@@ -219,6 +219,6 @@ funspec scalarproduct_fma3_funspec "ff_scalarproduct_float_fma3" [Host] [FunDecl
         | "ff_scalarproduct_float_fma3" => 2 ^ 64
         | ".loop128" => s'.regs.rcx.toNat - s'.regs.r8.toNat
         | _ => 0
-    simp [scalarproduct_fma3, scalarproduct_fma3_prog] with kfinish
+    simp [scalarproduct_fma3_prog] with kfinish
 
 end State.FfScalarproductFloatFma3

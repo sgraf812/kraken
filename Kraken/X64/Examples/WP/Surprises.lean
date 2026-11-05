@@ -46,11 +46,11 @@ drain:
 
 example [Host] [FunDecls] (s : MachineData) (hc : s.regs.rcx.toNat = 2) :
     WP.wp drain (fun _ _ => False) (fun a s' => a = label "drain" ∧ s'.regs.rcx.toNat = 1) s := by
-  vcgen
+  vcgen [drain]
     invariants
     · fun _ s' => s' = s
     · fun _ _ => 0
-    simp [drain] with kfinish
+    with kfinish
 
 /-! ## C1: a call made by hand is a jump
 

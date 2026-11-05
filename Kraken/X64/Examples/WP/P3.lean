@@ -56,10 +56,10 @@ theorem p3_correct [Host] (hp : p3.IsInfix Host.prog)
       (fun st => st.data.regs.rdx.toNat = p3_spec s ∧ st.data.regs.rax = 0) ⟨s, startAddr hp⟩ := by
   simp only [p3_spec] at h_bounds ⊢
   apply Program.WP.step1_of_wp hp
-  vcgen
+  vcgen [p3]
     invariants
     · p3_table s
     · fun _ s' => s'.regs.rbx.toNat
-    simp [p3] with kfinish
+    with kfinish
 
 end State

@@ -13,11 +13,12 @@ open scoped Program.WP
   `(tactic| (
     intro _ _ _ _ _ _ _ _
     refine Triple.intro fun s₀ ⟨h₀, _⟩ => ?_
-    refine Program.WP.cfg
-      (fun l s' => match l with
-        | "many" => s' = s₀
-        | _ => False)
-      (fun _ _ => 0) ?_
-    vcgen [ChangingFrames.poke_spec] with kfinish))
+    vcgen [ChangingFrames.poke_spec]
+      invariants
+      · fun l s' => match l with
+          | "many" => s' = s₀
+          | _ => False
+      · fun _ _ => 0
+      with kfinish))
   `(tactic| fail)
   [8, 16]

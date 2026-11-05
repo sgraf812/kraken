@@ -79,7 +79,7 @@ funspec memmove_spec "memmove" [Host] [FunDecls] [Embeds memmove]
     autoframes calling_conv SysV preserves rcx r8 r9 r10 r11
       writes s.regs.rdi.toBitVec[*...<s.regs.rdx.toNat] := by
   refine Triple.intro fun s₀ ⟨h₀, _⟩ => ?_
-  vcgen
+  vcgen [memmove]
     invariants
     · fun l s' => match l with
         | "memmove" => s' = s₀
@@ -89,7 +89,7 @@ funspec memmove_spec "memmove" [Host] [FunDecls] [Embeds memmove]
         | "fdone" => MMFwd s s₀ s' ∧ s'.regs.rdx.toBitVec = 0
         | _ => False
     · fun _ s' => s'.regs.rdx.toNat
-    simp [memmove] with kfinish
+    with kfinish
 where
   MMFwd (s s₀ s' : MachineData) : Prop :=
     s.regs.rdi.toNat ≤ s.regs.rsi.toNat
@@ -142,7 +142,7 @@ theorem memmove_correct [Host] (hp : memmoveProg.IsInfix Host.prog)
     show List.find? _ [_] = _
     simp [hstart]
   apply Program.WP.step1_of_wp hp
-  vcgen
+  vcgen [memmoveProg]
     invariants
     · fun l s' => match l with
       | "start" => s' = s
@@ -152,6 +152,6 @@ theorem memmove_correct [Host] (hp : memmoveProg.IsInfix Host.prog)
               s.dmem s'.dmem
       | _ => False
     · fun _ _ => 0
-    simp [memmoveProg, memmove] with kfinish
+    simp [memmove] with kfinish
 
 end State

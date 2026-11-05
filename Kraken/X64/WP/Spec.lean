@@ -151,6 +151,11 @@ public theorem MachineData.not_stackBelow_pop (s : MachineData) :
 
 end Program.WP
 
+public def Program.cfg (p : Program) : Program := p
+
+public theorem Program.cfg_eq (p : Program) : Program.cfg p = p := by
+  unfold Program.cfg; rfl
+
 namespace Program.WP.Spec
 
 variable [Host] [FunDecls] {Q : Unit → MachineData → Prop} {E : Int64 → MachineData → Prop}
@@ -159,8 +164,17 @@ variable [Host] [FunDecls] {Q : Unit → MachineData → Prop} {E : Int64 → Ma
   Triple.intro fun _ hq => Program.wp_nil fun _ => hq
 
 @[spec] public theorem cons (d : Directive) (p : Program) :
-    ⦃ fun s => Program.labels (d :: p) = [] ∧ WP.wp d (fun _ => WP.wp p Q E) E s ⦄ (d :: p) ⦃ Q; E ⦄ :=
-  Triple.intro fun _ ⟨hN, hw⟩ => Program.wp_cons hN hw
+    ⦃ fun s => (Program.labels (d :: p) = [] → WP.wp d (fun _ => WP.wp p Q E) E s)
+               ∧ (Program.labels (d :: p) ≠ [] → WP.wp (Program.cfg (d :: p)) Q E s) ⦄ (d :: p) ⦃ Q; E ⦄ :=
+  Triple.intro fun _ ⟨hl, hc⟩ => by
+    by_cases h : Program.labels (d :: p) = []
+    · exact Program.wp_cons h (hl h)
+    · rw [← Program.cfg_eq (d :: p)]
+      exact hc h
+
+@[spec] public theorem append (p q : Program) :
+    ⦃ fun s => WP.wp (Program.cfg (p ++ q)) Q E s ⦄ (p ++ q) ⦃ Q; E ⦄ :=
+  Triple.intro fun _ hw => by rwa [Program.cfg_eq] at hw
 
 @[spec] public theorem mov_reg_imm (asz : Width) (r : Reg64) (i : Int64) :
     ⦃ fun s => Q () { s with regs := s.regs.set64 r (BitVec.setWidth 64 i.toBitVec) } ⦄

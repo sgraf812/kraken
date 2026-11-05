@@ -307,14 +307,14 @@ theorem cfg {p : Program} {s₀ : MachineData} {Q : Unit → MachineData → Pro
     rw [Host.label_eq hlink (hcellOf l' (hne_of l' hsome'))]
     exact key (l', d) hsome' hI'.1
 
-@[spec low] theorem Spec.cfg {p : Program} {s₀ : MachineData} {Q : Unit → MachineData → Prop}
+@[spec] theorem Spec.cfg {p : Program} {s₀ : MachineData} {Q : Unit → MachineData → Prop}
     {E : Int64 → MachineData → Prop} (I : Program.CfgInvariant) (var : Program.CfgVariant)
     (h : ∀ blk ∈ Program.blocks p, ∀ t, I.lift s₀ blk.label t →
       WP.wp blk.body
         (fun _ => Program.Next I Q (Program.Decreases var blk.label blk.idx t) blk.next (blk.idx + 1))
         (Program.Intercept (Program.labels p) s₀
           (fun l j s => I l s ∧ Program.Decreases var blk.label blk.idx t l j s) E) t) :
-    ⦃ fun s => s = s₀ ⦄ p ⦃ Q; E ⦄ :=
-  Triple.intro fun _ hs => hs ▸ Program.WP.cfg I var h
+    ⦃ fun s => s = s₀ ⦄ Program.cfg p ⦃ Q; E ⦄ :=
+  Triple.intro fun _ hs => hs ▸ (Program.cfg_eq p).symm ▸ Program.WP.cfg I var h
 
 end Program.WP
