@@ -417,6 +417,36 @@ theorem BitVec.sadcOverflow_false {w} (a b : BitVec w) :
     BitVec.sadcOverflow a b false = BitVec.saddOverflow a b := by
   simp [BitVec.sadcOverflow, BitVec.saddOverflow]
 
+theorem BitVec.unsigned_take_add_bne {w} (a b : BitVec w) (hw : 4 ≤ w) :
+    (((a + b).take 4).unsigned != (a.take 4).unsigned + (b.take 4).unsigned) = BitVec.carry 4 a b false := by
+  have hdvd : 2 ^ 4 ∣ 2 ^ w := Nat.pow_dvd_pow 2 hw
+  have htake : ∀ x : BitVec w, (x.take 4).toNat = x.toNat % 16 := fun x => by
+    simp only [BitVec.take, BitVec.extractLsb'_toNat, Nat.shiftRight_zero]
+  have hsum : ((a + b).take 4).toNat = (a.toNat + b.toNat) % 16 := by
+    rw [htake, BitVec.toNat_add]
+    exact Nat.mod_mod_of_dvd _ hdvd
+  apply Bool.eq_iff_iff.mpr
+  simp only [BitVec.carry, bne_iff_ne, ne_eq, decide_eq_true_eq, BitVec.unsigned, hsum, htake, Bool.toNat_false]
+  omega
+
+theorem BitVec.unsigned_take_sub_bne {w} (a b : BitVec w) (hw : 4 ≤ w) :
+    (((a - b).take 4).unsigned != (a.take 4).unsigned - (b.take 4).unsigned)
+      = BitVec.usubOverflow (a.take 4) (b.take 4) := by
+  have hdvd : 2 ^ 4 ∣ 2 ^ w := Nat.pow_dvd_pow 2 hw
+  have htake : ∀ x : BitVec w, (x.take 4).toNat = x.toNat % 16 := fun x => by
+    simp only [BitVec.take, BitVec.extractLsb'_toNat, Nat.shiftRight_zero]
+  have hb := b.isLt
+  have hsum : ((a - b).take 4).toNat = (2 ^ w - b.toNat + a.toNat) % 16 := by
+    rw [htake, BitVec.toNat_sub]
+    exact Nat.mod_mod_of_dvd _ hdvd
+  have h16 : (2 ^ w - b.toNat + a.toNat) % 16 = (16 - b.toNat % 16 + a.toNat % 16) % 16 := by
+    obtain ⟨k, hk⟩ := hdvd
+    have : 2 ^ w - b.toNat + a.toNat = 16 * k - b.toNat + a.toNat := by rw [hk]
+    omega
+  apply Bool.eq_iff_iff.mpr
+  simp only [BitVec.usubOverflow, bne_iff_ne, ne_eq, decide_eq_true_eq, BitVec.unsigned, hsum, htake, h16]
+  omega
+
 theorem BitVec.unsigned_take_add_one_bne (a : BitVec 64) :
     (((a + 1).take 4).unsigned != (a.take 4).unsigned + 1) = BitVec.carry 4 a 1 false := by
   have htake : ∀ x : BitVec 64, (x.take 4).toNat = x.toNat % 16 := fun x => by
@@ -475,6 +505,11 @@ theorem BitVec.uaddOverflow_eq_carry {w} (a b : BitVec w) :
 @[simp, grind =] theorem BitVec.ule_eq_true_iff {w} (a b : BitVec w) :
     a.ule b = true ↔ a.toNat ≤ b.toNat := BitVec.ule_iff_toNat_le
 
+@[grind =] theorem BitVec.slt_eq_true_iff_toNat (a b : BitVec 64) :
+    a.slt b = true ↔ (a.toNat + 2 ^ 63) % 2 ^ 64 < (b.toNat + 2 ^ 63) % 2 ^ 64 := by
+  rw [← BitVec.toInt_lt_toInt_iff_flip]
+  exact BitVec.slt_iff_toInt_lt
+
 @[simp, grind =] theorem BitVec.carry_eq_true_iff {w} (i : Nat) (a b : BitVec w) (c : Bool) :
     BitVec.carry i a b c = true ↔ 2 ^ i ≤ a.toNat % 2 ^ i + b.toNat % 2 ^ i + c.toNat := by
   simp [BitVec.carry]
@@ -516,21 +551,19 @@ theorem BitVec.uaddOverflow_eq_carry {w} (a b : BitVec w) :
     (StatusFlags.ofSub a b).of = BitVec.ssubOverflow a b := BitVec.signed_sub_bne a b
 @[simp, vcgen_simp] theorem StatusFlags.pf_ofSub {w} (a b : BitVec w) :
     (StatusFlags.ofSub a b).pf = (((a - b).take 8).cpop_ % 2 == BitVec.zero _) := rfl
-@[simp, vcgen_simp] theorem StatusFlags.af_ofSub {w} (a b : BitVec w) :
-    (StatusFlags.ofSub a b).af = (((a - b).take 4).unsigned != (a.take 4).unsigned - (b.take 4).unsigned) := rfl
-theorem StatusFlags.neg_ofSub (a b : BitVec 64) :
-    (StatusFlags.ofSub a b).neg
-      = decide ((a.toNat + 2 ^ 63) % 2 ^ 64 < (b.toNat + 2 ^ 63) % 2 ^ 64) := by
-  rw [StatusFlags.neg, StatusFlags.sf_ofSub, StatusFlags.of_ofSub, ← BitVec.signed_sub_bne]
-  have : ((a - b).msb != ((a - b).signed != a.signed - b.signed))
-      = decide (a.toInt < b.toInt) := by
-    grind [BitVec.signed_eq]
-  simp only [this, BitVec.toInt_lt_toInt_iff_flip]
+@[simp, vcgen_simp] theorem StatusFlags.af_ofSub (a b : BitVec 64) :
+    (StatusFlags.ofSub a b).af = BitVec.usubOverflow (a.take 4) (b.take 4) :=
+  BitVec.unsigned_take_sub_bne a b (by decide)
+theorem StatusFlags.neg_ofSub (a b : BitVec 64) : (StatusFlags.ofSub a b).neg = a.slt b := by
+  rw [StatusFlags.neg, StatusFlags.sf_ofSub, StatusFlags.of_ofSub, ← BitVec.signed_sub_bne,
+    BitVec.slt_eq_decide]
+  grind [BitVec.signed_eq]
 @[grind =] theorem StatusFlags.neg_ofSub_of_lt (a b : BitVec 64)
     (ha : a.toNat < 2 ^ 63) (hb : b.toNat < 2 ^ 63) :
     (StatusFlags.ofSub a b).neg = a.ult b := by
-  rw [StatusFlags.neg_ofSub, Nat.mod_eq_of_lt (by omega), Nat.mod_eq_of_lt (by omega), BitVec.ult_eq_decide]
-  simp
+  rw [StatusFlags.neg_ofSub, Bool.eq_iff_iff, BitVec.slt_eq_true_iff_toNat, BitVec.ult_eq_true_iff,
+    Nat.mod_eq_of_lt (by omega), Nat.mod_eq_of_lt (by omega)]
+  omega
 
 @[grind =] theorem CondCode.interp_a_ofSub {w} (a b : BitVec w) :
     CondCode.a.interp (StatusFlags.ofSub a b) = b.ult a := by
@@ -577,21 +610,18 @@ theorem StatusFlags.neg_ofSub (a b : BitVec 64) :
     (StatusFlags.ofAdd a b).of = BitVec.saddOverflow a b := BitVec.signed_add_bne a b
 @[simp, vcgen_simp] theorem StatusFlags.pf_ofAdd {w} (a b : BitVec w) :
     (StatusFlags.ofAdd a b).pf = (((a + b).take 8).cpop_ % 2 == BitVec.zero _) := rfl
-@[simp, vcgen_simp] theorem StatusFlags.af_ofAdd {w} (a b : BitVec w) :
-    (StatusFlags.ofAdd a b).af = (((a + b).take 4).unsigned != (a.take 4).unsigned + (b.take 4).unsigned) := rfl
+@[simp, vcgen_simp] theorem StatusFlags.af_ofAdd (a b : BitVec 64) :
+    (StatusFlags.ofAdd a b).af = BitVec.carry 4 a b false :=
+  BitVec.unsigned_take_add_bne a b (by decide)
 theorem StatusFlags.neg_ofAdd (n : Nat) (b : BitVec 64) (hn : n % 2 ^ 64 ≠ 2 ^ 63) :
-    (StatusFlags.ofAdd (OfNat.ofNat n) b).neg
-      = decide ((b.toNat + 2 ^ 63) % 2 ^ 64 < ((2 ^ 64 - n % 2 ^ 64) % 2 ^ 64 + 2 ^ 63) % 2 ^ 64) := by
-  have ha : (OfNat.ofNat n : BitVec 64).toNat = n % 2 ^ 64 := BitVec.toNat_ofNat n 64
-  rw [StatusFlags.neg, StatusFlags.sf_ofAdd, StatusFlags.of_ofAdd, ← BitVec.signed_add_bne, ← ha,
-    ← BitVec.toNat_neg]
-  have : (((OfNat.ofNat n : BitVec 64) + b).msb
-        != (((OfNat.ofNat n : BitVec 64) + b).signed
-          != (OfNat.ofNat n : BitVec 64).signed + b.signed))
-      = decide (b.toInt < (-(OfNat.ofNat n : BitVec 64)).toInt) := by
-    rw [BitVec.toInt_neg_ofNat_of_ne n hn]
-    grind [BitVec.signed_eq]
-  simp only [this, BitVec.toInt_lt_toInt_iff_flip]
+    (StatusFlags.ofAdd (OfNat.ofNat n) b).neg = b.slt (BitVec.ofNat 64 (2 ^ 64 - n % 2 ^ 64)) := by
+  have hneg : BitVec.ofNat 64 (2 ^ 64 - n % 2 ^ 64) = -(OfNat.ofNat n : BitVec 64) := by
+    apply BitVec.eq_of_toNat_eq
+    simp only [BitVec.toNat_ofNat, BitVec.toNat_neg]
+    rw [show (OfNat.ofNat n : BitVec 64).toNat = n % 2 ^ 64 from BitVec.toNat_ofNat n 64]
+  rw [StatusFlags.neg, StatusFlags.sf_ofAdd, StatusFlags.of_ofAdd, ← BitVec.signed_add_bne, hneg,
+    BitVec.slt_eq_decide, BitVec.toInt_neg_ofNat_of_ne n hn]
+  grind [BitVec.signed_eq]
 
 grind_pattern StatusFlags.neg_ofAdd => StatusFlags.neg (StatusFlags.ofAdd (OfNat.ofNat n) b)
 
