@@ -10,7 +10,7 @@ public import Kraken.StateCfg
 open Std.WP
 open scoped Program.WP
 
-namespace SegAdcChain
+namespace AdcChain
 
 @[expose] public def chain : Nat → Program
   | 0 => []
@@ -33,4 +33,4 @@ namespace SegAdcChain
       (fun (_ : Unit) (s' : MachineData) => s'.regs.rax.toNat = 3 * n)
       (fun (_ : Int64) (_ : MachineData) => False)
 
-end SegAdcChain
+end AdcChain

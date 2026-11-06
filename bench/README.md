@@ -4,7 +4,7 @@ An independent Lake package (`bench/lakefile.toml`) that requires the parent
 `Kraken`. Each benchmark is one file whose `#eval` prints its numbers: open the
 file in the editor to run it, or from `bench/`
 
-    lake env lean segadc.lean
+    lake env lean adcchain.lean
 
 The program under test is a recursive function of `n`, so a run elaborates a
 fixed amount of source at any size, and the driver (`lib/Driver.lean`,
@@ -16,7 +16,7 @@ stepping tactic and a discharge tactic.
 
 | file | family | stepping | left for discharge |
 | --- | --- | --- | --- |
-| `segadc.lean` | carry chain, straight line | `vcgen` | none left |
+| `adcchain.lean` | carry chain, straight line | `vcgen` | none left |
 | `manycalls.lean` | `n` calls of `touch` | `vcgen [touch_spec] invariants … with kfinish` | none left |
 | `changingframes.lean` | `n` calls of `poke`, each followed by `addq $8, %rdi` | `vcgen [poke_spec] invariants … with kfinish` | none left |
 
@@ -24,16 +24,16 @@ stepping tactic and a discharge tactic.
 
 | family | n | stepping | kernel |
 | --- | --- | --- | --- |
-| segadc | 40 | 36 | 26 |
-| segadc | 160 | 99 | 159 |
-| segadc | 640 | 498 | 1240 |
+| adcchain | 40 | 36 | 26 |
+| adcchain | 160 | 99 | 159 |
+| adcchain | 640 | 498 | 1240 |
 | manycalls | 8 | 891 | 21 |
 | manycalls | 16 | 1393 | 41 |
 | manycalls | 32 | 2476 | 119 |
 | changingframes | 8 | 1920 | 25 |
 | changingframes | 16 | 4263 | 72 |
 
-`segadc` states a triple for `mov $0, %rax; add $0, %rax; mov $3, %rbx`
+`adcchain` states a triple for `mov $0, %rax; add $0, %rax; mov $3, %rbx`
 followed by `n` copies of `adc %rbx, %rax`, with the post
 `s'.regs.rax.toNat = 3 * n`. `vcgen` folds every register write, sum and
 carry into a literal, so no verification condition is left.
