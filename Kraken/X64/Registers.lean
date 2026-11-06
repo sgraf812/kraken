@@ -483,29 +483,31 @@ theorem BitVec.uaddOverflow_eq_carry {w} (a b : BitVec w) :
 @[vcgen_simp] theorem BitVec.usubOverflow_ofNat_ofNat (w n m : Nat) :
     BitVec.usubOverflow (BitVec.ofNat w n) (BitVec.ofNat w m) = (BitVec.ofNat w n).ult (BitVec.ofNat w m) := rfl
 
-@[simp, grind =] theorem BitVec.usubOverflow_eq_true_iff {w} (a b : BitVec w) :
+attribute [grind =] BitVec.ult_iff_lt BitVec.ule_iff_le
+
+theorem BitVec.usubOverflow_eq_true_iff {w} (a b : BitVec w) :
     BitVec.usubOverflow a b = true ↔ a.toNat < b.toNat := by
   simp [BitVec.usubOverflow]
 
-@[simp, grind =] theorem BitVec.uaddOverflow_eq_true_iff {w} (a b : BitVec w) :
+theorem BitVec.uaddOverflow_eq_true_iff {w} (a b : BitVec w) :
     BitVec.uaddOverflow a b = true ↔ 2 ^ w ≤ a.toNat + b.toNat := by
   simp [BitVec.uaddOverflow]
 
-@[simp, grind =] theorem BitVec.ssubOverflow_eq_true_iff {w} (a b : BitVec w) :
+theorem BitVec.ssubOverflow_eq_true_iff {w} (a b : BitVec w) :
     BitVec.ssubOverflow a b = true ↔ 2 ^ (w - 1) ≤ a.toInt - b.toInt ∨ a.toInt - b.toInt < -2 ^ (w - 1) := by
   simp [BitVec.ssubOverflow]
 
-@[simp, grind =] theorem BitVec.saddOverflow_eq_true_iff {w} (a b : BitVec w) :
+theorem BitVec.saddOverflow_eq_true_iff {w} (a b : BitVec w) :
     BitVec.saddOverflow a b = true ↔ 2 ^ (w - 1) ≤ a.toInt + b.toInt ∨ a.toInt + b.toInt < -2 ^ (w - 1) := by
   simp [BitVec.saddOverflow]
 
-@[simp, grind =] theorem BitVec.ult_eq_true_iff {w} (a b : BitVec w) :
+theorem BitVec.ult_eq_true_iff {w} (a b : BitVec w) :
     a.ult b = true ↔ a.toNat < b.toNat := BitVec.ult_iff_toNat_lt
 
-@[simp, grind =] theorem BitVec.ule_eq_true_iff {w} (a b : BitVec w) :
+theorem BitVec.ule_eq_true_iff {w} (a b : BitVec w) :
     a.ule b = true ↔ a.toNat ≤ b.toNat := BitVec.ule_iff_toNat_le
 
-@[grind =] theorem BitVec.slt_eq_true_iff_toNat (a b : BitVec 64) :
+theorem BitVec.slt_eq_true_iff_toNat (a b : BitVec 64) :
     a.slt b = true ↔ (a.toNat + 2 ^ 63) % 2 ^ 64 < (b.toNat + 2 ^ 63) % 2 ^ 64 := by
   rw [← BitVec.toInt_lt_toInt_iff_flip]
   exact BitVec.slt_iff_toInt_lt
