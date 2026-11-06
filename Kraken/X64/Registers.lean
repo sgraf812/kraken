@@ -381,41 +381,21 @@ theorem BitVec.signed_add_bne {w} (a b : BitVec w) :
     decide_eq_true_eq, Nat.add_sub_cancel, Int.bmod_two_pow_succ_eq_self_iff]
   omega
 
-def BitVec.sadcOverflow {w : Nat} (x y : BitVec w) (c : Bool) : Bool :=
-  (x.toInt + y.toInt + c.toNat ≥ 2 ^ (w - 1)) || (x.toInt + y.toInt + c.toNat < - 2 ^ (w - 1))
+@[vcgen_simp] theorem BitVec.msb_ofNat_eq_getMsbD (w n : Nat) :
+    (BitVec.ofNat w n).msb = (BitVec.ofNat w n).getMsbD 0 :=
+  BitVec.msb_eq_getMsbD_zero _
 
-theorem BitVec.toInt_add_add_ofNat {w} (a b : BitVec w) (c : Bool) :
-    (a + b + BitVec.ofNat w c.toNat).toInt = (a.toInt + b.toInt + (c.toNat : Int)).bmod (2 ^ w) := by
-  rw [BitVec.toInt_add, BitVec.toInt_add, BitVec.toInt_ofNat']
-  simp only [Int.add_bmod_bmod, Int.bmod_add_bmod]
-
-theorem BitVec.signed_add_add_bne {w} (a b : BitVec w) (c : Bool) :
-    ((a + b + BitVec.ofNat w c.toNat).signed != a.signed + b.signed + (c.toNat : Int))
-      = BitVec.sadcOverflow a b c := by
-  rcases w with _ | w
-  · cases c <;> simp [BitVec.signed, BitVec.sadcOverflow, BitVec.toInt_zero_length]
-  have hsum := BitVec.toInt_add_add_ofNat a b c
+theorem BitVec.signed_add_add_bne (a b : BitVec 64) (c : Bool) :
+    ((a + b + BitVec.ofNat 64 c.toNat).signed != a.signed + b.signed + (c.toNat : Int))
+      = (a.msb == b.msb && !((a + b + BitVec.ofNat 64 c.toNat).msb == a.msb)) := by
+  have ha := a.isLt; have hb := b.isLt
+  have hc : c.toNat ≤ 1 := Bool.toNat_le c
+  have hv : (a + b + BitVec.ofNat 64 c.toNat).toNat = (a.toNat + b.toNat + c.toNat) % 2 ^ 64 := by
+    simp only [BitVec.toNat_add, BitVec.toNat_ofNat, Nat.add_mod_mod, Nat.mod_add_mod]
   apply Bool.eq_iff_iff.mpr
-  simp only [bne_iff_ne, ne_eq, BitVec.signed, BitVec.sadcOverflow, hsum, Bool.or_eq_true,
-    decide_eq_true_eq, Nat.add_sub_cancel, Int.bmod_two_pow_succ_eq_self_iff]
-  omega
-
-@[vcgen_simp] theorem BitVec.sadcOverflow_ofNat_ofNat (w n m : Nat) (c : Bool) :
-    BitVec.sadcOverflow (BitVec.ofNat w n) (BitVec.ofNat w m) c
-      = (((BitVec.ofNat w n).toInt + (BitVec.ofNat w m).toInt + (c.toNat : Int)).bmod (2 ^ w)
-          != (BitVec.ofNat w n).toInt + (BitVec.ofNat w m).toInt + (c.toNat : Int)) := by
-  have h := BitVec.signed_add_add_bne (BitVec.ofNat w n) (BitVec.ofNat w m) c
-  rw [← h, BitVec.signed, BitVec.toInt_add_add_ofNat]
-  rfl
-
-@[simp] theorem BitVec.sadcOverflow_eq_true_iff {w} (a b : BitVec w) (c : Bool) :
-    BitVec.sadcOverflow a b c = true
-      ↔ 2 ^ (w - 1) ≤ a.toInt + b.toInt + c.toNat ∨ a.toInt + b.toInt + c.toNat < -2 ^ (w - 1) := by
-  simp [BitVec.sadcOverflow]
-
-theorem BitVec.sadcOverflow_false {w} (a b : BitVec w) :
-    BitVec.sadcOverflow a b false = BitVec.saddOverflow a b := by
-  simp [BitVec.sadcOverflow, BitVec.saddOverflow]
+  simp only [bne_iff_ne, ne_eq, BitVec.signed, BitVec.toInt_eq_toNat_cond, BitVec.msb_eq_decide, hv,
+    Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq, decide_eq_decide, beq_eq_false_iff_ne]
+  split <;> split <;> split <;> omega
 
 theorem BitVec.unsigned_take_add_bne {w} (a b : BitVec w) (hw : 4 ≤ w) :
     (((a + b).take 4).unsigned != (a.take 4).unsigned + (b.take 4).unsigned) = BitVec.carry 4 a b false := by

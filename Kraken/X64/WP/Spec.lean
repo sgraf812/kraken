@@ -349,7 +349,7 @@ local macro "run_step" : tactic =>
           status := StatusFlags.from_result v
             { cf := BitVec.carry 64 (s.regs.get64 rs) (s.regs.get64 rd) s.status.cf,
               af := BitVec.carry 4 (s.regs.get64 rs) (s.regs.get64 rd) s.status.cf,
-              of := BitVec.sadcOverflow (s.regs.get64 rs) (s.regs.get64 rd) s.status.cf } } ⦄
+              of := ((s.regs.get64 rs).msb == (s.regs.get64 rd).msb && !(v.msb == (s.regs.get64 rs).msb)) } } ⦄
       (Directive.instr (.regular asz .W64
           (.adc (.reg (.low rd .W64)) (.regOrMem (.reg (.low rs .W64))))))
     ⦃ Q; E ⦄ := by
