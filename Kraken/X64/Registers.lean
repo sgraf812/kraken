@@ -280,6 +280,54 @@ theorem BitVec.toNat_sub_cases {w} (a b : BitVec w) :
       Nat.add_mod_right, Nat.mod_eq_of_lt (by omega)]
   · rw [Nat.mod_eq_of_lt (by omega)]
 
+theorem BitVec.unsigned_add_add_bne {w} (a b : BitVec w) (c : Bool) :
+    ((a + b + BitVec.ofNat w c.toNat).unsigned != a.unsigned + b.unsigned + (c.toNat : Int))
+      = BitVec.carry w a b c := by
+  have ha := a.isLt; have hb := b.isLt
+  have hc : c.toNat ≤ 1 := Bool.toNat_le c
+  have hsum : ((a + b + BitVec.ofNat w c.toNat).toNat) = (a.toNat + b.toNat + c.toNat) % 2 ^ w := by
+    simp only [BitVec.toNat_add, BitVec.natCast_eq_ofNat, BitVec.toNat_ofNat, Nat.add_mod_mod, Nat.mod_add_mod]
+  rw [BitVec.carry_width]
+  apply Bool.eq_iff_iff.mpr
+  simp only [bne_iff_ne, ne_eq, decide_eq_true_eq, BitVec.unsigned, hsum]
+  by_cases hlt : a.toNat + b.toNat + c.toNat < 2 ^ w
+  · rw [Nat.mod_eq_of_lt hlt]; omega
+  · rw [Nat.mod_eq_sub_mod (by omega), Nat.mod_eq_of_lt (by omega)]; omega
+
+theorem BitVec.unsigned_take_add_add_bne {w} (a b : BitVec w) (c : Bool) (hw : 4 ≤ w) :
+    (((a + b + BitVec.ofNat w c.toNat).take 4).unsigned
+      != (a.take 4).unsigned + (b.take 4).unsigned + (c.toNat : Int))
+      = BitVec.carry 4 a b c := by
+  have hc : c.toNat ≤ 1 := Bool.toNat_le c
+  have hdvd : 2 ^ 4 ∣ 2 ^ w := Nat.pow_dvd_pow 2 hw
+  have htake : ∀ x : BitVec w, (x.take 4).toNat = x.toNat % 16 := fun x => by
+    simp only [BitVec.take, BitVec.extractLsb'_toNat, Nat.shiftRight_zero]
+  have hsum : ((a + b + BitVec.ofNat w c.toNat).take 4).toNat = (a.toNat + b.toNat + c.toNat) % 16 := by
+    rw [htake]
+    simp only [BitVec.toNat_add, BitVec.natCast_eq_ofNat, BitVec.toNat_ofNat, Nat.add_mod_mod, Nat.mod_add_mod]
+    exact Nat.mod_mod_of_dvd _ hdvd
+  apply Bool.eq_iff_iff.mpr
+  simp only [BitVec.carry, bne_iff_ne, ne_eq, decide_eq_true_eq, BitVec.unsigned, hsum, htake]
+  omega
+
+@[vcgen_simp] theorem BitVec.carry_ofNat_ofNat (w n m : Nat) (c : Bool) :
+    BitVec.carry w (BitVec.ofNat w n) (BitVec.ofNat w m) c
+      = (BitVec.ofNat (w + 1) (n % 2 ^ w + m % 2 ^ w + c.toNat)).getLsbD w := by
+  have hc : c.toNat ≤ 1 := Bool.toNat_le c
+  have hn := Nat.mod_lt n (Nat.two_pow_pos w)
+  have hm := Nat.mod_lt m (Nat.two_pow_pos w)
+  generalize hS : n % 2 ^ w + m % 2 ^ w + c.toNat = S
+  have hlt : S < 2 ^ (w + 1) := by rw [Nat.pow_succ]; omega
+  rw [BitVec.carry_width, BitVec.getLsbD_ofNat, BitVec.toNat_ofNat, BitVec.toNat_ofNat, hS]
+  simp only [Nat.lt_add_one, decide_true, Bool.true_and, Nat.testBit, Nat.shiftRight_eq_div_pow]
+  apply Bool.eq_iff_iff.mpr
+  simp only [ge_iff_le, decide_eq_true_eq, Nat.mod_two_ne_zero, Nat.one_and_eq_mod_two, bne_iff_ne, ne_eq]
+  have hd := Nat.two_pow_pos w
+  have hq : S / 2 ^ w < 2 := Nat.div_lt_of_lt_mul (by rw [Nat.pow_succ] at hlt; omega)
+  have hle : 1 ≤ S / 2 ^ w ↔ 1 * 2 ^ w ≤ S := Nat.le_div_iff_mul_le hd
+  generalize S / 2 ^ w = q at hq hle
+  omega
+
 /-! ## The flags an instruction leaves -/
 
 @[expose] def StatusFlags.ofSub {w} (a b : BitVec w) : StatusFlags :=

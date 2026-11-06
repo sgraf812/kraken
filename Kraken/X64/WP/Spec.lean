@@ -347,8 +347,8 @@ local macro "run_step" : tactic =>
         Q () { s with
           regs := s.regs.set64 rd v
           status := StatusFlags.from_result v
-            { cf := v.unsigned != (s.regs.get64 rs).unsigned + (s.regs.get64 rd).unsigned + s.status.cf,
-              af := (v.take 4).unsigned != ((s.regs.get64 rs).take 4).unsigned + ((s.regs.get64 rd).take 4).unsigned + s.status.cf,
+            { cf := BitVec.carry 64 (s.regs.get64 rs) (s.regs.get64 rd) s.status.cf,
+              af := BitVec.carry 4 (s.regs.get64 rs) (s.regs.get64 rd) s.status.cf,
               of := v.signed != (s.regs.get64 rs).signed + (s.regs.get64 rd).signed + s.status.cf } } ⦄
       (Directive.instr (.regular asz .W64
           (.adc (.reg (.low rd .W64)) (.regOrMem (.reg (.low rs .W64))))))
@@ -356,6 +356,7 @@ local macro "run_step" : tactic =>
   refine Triple.intro fun s hpre => ?_
   refine Program.wp_single fun _ _ _ _ hn _ => ?_
   run_step
+  rw [BitVec.unsigned_add_add_bne, BitVec.unsigned_take_add_add_bne _ _ _ (by decide)]
   exact hn _ hpre
 
 @[spec] public theorem add_reg_reg (asz : Width) (rd rs : Reg64) :
