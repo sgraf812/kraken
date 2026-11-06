@@ -433,6 +433,12 @@ theorem BitVec.uaddOverflow_eq_carry {w} (a b : BitVec w) :
     BitVec.saddOverflow a b = true ↔ 2 ^ (w - 1) ≤ a.toInt + b.toInt ∨ a.toInt + b.toInt < -2 ^ (w - 1) := by
   simp [BitVec.saddOverflow]
 
+@[simp, grind =] theorem BitVec.ult_eq_true_iff {w} (a b : BitVec w) :
+    a.ult b = true ↔ a.toNat < b.toNat := BitVec.ult_iff_toNat_lt
+
+@[simp, grind =] theorem BitVec.ule_eq_true_iff {w} (a b : BitVec w) :
+    a.ule b = true ↔ a.toNat ≤ b.toNat := BitVec.ule_iff_toNat_le
+
 @[simp, grind =] theorem BitVec.carry_eq_true_iff {w} (i : Nat) (a b : BitVec w) (c : Bool) :
     BitVec.carry i a b c = true ↔ 2 ^ i ≤ a.toNat % 2 ^ i + b.toNat % 2 ^ i + c.toNat := by
   simp [BitVec.carry]
@@ -486,13 +492,13 @@ theorem StatusFlags.neg_ofSub (a b : BitVec 64) :
   simp only [this, BitVec.toInt_lt_toInt_iff_flip]
 @[grind =] theorem StatusFlags.neg_ofSub_of_lt (a b : BitVec 64)
     (ha : a.toNat < 2 ^ 63) (hb : b.toNat < 2 ^ 63) :
-    (StatusFlags.ofSub a b).neg = decide (a.toNat < b.toNat) := by
-  rw [StatusFlags.neg_ofSub, Nat.mod_eq_of_lt (by omega), Nat.mod_eq_of_lt (by omega)]
+    (StatusFlags.ofSub a b).neg = a.ult b := by
+  rw [StatusFlags.neg_ofSub, Nat.mod_eq_of_lt (by omega), Nat.mod_eq_of_lt (by omega), BitVec.ult_eq_decide]
   simp
 
 @[grind =] theorem CondCode.interp_a_ofSub {w} (a b : BitVec w) :
-    CondCode.a.interp (StatusFlags.ofSub a b) = decide (b.toNat < a.toNat) := by
-  rw [CondCode.interp_a, StatusFlags.cf_ofSub, StatusFlags.zf_ofSub, ← BitVec.unsigned_sub_bne]
+    CondCode.a.interp (StatusFlags.ofSub a b) = b.ult a := by
+  rw [BitVec.ult_eq_decide, CondCode.interp_a, StatusFlags.cf_ofSub, StatusFlags.zf_ofSub, ← BitVec.unsigned_sub_bne]
   have ⟨h₁, h₂⟩ := BitVec.toNat_sub_cases a b
   have ha := a.isLt
   have hb := b.isLt
@@ -517,9 +523,10 @@ theorem StatusFlags.neg_ofSub (a b : BitVec 64) :
     simp [this]
     omega
 @[grind =] theorem CondCode.interp_be_ofSub {w} (a b : BitVec w) :
-    CondCode.be.interp (StatusFlags.ofSub a b) = decide (a.toNat ≤ b.toNat) := by
+    CondCode.be.interp (StatusFlags.ofSub a b) = a.ule b := by
   have h := CondCode.interp_a_ofSub a b
-  rw [CondCode.interp_a] at h
+  rw [CondCode.interp_a, BitVec.ult_eq_decide] at h
+  rw [BitVec.ule_eq_decide]
   rw [CondCode.interp_be]
   revert h
   cases (StatusFlags.ofSub a b).cf <;> cases (StatusFlags.ofSub a b).zf <;> simp <;> omega
