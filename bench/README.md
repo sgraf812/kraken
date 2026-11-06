@@ -24,14 +24,17 @@ stepping tactic and a discharge tactic.
 
 | family | n | stepping | kernel |
 | --- | --- | --- | --- |
-| adcchain | 40 | 36 | 26 |
-| adcchain | 160 | 99 | 159 |
-| adcchain | 640 | 498 | 1240 |
-| manycalls | 8 | 891 | 21 |
-| manycalls | 16 | 1393 | 41 |
-| manycalls | 32 | 2476 | 119 |
-| changingframes | 8 | 1920 | 25 |
-| changingframes | 16 | 4263 | 72 |
+| adcchain | 40 | 31 | 23 |
+| adcchain | 160 | 77 | 104 |
+| adcchain | 640 | 336 | 721 |
+| manycalls | 8 | 746 | 16 |
+| manycalls | 16 | 1020 | 25 |
+| manycalls | 32 | 1845 | 59 |
+| changingframes | 8 | 1584 | 24 |
+| changingframes | 16 | 3428 | 50 |
+
+Each time is the median of three runs on a shared machine at load average 16
+to 32.
 
 `adcchain` states a triple for `mov $0, %rax; add $0, %rax; mov $3, %rbx`
 followed by `n` copies of `adc %rbx, %rax`, with the post
@@ -41,8 +44,9 @@ carry into a literal, so no verification condition is left.
 `manycalls` and `changingframes` state the obligation that `funspec` generates
 for the caller (`many_spec.go`) of `Kraken/X64/Examples/WP/ManyCalls.lean`
 and `Kraken/X64/Examples/WP/ChangingFrames.lean`. The callee is a fixed
-`funspec` with `autoframes`. `with kfinish` discharges each verification
-condition in the E-graph of `vcgen`, so the stepping time includes the
-discharge. The time is linear in the number of calls. At `n = 32`,
-`changingframes` fails: `grind` reaches its instance threshold (1000) on one
-verification condition.
+`funspec` with `autoframes`. `vcgen` steps the caller through
+`Program.WP.Spec.cfg`, whose invariant is the entry state at the label `many`.
+`with kfinish` discharges each verification condition in the E-graph of
+`vcgen`, so the stepping time includes the discharge. The time is linear in
+the number of calls. At `n = 32`, `changingframes` fails: `grind` reaches its
+instance threshold (1000) on one verification condition.
