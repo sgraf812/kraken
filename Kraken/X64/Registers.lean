@@ -514,6 +514,9 @@ theorem BitVec.slt_eq_true_iff_toNat (a b : BitVec 64) :
     BitVec.carry i a b c = true ↔ 2 ^ i ≤ a.toNat % 2 ^ i + b.toNat % 2 ^ i + c.toNat := by
   simp [BitVec.carry]
 
+@[vcgen_simp] theorem UInt64.mk_eq_zero_iff (v : BitVec 64) : ({ toBitVec := v } : UInt64) = 0 ↔ v = 0 :=
+  ⟨fun h => congrArg UInt64.toBitVec h, fun h => by subst h; rfl⟩
+
 /-! ## The flags an instruction leaves -/
 
 @[expose] def StatusFlags.ofSub {w} (a b : BitVec w) : StatusFlags :=

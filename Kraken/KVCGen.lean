@@ -31,7 +31,7 @@ attribute [vcgen_simp] UInt64.toBitVec_ofBitVec Int64.toBitVec_ofNat BitVec.ofNa
   bne_self_eq_false BitVec.xor_self Bool.toNat_false Bool.toNat_true Option.map_some Option.get!_some Option.isSome_some
   BitVec.ofInt_toInt Int64.ofBitVec_toBitVec List.cons_append List.nil_append UInt64.toNat_ofBitVec
   Program.labels_nil Program.labels_cons_instr Program.labels_cons_label Program.labels_cons_byteArray
-  List.cons_ne_nil
+  List.cons_ne_nil BitVec.zero_eq beq_iff_eq
 
 @[vcgen_rintro] theorem List.forall_mem_cons_intro {α : Type _} {G : α → Prop} {a : α} {l : List α}
     (ha : G a) (hl : ∀ x, x ∈ l → G x) : ∀ x, x ∈ a :: l → G x :=
