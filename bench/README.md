@@ -17,6 +17,8 @@ stepping tactic and a discharge tactic.
 | file | family | stepping | left for discharge |
 | --- | --- | --- | --- |
 | `adcchain.lean` | carry chain, straight line | `vcgen` | none left |
+| `carryflags.lean` | carry chain on symbolic registers, post on `zf`, `sf` and `rax` | `vcgen with kfinish` | none left |
+| `carryjumps.lean` | `n` copies of `adc %rbx, %rax; jz out` on symbolic registers | `vcgen with kfinish` | none left |
 | `manycalls.lean` | `n` calls of `touch` | `vcgen [touch_spec] invariants … with kfinish` | none left |
 | `changingframes.lean` | `n` calls of `poke`, each followed by `addq $8, %rdi` | `vcgen [poke_spec] invariants … with kfinish` | none left |
 
@@ -27,6 +29,12 @@ stepping tactic and a discharge tactic.
 | adcchain | 40 | 31 | 23 |
 | adcchain | 160 | 77 | 104 |
 | adcchain | 640 | 336 | 721 |
+| carryflags | 8 | 136 | 13 |
+| carryflags | 16 | 578 | 29 |
+| carryflags | 32 | 6973 | 88 |
+| carryjumps | 8 | 373 | 27 |
+| carryjumps | 16 | 1616 | 87 |
+| carryjumps | 32 | 13530 | 351 |
 | manycalls | 8 | 746 | 16 |
 | manycalls | 16 | 1020 | 25 |
 | manycalls | 32 | 1845 | 59 |
