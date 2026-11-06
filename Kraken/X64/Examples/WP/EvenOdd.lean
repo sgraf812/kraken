@@ -50,7 +50,7 @@ funspec even_spec "even" [Host] [FunDecls] [Embeds even] [Embeds odd]
       preserves rcx rdx rsi r8 r9 r10 r11 := by
   vcgen [even, odd_spec]
     invariants
-    · fun s₀ l s' => match l with
+    · fun {s₀} l s' => match l with
         | "even" => s' = s₀
         | _ => s'.regs = s₀.regs ∧ s'.dmem = s₀.dmem ∧ s.regs.rdi.toNat = 0
     · fun _ _ => 0
@@ -67,7 +67,7 @@ funspec odd_spec "odd" [Host] [FunDecls] [Embeds even] [Embeds odd]
       preserves rcx rdx rsi r8 r9 r10 r11 := by
   vcgen [odd, even_spec]
     invariants
-    · fun s₀ l s' => match l with
+    · fun {s₀} l s' => match l with
         | "odd" => s' = s₀
         | _ => s'.regs = s₀.regs ∧ s'.dmem = s₀.dmem ∧ s.regs.rdi.toNat = 0
     · fun _ _ => 0
@@ -113,7 +113,7 @@ theorem evenOdd_correct [Host] (hp : evenOddProg.IsInfix Host.prog)
   apply Program.WP.step1_of_wp hp
   vcgen [evenOddProg, even_spec he ho base sz]
     invariants
-    · fun _ l s' => match l with
+    · fun l s' => match l with
         | "start" => s' = s
         | "done" => s'.regs.rax.toNat = (s.regs.rdi.toNat + 1) % 2
         | _ => False

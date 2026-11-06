@@ -26,7 +26,7 @@ public funspec touch_spec "touch" [Host] [FunDecls] [Embeds touch]
     autoframes calling_conv SysV preserves rax rcx rdx rsi rdi r8 r9 r10 r11 := by
   vcgen [touch]
     invariants
-    · fun s₀ l s' => match l with
+    · fun {s₀} l s' => match l with
         | "touch" => s' = s₀
         | _ => False
     · fun _ _ => 0

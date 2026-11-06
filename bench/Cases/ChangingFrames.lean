@@ -30,7 +30,7 @@ public funspec poke_spec "poke" [Host] [FunDecls] [Embeds poke]
       writes s.regs.rdi.toBitVec[*...<8] := by
   vcgen [poke]
     invariants
-    · fun s₀ l s' => match l with
+    · fun {s₀} l s' => match l with
         | "poke" => s' = s₀
         | _ => False
     · fun _ _ => 0

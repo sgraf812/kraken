@@ -17,7 +17,7 @@ example [Host] [FunDecls] (l : Label) (Q : Unit → MachineData → Prop)
     WP.wp ([Directive.label l]) Q E s := by
   vcgen
     invariants
-    · fun _ _ s' => Q () s'
+    · fun _ s' => Q () s'
     · fun _ _ => 0
     with kfinish
 
@@ -30,7 +30,7 @@ example [Host] [FunDecls] (s : MachineData) :
     WP.wp jmpNext (fun _ t => t.regs.get64 .rax = 2) (fun _ _ => False) s := by
   vcgen [jmpNext]
     invariants
-    · fun _ _ s' => s'.regs.rsp = s.regs.rsp
+    · fun _ s' => s'.regs.rsp = s.regs.rsp
     · fun _ _ => 0
     with kfinish
 
@@ -44,7 +44,7 @@ example [Host] [FunDecls] (s : MachineData) (h : 0 < s.regs.rcx.toNat) :
     WP.wp decMid (fun _ t => t.regs.rcx = 0 ∧ t.regs.rax = 1) (fun _ _ => False) s := by
   vcgen [decMid]
     invariants
-    · fun _ _ s' => 0 < s'.regs.rcx.toNat ∧ s'.regs.rsp = s.regs.rsp
+    · fun _ s' => 0 < s'.regs.rcx.toNat ∧ s'.regs.rsp = s.regs.rsp
     · fun _ s' => s'.regs.rcx.toNat
     with kfinish
 
@@ -58,7 +58,7 @@ example [Host] [FunDecls] (s : MachineData) (h : s.regs.rbx = 0) :
     WP.wp jmpOver (fun _ t => t.regs.rbx = 0 ∧ t.regs.rax = 2) (fun _ _ => False) s := by
   vcgen [jmpOver]
     invariants
-    · fun _ _ s' => s'.regs.rbx = 0 ∧ s'.regs.rsp = s.regs.rsp
+    · fun _ s' => s'.regs.rbx = 0 ∧ s'.regs.rsp = s.regs.rsp
     · fun _ _ => 0
     with kfinish
 
@@ -72,7 +72,7 @@ example [Host] [FunDecls] (s : MachineData) :
     WP.wp jmpGap (fun _ t => t.regs.rax = 2) (fun _ _ => False) s := by
   vcgen [jmpGap]
     invariants
-    · fun _ _ s' => s'.regs.rsp = s.regs.rsp
+    · fun _ s' => s'.regs.rsp = s.regs.rsp
     · fun _ _ => 0
     with kfinish
 
@@ -87,7 +87,7 @@ example [Host] [FunDecls] (s : MachineData) :
     WP.wp jccOver (fun _ t => t.regs.rax = 2) (fun _ _ => False) s := by
   vcgen [jccOver]
     invariants
-    · fun _ _ s' => s'.regs.rsp = s.regs.rsp
+    · fun _ s' => s'.regs.rsp = s.regs.rsp
     · fun _ _ => 0
     with kfinish
 
@@ -101,7 +101,7 @@ example [Host] (hp : countdown.IsInfix Host.prog) (s : MachineData) (h : 0 < s.r
   apply Program.WP.step1_of_wp hp
   vcgen [countdown]
     invariants
-    · fun _ _ s' => 0 < s'.regs.rcx.toNat ∧ s'.regs.rsp = s.regs.rsp
+    · fun _ s' => 0 < s'.regs.rcx.toNat ∧ s'.regs.rsp = s.regs.rsp
     · fun _ s' => s'.regs.rcx.toNat
     with kfinish
 
@@ -118,7 +118,7 @@ example [Host] (hp : skip.IsInfix Host.prog) (s : MachineData) :
   apply Program.WP.step1_of_wp hp
   vcgen [skip]
     invariants
-    · fun _ _ s' => s'.regs.rsp = s.regs.rsp
+    · fun _ s' => s'.regs.rsp = s.regs.rsp
     · fun _ _ => 0
     with kfinish
 
@@ -152,7 +152,7 @@ example [Host] (hp : fnReuse.IsInfix Host.prog) (s : MachineData) :
   apply Program.WP.step1_of_wp hp
   vcgen [fnReuse]
     invariants
-    · fun _ l s' => match l with
+    · fun l s' => match l with
       | "entry" => s' = s
       | "cont1" => s'.regs.rsp = s.regs.rsp ∧ s'.regs.rax = s.regs.r8 + s.regs.r9
       | "add" => s'.regs.rsp = s.regs.rsp
@@ -176,7 +176,7 @@ example [Host] [FunDecls] (s : MachineData) (hm : Mem.Mapped [(s.regs.get64 .rsp
     WP.wp retJump (fun _ t => t.regs.get64 .rbx = 1) (fun _ _ => False) s := by
   vcgen [retJump]
     invariants
-    · fun _ _ s' => s'.regs.get64 .rsp = s.regs.get64 .rsp
+    · fun _ s' => s'.regs.get64 .rsp = s.regs.get64 .rsp
     · fun _ _ => 0
     with kfinish
 

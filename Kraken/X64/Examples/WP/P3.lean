@@ -58,7 +58,7 @@ theorem p3_correct [Host] (hp : p3.IsInfix Host.prog)
   apply Program.WP.step1_of_wp hp
   vcgen [p3]
     invariants
-    · fun _ => p3_table s
+    · p3_table s
     · fun _ s' => s'.regs.rbx.toNat
     with kfinish
 

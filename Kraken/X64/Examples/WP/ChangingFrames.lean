@@ -50,7 +50,7 @@ funspec poke_spec "poke" [Host] [FunDecls] [Embeds poke]
       writes s.regs.rdi.toBitVec[*...<8] := by
   vcgen [poke]
     invariants
-    · fun s₀ l s' => match l with
+    · fun {s₀} l s' => match l with
         | "poke" => s' = s₀
         | _ => False
     · fun _ _ => 0
@@ -69,7 +69,7 @@ funspec many_spec "many" [Host] [FunDecls] [Embeds poke] [Embeds many]
     ensures s' => s'.dmem.loadBytes s.regs.rdx.toBitVec 16 = s.dmem.loadBytes s.regs.rdx.toBitVec 16 := by
   vcgen [many, poke_spec]
     invariants
-    · fun s₀ l s' => match l with
+    · fun {s₀} l s' => match l with
         | "many" => s' = s₀
         | _ => False
     · fun _ _ => 0

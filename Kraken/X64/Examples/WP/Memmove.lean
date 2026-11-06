@@ -80,7 +80,7 @@ funspec memmove_spec "memmove" [Host] [FunDecls] [Embeds memmove]
       writes s.regs.rdi.toBitVec[*...<s.regs.rdx.toNat] := by
   vcgen [memmove]
     invariants
-    · fun s₀ l s' => match l with
+    · fun {s₀} l s' => match l with
         | "memmove" => s' = s₀
         | "bwd" => MMBwd s s₀ s'
         | "bdone" => MMBwd s s₀ s' ∧ s'.regs.rdx.toBitVec = 0
@@ -143,7 +143,7 @@ theorem memmove_correct [Host] (hp : memmoveProg.IsInfix Host.prog)
   apply Program.WP.step1_of_wp hp
   vcgen [memmoveProg]
     invariants
-    · fun _ l s' => match l with
+    · fun l s' => match l with
       | "start" => s' = s
       | "done" => s'.regs.rsp = s.regs.rsp
           ∧ s'.dmem.loadBytes s.regs.rdi.toBitVec s.regs.rdx.toNat = some bs

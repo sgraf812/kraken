@@ -41,7 +41,7 @@ funspec touch_spec "touch" [Host] [FunDecls] [Embeds touch]
     autoframes calling_conv SysV preserves rax rcx rdx rsi rdi r8 r9 r10 r11 := by
   vcgen [touch]
     invariants
-    · fun s₀ l s' => match l with
+    · fun {s₀} l s' => match l with
         | "touch" => s' = s₀
         | _ => False
     · fun _ _ => 0
@@ -59,7 +59,7 @@ funspec many_spec "many" [Host] [FunDecls] [Embeds touch] [Embeds many]
       ∧ s'.dmem.loadBytes s.regs.rdx.toBitVec 16 = s.dmem.loadBytes s.regs.rdx.toBitVec 16 := by
   vcgen [many, touch_spec]
     invariants
-    · fun s₀ l s' => match l with
+    · fun {s₀} l s' => match l with
         | "many" => s' = s₀
         | _ => False
     · fun _ _ => 0

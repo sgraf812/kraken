@@ -40,7 +40,7 @@ funspec swap_spec "swap" [Host] [FunDecls] [Embeds swap]
     autoframes preserves rcx rdx rsi rdi rbp r8 r9 r10 r11 r12 r13 r14 r15 := by
   vcgen [swap]
     invariants
-    · fun s₀ l s' => match l with
+    · fun {s₀} l s' => match l with
         | "swap" => s' = s₀
         | _ => False
     · fun _ _ => 0
@@ -66,7 +66,7 @@ theorem pswap_correct [Host] (hp : pswap.IsInfix Host.prog)
   apply Program.WP.step1_of_wp hp
   vcgen [pswap]
     invariants
-    · fun _ l s' => match l with
+    · fun l s' => match l with
       | "start" => s' = s
       | "done" => s'.regs.rax.toBitVec = s.regs.rax.toBitVec
           ∧ s'.regs.rbx.toBitVec = s.regs.rbx.toBitVec ∧ s'.regs.rsp.toBitVec = s.regs.rsp.toBitVec

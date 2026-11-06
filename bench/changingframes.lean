@@ -14,7 +14,7 @@ open scoped Program.WP
     intro _ _ _ _ _ _ _ _
     vcgen [ChangingFrames.poke_spec]
       invariants
-      · fun s₀ l s' => match l with
+      · fun {s₀} l s' => match l with
           | "many" => s' = s₀
           | _ => False
       · fun _ _ => 0
