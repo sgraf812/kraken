@@ -32,7 +32,7 @@ theorem pushPop_spec [Host] [FunDecls] (n : Nat) (R : DataMem → Prop) (s : Mac
     WP.wp pushPop (fun _ s' => s'.regs.get64 .rsp = s.regs.get64 .rsp) (fun _ _ => False) s := by
   vcgen [pushPop]
     invariants
-    · fun l s' => match l with
+    · fun _ l s' => match l with
       | "fill" => 0 < (s'.regs.get64 .rcx).toNat ∧ (s'.regs.get64 .rcx).toNat ≤ n
           ∧ s'.regs.get64 .rdx = s.regs.get64 .rdx
           ∧ s'.regs.get64 .rsp = s.regs.get64 .rsp - BitVec.ofNat 64 (8 * n)

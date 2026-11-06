@@ -12,10 +12,9 @@ open scoped Program.WP
 #eval runBenchUsingTactic ``ManyCalls.Goal [``ManyCalls.many, ``ManyCalls.calls]
   `(tactic| (
     intro _ _ _ _ _ _ _ _
-    refine Triple.intro fun s₀ ⟨h₀, _⟩ => ?_
     vcgen [ManyCalls.touch_spec]
       invariants
-      · fun l s' => match l with
+      · fun s₀ l s' => match l with
           | "many" => s' = s₀
           | _ => False
       · fun _ _ => 0

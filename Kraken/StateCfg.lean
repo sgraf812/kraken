@@ -126,18 +126,18 @@ theorem Program.entry_noInternal (p : Program) (a : Int64) : ¬ (Program.view p)
 
 end
 
-@[spec_invariant_type] def Program.CfgInvariant := Label → MachineData → Prop
+@[spec_invariant_type] def Program.CfgInvariant := MachineData → Label → MachineData → Prop
 
 @[spec_invariant_type] def Program.CfgVariant := Label → MachineData → Nat
 
 abbrev Program.CfgInvariant.lift (I : Program.CfgInvariant) (s₀ : MachineData) :
     Option Label → MachineData → Prop
   | none, s => s = s₀
-  | some l, s => I l s
+  | some l, s => I s₀ l s
 
-abbrev Program.Next (I : Program.CfgInvariant) (Q : Unit → MachineData → Prop)
+abbrev Program.Next (I : Program.CfgInvariant) (s₀ : MachineData) (Q : Unit → MachineData → Prop)
     (D : Label → Nat → MachineData → Prop) : Option Label → Nat → MachineData → Prop
-  | some l, j, s => I l s ∧ D l j s
+  | some l, j, s => I s₀ l s ∧ D l j s
   | none, _, s => Q () s
 
 namespace Program.WP
@@ -148,9 +148,9 @@ theorem cfg {p : Program} {s₀ : MachineData} {Q : Unit → MachineData → Pro
     {E : Int64 → MachineData → Prop} (I : Program.CfgInvariant) (var : Program.CfgVariant)
     (h : ∀ blk ∈ Program.blocks p, ∀ t, I.lift s₀ blk.label t →
       WP.wp blk.body
-        (fun _ => Program.Next I Q (Program.Decreases var blk.label blk.idx t) blk.next (blk.idx + 1))
+        (fun _ => Program.Next I s₀ Q (Program.Decreases var blk.label blk.idx t) blk.next (blk.idx + 1))
         (Program.Intercept (Program.labels p) s₀
-          (fun l j s => I l s ∧ Program.Decreases var blk.label blk.idx t l j s) E) t) :
+          (fun l j s => I s₀ l s ∧ Program.Decreases var blk.label blk.idx t l j s) E) t) :
     WP.wp p Q E s₀ := by
   show Program.wp p (fun st => Q () st.data) (fun st => E st.pc st.data) s₀
   rw [Program.wp_eq]
@@ -190,7 +190,7 @@ theorem cfg {p : Program} {s₀ : MachineData} {Q : Unit → MachineData → Pro
       omega
     · rw [heq]
       omega
-  have key : ∀ x : Label × MachineData, (Program.blockAt p x.1).isSome → I x.1 x.2 →
+  have key : ∀ x : Label × MachineData, (Program.blockAt p x.1).isSome → I s₀ x.1 x.2 →
       While (·.pc ≠ H.embedding.endAddr)
         (fun «continue» => Host.exe.StepOver (fun a => (FunDecls.at a).map fun f => f.prog.wp (fun _ => False))
           «continue» (p.ContinueOnInternalExit s₀ «continue» fun st => E st.pc st.data))
@@ -202,7 +202,7 @@ theorem cfg {p : Program} {s₀ : MachineData} {Q : Unit → MachineData → Pro
       obtain ⟨l, s⟩ := x
       intro hsome hI
       dsimp only at hsome hI ⊢
-      have jump : ∀ l' s', (Program.blockAt p l').isSome → I l' s' →
+      have jump : ∀ l' s', (Program.blockAt p l').isSome → I s₀ l' s' →
           Program.cfgMeasure p var (l', s') < Program.cfgMeasure p var (l, s) →
           While (·.pc ≠ H.embedding.endAddr)
             (fun «continue» => Host.exe.StepOver (fun a => (FunDecls.at a).map fun f => f.prog.wp (fun _ => False))
@@ -311,9 +311,9 @@ theorem cfg {p : Program} {s₀ : MachineData} {Q : Unit → MachineData → Pro
     {E : Int64 → MachineData → Prop} (I : Program.CfgInvariant) (var : Program.CfgVariant)
     (h : ∀ blk ∈ Program.blocks p, ∀ t, I.lift s₀ blk.label t →
       WP.wp blk.body
-        (fun _ => Program.Next I Q (Program.Decreases var blk.label blk.idx t) blk.next (blk.idx + 1))
+        (fun _ => Program.Next I s₀ Q (Program.Decreases var blk.label blk.idx t) blk.next (blk.idx + 1))
         (Program.Intercept (Program.labels p) s₀
-          (fun l j s => I l s ∧ Program.Decreases var blk.label blk.idx t l j s) E) t) :
+          (fun l j s => I s₀ l s ∧ Program.Decreases var blk.label blk.idx t l j s) E) t) :
     ⦃ fun s => s = s₀ ⦄ Program.cfg p ⦃ Q; E ⦄ :=
   Triple.intro fun _ hs => hs ▸ (Program.cfg_eq p).symm ▸ Program.WP.cfg I var h
 

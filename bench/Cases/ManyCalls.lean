@@ -24,10 +24,9 @@ public funspec touch_spec "touch" [Host] [FunDecls] [Embeds touch]
     requires Mem.Mapped [(s.regs.rsp.toBitVec - 8#64, 8)] s.dmem
     ensures s' => True
     autoframes calling_conv SysV preserves rax rcx rdx rsi rdi r8 r9 r10 r11 := by
-  refine Triple.intro fun s₀ ⟨h₀, _⟩ => ?_
   vcgen [touch]
     invariants
-    · fun l s' => match l with
+    · fun s₀ l s' => match l with
         | "touch" => s' = s₀
         | _ => False
     · fun _ _ => 0

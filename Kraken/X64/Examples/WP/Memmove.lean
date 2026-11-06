@@ -78,10 +78,9 @@ funspec memmove_spec "memmove" [Host] [FunDecls] [Embeds memmove]
       = s.dmem.loadBytes s.regs.rsi.toBitVec s.regs.rdx.toNat
     autoframes calling_conv SysV preserves rcx r8 r9 r10 r11
       writes s.regs.rdi.toBitVec[*...<s.regs.rdx.toNat] := by
-  refine Triple.intro fun s₀ ⟨h₀, _⟩ => ?_
   vcgen [memmove]
     invariants
-    · fun l s' => match l with
+    · fun s₀ l s' => match l with
         | "memmove" => s' = s₀
         | "bwd" => MMBwd s s₀ s'
         | "bdone" => MMBwd s s₀ s' ∧ s'.regs.rdx.toBitVec = 0
@@ -144,7 +143,7 @@ theorem memmove_correct [Host] (hp : memmoveProg.IsInfix Host.prog)
   apply Program.WP.step1_of_wp hp
   vcgen [memmoveProg]
     invariants
-    · fun l s' => match l with
+    · fun _ l s' => match l with
       | "start" => s' = s
       | "done" => s'.regs.rsp = s.regs.rsp
           ∧ s'.dmem.loadBytes s.regs.rdi.toBitVec s.regs.rdx.toNat = some bs

@@ -48,7 +48,7 @@ example [Host] [FunDecls] (s : MachineData) (hc : s.regs.rcx.toNat = 2) :
     WP.wp drain (fun _ _ => False) (fun a s' => a = label "drain" ∧ s'.regs.rcx.toNat = 1) s := by
   vcgen [drain]
     invariants
-    · fun _ s' => s' = s
+    · fun _ _ s' => s' = s
     · fun _ _ => 0
     with kfinish
 

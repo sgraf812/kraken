@@ -28,10 +28,9 @@ public funspec poke_spec "poke" [Host] [FunDecls] [Embeds poke]
     ensures s' => True
     autoframes calling_conv SysV preserves rax rcx rdx rsi rdi r8 r9 r10 r11
       writes s.regs.rdi.toBitVec[*...<8] := by
-  refine Triple.intro fun s₀ ⟨h₀, _⟩ => ?_
   vcgen [poke]
     invariants
-    · fun l s' => match l with
+    · fun s₀ l s' => match l with
         | "poke" => s' = s₀
         | _ => False
     · fun _ _ => 0

@@ -48,10 +48,9 @@ funspec poke_spec "poke" [Host] [FunDecls] [Embeds poke]
     ensures s' => True
     autoframes calling_conv SysV preserves rax rcx rdx rsi rdi r8 r9 r10 r11
       writes s.regs.rdi.toBitVec[*...<8] := by
-  refine Triple.intro fun s₀ ⟨h₀, _⟩ => ?_
   vcgen [poke]
     invariants
-    · fun l s' => match l with
+    · fun s₀ l s' => match l with
         | "poke" => s' = s₀
         | _ => False
     · fun _ _ => 0
@@ -68,10 +67,9 @@ funspec many_spec "many" [Host] [FunDecls] [Embeds poke] [Embeds many]
       ∧ Mem.Blocks.Disjoint [(s.regs.rdi.toBitVec, 64)] [(s.regs.rsp.toBitVec - 8#64, 8)]
       ∧ Mem.Blocks.Disjoint [(s.regs.rdx.toBitVec, 16)] [(s.regs.rdi.toBitVec, 64)]
     ensures s' => s'.dmem.loadBytes s.regs.rdx.toBitVec 16 = s.dmem.loadBytes s.regs.rdx.toBitVec 16 := by
-  refine Triple.intro fun s₀ ⟨h₀, _⟩ => ?_
   vcgen [many, poke_spec]
     invariants
-    · fun l s' => match l with
+    · fun s₀ l s' => match l with
         | "many" => s' = s₀
         | _ => False
     · fun _ _ => 0
