@@ -408,7 +408,7 @@ theorem BitVec.signed_add_add_bne {w} (a b : BitVec w) (c : Bool) :
   rw [← h, BitVec.signed, BitVec.toInt_add_add_ofNat]
   rfl
 
-@[simp, grind =] theorem BitVec.sadcOverflow_eq_true_iff {w} (a b : BitVec w) (c : Bool) :
+@[simp] theorem BitVec.sadcOverflow_eq_true_iff {w} (a b : BitVec w) (c : Bool) :
     BitVec.sadcOverflow a b c = true
       ↔ 2 ^ (w - 1) ≤ a.toInt + b.toInt + c.toNat ∨ a.toInt + b.toInt + c.toNat < -2 ^ (w - 1) := by
   simp [BitVec.sadcOverflow]
@@ -510,7 +510,7 @@ theorem BitVec.uaddOverflow_eq_carry {w} (a b : BitVec w) :
   rw [← BitVec.toInt_lt_toInt_iff_flip]
   exact BitVec.slt_iff_toInt_lt
 
-@[simp, grind =] theorem BitVec.carry_eq_true_iff {w} (i : Nat) (a b : BitVec w) (c : Bool) :
+@[simp] theorem BitVec.carry_eq_true_iff {w} (i : Nat) (a b : BitVec w) (c : Bool) :
     BitVec.carry i a b c = true ↔ 2 ^ i ≤ a.toNat % 2 ^ i + b.toNat % 2 ^ i + c.toNat := by
   simp [BitVec.carry]
 
