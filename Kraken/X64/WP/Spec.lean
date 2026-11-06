@@ -343,14 +343,13 @@ local macro "run_step" : tactic =>
 
 @[spec] public theorem adc_reg_reg (asz : Width) (rd rs : Reg64) :
     ⦃ fun s =>
-        let c := s.status.cf
-        let v := s.regs.get64 rs + s.regs.get64 rd + BitVec.ofNat 64 c.toNat
+        let v := s.regs.get64 rs + s.regs.get64 rd + BitVec.ofNat 64 s.status.cf.toNat
         Q () { s with
           regs := s.regs.set64 rd v
           status := StatusFlags.from_result v
-            { cf := v.unsigned != (s.regs.get64 rs).unsigned + (s.regs.get64 rd).unsigned + c,
-              af := (v.take 4).unsigned != ((s.regs.get64 rs).take 4).unsigned + ((s.regs.get64 rd).take 4).unsigned + c,
-              of := v.signed != (s.regs.get64 rs).signed + (s.regs.get64 rd).signed + c } } ⦄
+            { cf := v.unsigned != (s.regs.get64 rs).unsigned + (s.regs.get64 rd).unsigned + s.status.cf,
+              af := (v.take 4).unsigned != ((s.regs.get64 rs).take 4).unsigned + ((s.regs.get64 rd).take 4).unsigned + s.status.cf,
+              of := v.signed != (s.regs.get64 rs).signed + (s.regs.get64 rd).signed + s.status.cf } } ⦄
       (Directive.instr (.regular asz .W64
           (.adc (.reg (.low rd .W64)) (.regOrMem (.reg (.low rs .W64))))))
     ⦃ Q; E ⦄ := by
