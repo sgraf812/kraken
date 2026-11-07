@@ -54,12 +54,17 @@ theorem p3_correct [Host] (hp : p3.IsInfix Host.prog)
     (s : MachineData) (h_bounds : p3_spec s < 2 ^ 64) (h_rax : s.regs.rax = 0) :
     Eventually (step1 Host.exe)
       (fun st => st.data.regs.rdx.toNat = p3_spec s ∧ st.data.regs.rax = 0) ⟨s, startAddr hp⟩ := by
-  simp only [p3_spec] at h_bounds ⊢
   apply Program.WP.step1_of_wp hp
   vcgen [p3]
     invariants
-    · p3_table s
+    · fun
+        | "init", s' => s' = s
+        | "start", s' =>
+            s'.regs.rdx.toNat = 2 ^ 2 ^ (s.regs.rbx.toNat - s'.regs.rbx.toNat)
+            ∧ s'.regs.rbx.toNat ≤ s.regs.rbx.toNat ∧ s'.regs.rax = 0 ∧ s'.regs.rsp = s.regs.rsp
+        | "_end", s' => s'.regs.rdx.toNat = 2 ^ 2 ^ s.regs.rbx.toNat ∧ s'.regs.rax = 0 ∧ s'.regs.rsp = s.regs.rsp
+        | _, _ => False
     · fun _ s' => s'.regs.rbx.toNat
-    with kfinish
+    with kfinish [p3_spec]
 
 end State
