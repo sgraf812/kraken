@@ -98,9 +98,10 @@ attribute [grind =] Width.bytes
 
 A register holds a `UInt64` whose payload is a `BitVec 64`, and the instruction
 semantics moves between the two spellings and back through `Nat`. Each equation
-below is one crossing that `grind` cannot take on its own: the three reductions
-a wrapping subtraction and a double-width product need once the result is known
-to fit. -/
+below is one crossing that `grind` cannot take on its own: the reductions a
+wrapping subtraction and a double-width product need once the result is known
+to fit. The product rules come in a two-factor and a square form, because the
+normalizer writes a product of equal factors as a square. -/
 
 @[grind =] theorem BitVec.toNat_sub_le {a b : BitVec 64} (h : b.toNat ≤ a.toNat) :
     (a - b).toNat = a.toNat - b.toNat :=
@@ -116,6 +117,17 @@ to fit. -/
     (h : a.toNat * b.toNat < 2 ^ 64) :
     BitVec.ofInt 64 (((a.toNat : Int) * (b.toNat : Int)) >>> 64) = 0#64 := by
   rw [← Int.natCast_mul, ← Int.natCast_shiftRight, Nat.shiftRight_eq_div_pow,
+    Nat.div_eq_of_lt h]
+  simp
+
+@[grind =] theorem BitVec.toNat_ofInt_sq {a : BitVec 64} (h : a.toNat ^ 2 < 2 ^ 64) :
+    (BitVec.ofInt 64 ((a.toNat : Int) ^ 2)).toNat = a.toNat ^ 2 := by
+  rw [← Int.natCast_pow, BitVec.ofInt_natCast]
+  simp [Nat.mod_eq_of_lt h]
+
+@[grind =] theorem BitVec.ofInt_sq_shiftRight {a : BitVec 64} (h : a.toNat ^ 2 < 2 ^ 64) :
+    BitVec.ofInt 64 (((a.toNat : Int) ^ 2) >>> 64) = 0#64 := by
+  rw [← Int.natCast_pow, ← Int.natCast_shiftRight, Nat.shiftRight_eq_div_pow,
     Nat.div_eq_of_lt h]
   simp
 
