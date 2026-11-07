@@ -5,6 +5,7 @@ defaultTargets = ["Bench"]
 [leanOptions]
 autoImplicit = false
 relaxedAutoImplicit = false
+backward.grind.normalizer = false
 
 [[require]]
 name = "Kraken"

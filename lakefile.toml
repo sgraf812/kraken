@@ -6,6 +6,7 @@ requiresModuleSystem = true
 [leanOptions]
 autoImplicit = false
 relaxedAutoImplicit = false
+backward.grind.normalizer = false
 
 [[lean_lib]]
 name = "KrakenTactics"
