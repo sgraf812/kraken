@@ -18,6 +18,6 @@ open scoped Program.WP
           | "many" => s' = s₀
           | _ => False
       · fun _ _ => 0
-      with kfinish))
+      with kfinish (instances := 3000)))
   `(tactic| fail)
-  [8, 16]
+  [8, 16, 32]

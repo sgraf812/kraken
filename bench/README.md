@@ -40,6 +40,7 @@ stepping tactic and a discharge tactic.
 | manycalls | 32 | 1718 | 60 |
 | changingframes | 8 | 1475 | 27 |
 | changingframes | 16 | 3137 | 62 |
+| changingframes | 32 | 12170 | 242 |
 
 Each time is the median of three runs on a shared machine at load average 1.4
 to 2.9.
@@ -56,5 +57,6 @@ and `Kraken/X64/Examples/WP/ChangingFrames.lean`. The callee is a fixed
 `Program.WP.Spec.cfg`, whose invariant is the entry state at the label `many`.
 `with kfinish` discharges each verification condition in the E-graph of
 `vcgen`, so the stepping time includes the discharge. The time is linear in
-the number of calls. At `n = 32`, `changingframes` fails: `grind` reaches its
-instance threshold (1000) on one verification condition.
+the number of calls. At `n = 32`, the verification condition after the last call
+needs more than 1000 E-matching instances, so `changingframes` passes
+`(instances := 3000)` to `kfinish`.
