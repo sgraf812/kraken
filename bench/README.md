@@ -26,23 +26,23 @@ stepping tactic and a discharge tactic.
 
 | family | n | stepping | kernel |
 | --- | --- | --- | --- |
-| adcchain | 40 | 31 | 23 |
-| adcchain | 160 | 77 | 104 |
-| adcchain | 640 | 336 | 721 |
-| carryflags | 8 | 16 | 5 |
+| adcchain | 40 | 26 | 21 |
+| adcchain | 160 | 64 | 92 |
+| adcchain | 640 | 275 | 654 |
+| carryflags | 8 | 15 | 5 |
 | carryflags | 16 | 14 | 9 |
 | carryflags | 32 | 18 | 20 |
-| carryjumps | 8 | 414 | 9 |
-| carryjumps | 16 | 1961 | 20 |
-| carryjumps | 32 | 16877 | 76 |
-| manycalls | 8 | 746 | 16 |
-| manycalls | 16 | 1020 | 25 |
-| manycalls | 32 | 1845 | 59 |
-| changingframes | 8 | 1584 | 24 |
-| changingframes | 16 | 3428 | 50 |
+| carryjumps | 8 | 305 | 8 |
+| carryjumps | 16 | 959 | 20 |
+| carryjumps | 32 | 5192 | 85 |
+| manycalls | 8 | 682 | 18 |
+| manycalls | 16 | 946 | 26 |
+| manycalls | 32 | 1718 | 60 |
+| changingframes | 8 | 1475 | 27 |
+| changingframes | 16 | 3137 | 62 |
 
-Each time is the median of three runs on a shared machine at load average 16
-to 32.
+Each time is the median of three runs on a shared machine at load average 1.4
+to 2.9.
 
 `adcchain` states a triple for `mov $0, %rax; add $0, %rax; mov $3, %rbx`
 followed by `n` copies of `adc %rbx, %rax`, with the post
