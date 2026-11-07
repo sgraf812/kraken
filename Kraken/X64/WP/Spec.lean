@@ -323,12 +323,14 @@ local macro "run_step" : tactic =>
 
 @[spec] public theorem mulx_reg_reg_reg (asz : Width) (hi lo rs : Reg64) :
     ⦃ fun s =>
-        let v := (s.regs.get64 rs).unsigned * (s.regs.get64 .rdx).unsigned
-        Q () { s with regs :=
-          (s.regs.set64 lo (BitVec.ofInt 64 v)).set64 hi (BitVec.ofInt 64 (v >>> 64)) } ⦄
+        Q () { s with regs := ((s.regs.set64 lo (s.regs.get64 rs * s.regs.get64 .rdx)).set64 hi
+          (BitVec.umulHi (s.regs.get64 rs) (s.regs.get64 .rdx))) } ⦄
       (Directive.instr (.regular asz .W64 (.mulx (.low hi .W64) (.low lo .W64) (.reg (.low rs .W64)))))
     ⦃ Q; E ⦄ :=
-  Triple.intro fun _ hq => Program.wp_single fun _ _ _ _ hn _ => by run_step; exact hn _ hq
+  Triple.intro fun _ hq => Program.wp_single fun _ _ _ _ hn _ => by
+    run_step
+    rw [BitVec.ofInt_unsigned_mul, BitVec.ofInt_unsigned_mul_shiftRight]
+    exact hn _ hq
 
 @[spec] public theorem add_reg_imm (asz : Width) (r : Reg64) (i : Int64) :
     ⦃ fun s =>

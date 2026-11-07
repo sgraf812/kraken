@@ -517,6 +517,51 @@ theorem BitVec.slt_eq_true_iff_toNat (a b : BitVec 64) :
 @[vcgen_simp] theorem UInt64.mk_eq_zero_iff (v : BitVec 64) : ({ toBitVec := v } : UInt64) = 0 ↔ v = 0 :=
   ⟨fun h => congrArg UInt64.toBitVec h, fun h => by subst h; rfl⟩
 
+def BitVec.umulHi {w : Nat} (x y : BitVec w) : BitVec w :=
+  (x.setWidth (2 * w) * y.setWidth (2 * w)).extractLsb' w w
+
+theorem BitVec.toNat_umulHi {w} (x y : BitVec w) :
+    (BitVec.umulHi x y).toNat = x.toNat * y.toNat / 2 ^ w := by
+  have hx := x.isLt; have hy := y.isLt
+  have hp : x.toNat * y.toNat < 2 ^ (2 * w) := by
+    rw [Nat.two_mul, Nat.pow_add]; exact Nat.mul_lt_mul'' hx hy
+  have hq : x.toNat * y.toNat / 2 ^ w < 2 ^ w := by
+    rw [Nat.div_lt_iff_lt_mul (Nat.two_pow_pos w), ← Nat.pow_add, ← Nat.two_mul]; exact hp
+  have hle : 2 ^ w ≤ 2 ^ (2 * w) := Nat.pow_le_pow_right (by omega) (by omega)
+  simp only [BitVec.umulHi, BitVec.extractLsb'_toNat, BitVec.toNat_mul, BitVec.toNat_setWidth,
+    Nat.mod_eq_of_lt (Nat.lt_of_lt_of_le hx hle), Nat.mod_eq_of_lt (Nat.lt_of_lt_of_le hy hle),
+    Nat.mod_eq_of_lt hp, Nat.shiftRight_eq_div_pow, Nat.mod_eq_of_lt hq]
+
+theorem BitVec.ofInt_unsigned_mul {w} (x y : BitVec w) :
+    BitVec.ofInt w (x.unsigned * y.unsigned) = x * y := by
+  apply BitVec.eq_of_toNat_eq
+  rw [BitVec.unsigned, BitVec.unsigned, ← Int.natCast_mul, BitVec.ofInt_natCast, BitVec.toNat_ofNat,
+    BitVec.toNat_mul]
+
+theorem BitVec.ofInt_unsigned_mul_shiftRight {w} (x y : BitVec w) :
+    BitVec.ofInt w ((x.unsigned * y.unsigned) >>> w) = BitVec.umulHi x y := by
+  apply BitVec.eq_of_toNat_eq
+  rw [BitVec.unsigned, BitVec.unsigned, ← Int.natCast_mul, ← Int.natCast_shiftRight, BitVec.ofInt_natCast,
+    BitVec.toNat_ofNat, BitVec.toNat_umulHi, Nat.shiftRight_eq_div_pow]
+  have hx := x.isLt; have hy := y.isLt
+  apply Nat.mod_eq_of_lt
+  rw [Nat.div_lt_iff_lt_mul (Nat.two_pow_pos w)]
+  exact Nat.mul_lt_mul'' hx hy
+
+@[vcgen_simp] theorem BitVec.umulHi_ofNat_ofNat (w n m : Nat) :
+    BitVec.umulHi (BitVec.ofNat w n) (BitVec.ofNat w m)
+      = BitVec.ofNat w (n % 2 ^ w * (m % 2 ^ w) / 2 ^ w) := by
+  apply BitVec.eq_of_toNat_eq
+  rw [BitVec.toNat_umulHi, BitVec.toNat_ofNat, BitVec.toNat_ofNat, BitVec.toNat_ofNat]
+  refine (Nat.mod_eq_of_lt ?_).symm
+  rw [Nat.div_lt_iff_lt_mul (Nat.two_pow_pos w)]
+  exact Nat.mul_lt_mul'' (Nat.mod_lt _ (Nat.two_pow_pos w)) (Nat.mod_lt _ (Nat.two_pow_pos w))
+
+@[grind =] theorem BitVec.umulHi_eq_zero {w} {x y : BitVec w} (h : x.toNat * y.toNat < 2 ^ w) :
+    BitVec.umulHi x y = 0#w := by
+  apply BitVec.eq_of_toNat_eq
+  rw [BitVec.toNat_umulHi, Nat.div_eq_of_lt h]; rfl
+
 /-! ## The flags an instruction leaves -/
 
 @[expose] def StatusFlags.ofSub {w} (a b : BitVec w) : StatusFlags :=
