@@ -55,7 +55,7 @@ theorem swap_correct [layout : Layout] (d : MachineData) :
         s'.1.regs.getRegOrZr .X1 = d.regs.getRegOrZr .X0) := by
   kprologue swap with d
   sym => kstep; tactic =>
-  grind
+  grind -ring
 
 -- Example 3: Multi-instruction arithmetic and shift pipeline
 def arith_shift : Program := ⸨prog|
