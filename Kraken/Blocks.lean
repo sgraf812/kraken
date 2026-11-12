@@ -417,12 +417,6 @@ theorem Program.blockAtAux_of_getElem : ∀ {j : Nat} {bs : List (Label × Progr
       rw [ih (List.nodup_cons.mp (by simpa using hnd)).2 h, Nat.add_assoc, Nat.add_comm 1 k]
       rfl
 
-theorem Program.blockAt_mem_labels {p : Program} {l : Label} {blk : Program.Block}
-    (h : Program.blockAt p l = some blk) : l ∈ Program.labels p := by
-  obtain ⟨-, i, hi, -, -⟩ := Program.blockAtAux_spec h
-  rw [Program.labels_view]
-  exact List.mem_map.mpr ⟨(l, blk.body), List.mem_of_getElem? hi, rfl⟩
-
 theorem Program.blockIdx_eq {p : Program} (hnd : (Program.labels p).Nodup)
     {i : Nat} {l : Label} {b : Program} (hi : (Program.view p).2[i]? = some (l, b)) :
     Program.blockIdx p l = i := by

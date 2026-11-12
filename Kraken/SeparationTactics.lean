@@ -205,59 +205,6 @@ def solveSepEq (ops : SepOps) (lhs rhs : Expr) : MetaM (Option Expr) := do
   unless ← cancelClauses ops predType lhsClauses rhsClauses do return none
   proveSeqEq ops lhs rhs
 
-/-- The `f x` for `f` the function of `h : f a = f b`-style congruence at
-the predicate type: `x = y → C x = C y` for the context `C` replacing `atom`. -/
-private def congrReplace (predType atom sliced heq pre : Expr) : MetaM Expr := do
-  let _ := sliced
-  withLocalDeclD `x predType fun x => do
-    let ctx ← mkLambdaFVars #[x] (pre.replace fun e => if e == atom then some x else none)
-    mkAppM ``congrArg #[ctx, heq]
-
-/--
-Split `pre` into a footprint `fp` and a frame: returns the frame `R`, a
-proof of `pre = fp ∗ R`, and the side goals of any atom split on the way.
-The footprint's metavariables are assigned by the cancellation. Both sides
-are first brought to the algebra's normal spelling by `ops.normalize`; when
-an atom of the footprint has no partner, `ops.split?` may pay it by splitting
-a closed atom at the footprint's address.
--/
-def solveSepSplit (ops : SepOps) (pre fp : Expr) : MetaM (Option (Expr × Expr × List MVarId)) := do
-  let predType ← inferType pre
-  let (pre', hpre) ← ops.normalize pre
-  let (fp', hfp) ← ops.normalize fp
-  let try_ (pre'' : Expr) : MetaM (Option (Expr × Expr)) := do
-    let R ← mkFreshExprMVar predType
-    let target ← ops.mkSep predType fp' R
-    let some hc ← solveSepEq ops pre'' target | return none
-    return some (← instantiateMVars R, hc)
-  -- direct, or after one split of a closed atom at the footprint's address
-  let mut res ← try_ pre'
-  let mut pre'' := pre'
-  let mut hslice : Option Expr := none
-  let mut goals : List MVarId := []
-  if res.isNone then
-    if let some addr := ops.addr? (← instantiateMVars fp') then
-      for atom in ← reifyClauses ops pre' do
-        if atom.hasExprMVar then continue
-        let some (sliced, heq, g) ← ops.split? atom addr | continue
-        let cand := pre'.replace fun e => if e == atom then some sliced else none
-        if let some r ← try_ cand then
-          res := some r; pre'' := cand; goals := [g]
-          hslice := some (← congrReplace predType atom sliced heq pre')
-          break
-  let some (R, hc) := res | return none
-  -- chain: pre = pre' = pre'' = fp' ∗ R = fp ∗ R
-  let fp ← instantiateMVars fp
-  let fp' ← instantiateMVars fp'
-  let mut h := hc
-  if let some hs := hslice then h ← mkEqTrans hs h
-  if let some hp := hpre then h ← mkEqTrans hp h
-  if let some hf := hfp then
-    let ctx ← withLocalDeclD `x predType fun x => do
-      mkLambdaFVars #[x] (← ops.mkSep predType x R)
-    h ← mkEqTrans h (← mkAppM ``congrArg #[ctx, ← mkEqSymm hf])
-  return some (R, h, goals)
-
 private def solveFromHypothesis (ops : SepOps) (target : Expr) (localDecl : LocalDecl) : MetaM (Option Expr) := do
   let target ← instantiateMVars target
   let hypType ← instantiateMVars localDecl.type

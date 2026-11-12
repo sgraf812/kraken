@@ -654,9 +654,6 @@ grind_pattern Contains.loadBytes_eq => Contains m a bs, Mem.loadBytes m a n
 def UnchangedOutside {w : Nat} (bs : List (BitVec w × Nat)) (m m' : Mem w) : Prop :=
   ∀ b, ¬ Blocks.Inside b 1 bs → m'.get? b = m.get? b
 
-theorem unchangedOutside_iff {w : Nat} (bs : List (BitVec w × Nat)) (m m' : Mem w) :
-    UnchangedOutside bs m m' ↔ ∀ b, ¬ Blocks.Inside b 1 bs → m'.get? b = m.get? b := Iff.rfl
-
 def DomainGrows {w : Nat} (m m' : Mem w) : Prop :=
   ∀ b, (m.get? b).isSome → (m'.get? b).isSome
 

@@ -385,12 +385,6 @@ theorem BitVec.signed_add_bne {w} (a b : BitVec w) :
 def BitVec.saddcOverflow {w : Nat} (x y : BitVec w) (c : Bool) : Bool :=
   BitVec.saddOverflow x y ^^ BitVec.saddOverflow (x + y) (BitVec.ofNat w c.toNat)
 
-theorem BitVec.saddcOverflow_false {w} (x y : BitVec w) :
-    BitVec.saddcOverflow x y false = BitVec.saddOverflow x y := by
-  have h : BitVec.saddOverflow (x + y) (BitVec.ofNat w 0) = false := by
-    simp [BitVec.saddOverflow_eq]
-  simp [BitVec.saddcOverflow, h]
-
 theorem BitVec.signed_add_add_bne (a b : BitVec 64) (c : Bool) :
     ((a + b + BitVec.ofNat 64 c.toNat).signed != a.signed + b.signed + (c.toNat : Int))
       = BitVec.saddcOverflow a b c := by
@@ -484,27 +478,8 @@ theorem BitVec.uaddOverflow_eq_carry {w} (a b : BitVec w) :
 
 attribute [grind =] BitVec.ult_iff_lt BitVec.ule_iff_le
 
-theorem BitVec.usubOverflow_eq_true_iff {w} (a b : BitVec w) :
-    BitVec.usubOverflow a b = true ↔ a.toNat < b.toNat := by
-  simp [BitVec.usubOverflow]
-
-theorem BitVec.uaddOverflow_eq_true_iff {w} (a b : BitVec w) :
-    BitVec.uaddOverflow a b = true ↔ 2 ^ w ≤ a.toNat + b.toNat := by
-  simp [BitVec.uaddOverflow]
-
-theorem BitVec.ssubOverflow_eq_true_iff {w} (a b : BitVec w) :
-    BitVec.ssubOverflow a b = true ↔ 2 ^ (w - 1) ≤ a.toInt - b.toInt ∨ a.toInt - b.toInt < -2 ^ (w - 1) := by
-  simp [BitVec.ssubOverflow]
-
-theorem BitVec.saddOverflow_eq_true_iff {w} (a b : BitVec w) :
-    BitVec.saddOverflow a b = true ↔ 2 ^ (w - 1) ≤ a.toInt + b.toInt ∨ a.toInt + b.toInt < -2 ^ (w - 1) := by
-  simp [BitVec.saddOverflow]
-
 theorem BitVec.ult_eq_true_iff {w} (a b : BitVec w) :
     a.ult b = true ↔ a.toNat < b.toNat := BitVec.ult_iff_toNat_lt
-
-theorem BitVec.ule_eq_true_iff {w} (a b : BitVec w) :
-    a.ule b = true ↔ a.toNat ≤ b.toNat := BitVec.ule_iff_toNat_le
 
 theorem BitVec.slt_eq_true_iff_toNat (a b : BitVec 64) :
     a.slt b = true ↔ (a.toNat + 2 ^ 63) % 2 ^ 64 < (b.toNat + 2 ^ 63) % 2 ^ 64 := by

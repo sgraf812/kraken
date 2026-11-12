@@ -51,7 +51,6 @@ public class Host where
   /-- Labels have size zero. -/
   label_size : ∀ i l, prog[i]? = some (.label l) → layout.size i = 0
   instr_size_pos : ∀ i ins, prog[i]? = some (.instr ins) → ¬ ins.IsPadding → 0 < layout.size i
-  instr_addr_ne : ∀ i ins, prog[i]? = some (.instr ins) → (layout.apply prog).addrOf i ≠ -1
   /-- Any directive that occupies zero space in the executable must be semantically inert. -/
   zero_inert : ∀ i d, prog[i]? = some d → layout.size i = 0 → d.Inert
   /-- Two directives at the same address have the same offset in the executable. -/
@@ -188,26 +187,3 @@ public theorem Host.label_ne [Host] {p : Program} {k : Nat} (i j : Nat) {l l' : 
   simp only at *
   omega
 
-public theorem Host.label_cases [Host] (l : Label) :
-    label l = -1 ∨ ∃ i, Host.prog[i]? = some (.label l) ∧ label l = Host.addrOf i := by
-  have hl : label l = (Host.exe.withAddresses.findSome?
-      (fun {directive, addr, ..} => if directive = .label l then .some addr else .none)).getD (-1) := rfl
-  rw [hl]
-  cases h : Host.exe.withAddresses.findSome?
-      (fun {directive, addr, ..} => if directive = .label l then .some addr else .none) with
-  | none => exact Or.inl rfl
-  | some a =>
-    right
-    obtain ⟨x, hx, hfx⟩ := List.exists_of_findSome?_eq_some h
-    obtain ⟨i, hi⟩ := List.mem_iff_getElem?.mp hx
-    rw [Kraken.Executable.getElem?_withAddresses_eq] at hi
-    obtain ⟨c, hc, rfl⟩ := Option.map_eq_some_iff.mp hi
-    rw [Host.exe_getElem?] at hc
-    obtain ⟨d, hd, rfl⟩ := Option.map_eq_some_iff.mp hc
-    dsimp only at hfx
-    split at hfx
-    · next hdl =>
-      subst hdl
-      cases hfx
-      exact ⟨i, hd, rfl⟩
-    · cases hfx

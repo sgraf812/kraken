@@ -43,13 +43,6 @@ theorem IsInfixAt.append (h : (a ++ b).IsInfixAt l₂ k) :
   refine ⟨⟨b ++ t, by rw [← ht, append_assoc]⟩, ⟨t, ?_⟩⟩
   rw [← drop_drop, ← ht, append_assoc, drop_left]
 
-theorem IsInfixAt.drop (h : l₁.IsInfixAt l₂ k) (m : Nat) : (l₁.drop m).IsInfixAt l₂ (k + m) := by
-  by_cases hm : m ≤ l₁.length
-  · have h' := (IsInfixAt.append (a := l₁.take m) (b := l₁.drop m) (by rwa [take_append_drop])).2
-    rwa [length_take_of_le hm] at h'
-  · rw [drop_eq_nil_of_le (show l₁.length ≤ m by omega)]
-    exact nil_isInfixAt _ _
-
 theorem exists_isPrefixOf_drop [DecidableEq α] (h : l₁ <:+: l₂) :
     ∃ k, k ∈ range (l₂.length + 1) ∧ l₁.isPrefixOf (l₂.drop k) := by
   obtain ⟨k, hk⟩ := isInfix_iff_exists_isInfixAt.mp h

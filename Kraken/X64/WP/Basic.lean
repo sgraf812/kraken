@@ -97,20 +97,6 @@ public theorem Effects.All_mono {P₁ P₂ : MachineState → Prop} {e : Effects
   | require_write_access _ ok ih => exact ih () h₁
   | require_exec_access _ ok ih => exact ih () h₁
 
-public theorem step1_mono [Layout] {e : Executable} {x : MachineState} {P₁ P₂ : MachineState → Prop}
-    (h : ∀ st, P₁ st → P₂ st) (h₁ : step1 e x P₁) : step1 e x P₂ :=
-  Effects.All_mono h h₁
-
-public theorem Effects.All_and {P₁ P₂ : MachineState → Prop} {e : Effects}
-    (h₁ : e.All P₁) (h₂ : e.All P₂) : e.All fun st => P₁ st ∧ P₂ st := by
-  induction e with
-  | done a => exact ⟨h₁, h₂⟩
-  | unimplemented | gp_unaligned | nonmem_load | nonmem_store => exact h₁
-  | undefined ret ih => exact fun v => ih v (h₁ v) (h₂ v)
-  | require_read_access _ ok ih => exact ih () h₁ h₂
-  | require_write_access _ ok ih => exact ih () h₁ h₂
-  | require_exec_access _ ok ih => exact ih () h₁ h₂
-
 open Lean.Order in
 @[partial_fixpoint_monotone] public theorem step1_monotone [Layout] {α : Type} [PartialOrder α]
     {e : Executable} {st : MachineState} (f : α → MachineState → ImplicationOrder) (h : monotone f) :

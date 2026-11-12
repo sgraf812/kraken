@@ -202,25 +202,6 @@ theorem Mem.loadInt_storeInt {w} (m : Mem w) (a : BitVec w) (n : Nat) (v : Int)
   rw [Mem.storeInt, Mem.loadInt, hbytes]
   rfl
 
-/-- The later store at an address and width is the one that counts. -/
-theorem Mem.storeBytes_storeBytes {w} (m : Mem w) (a : BitVec w) (bs₁ bs₂ : List UInt8)
-    (hlen : bs₁.length = bs₂.length) :
-    (m.storeBytes a bs₁).storeBytes a bs₂ = m.storeBytes a bs₂ := by
-  apply ExtHashMap.ext_getElem?
-  intro k
-  have hmem : k ∈ bs₁.At a ↔ k ∈ bs₂.At a := by
-    rw [mem_At_iff, mem_At_iff, hlen]
-  simp only [Mem.storeBytes, ExtHashMap.union_eq, ExtHashMap.getElem?_union]
-  cases h₂ : (bs₂.At a)[k]? with
-  | some x => rfl
-  | none =>
-    have hnot₂ : ¬ k ∈ bs₂.At a := by
-      intro hk
-      rw [ExtHashMap.getElem?_eq_some_getElem hk] at h₂
-      cases h₂
-    rw [ExtHashMap.getElem?_eq_none (fun hk => hnot₂ (hmem.mp hk))]
-    rfl
-
 
 /-- A load of one byte reads the map at the address. -/
 theorem Mem.loadInt_one {w} (m : Mem w) (a : BitVec w) :
