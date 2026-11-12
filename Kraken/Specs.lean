@@ -68,7 +68,6 @@ attribute [grind =] Width.bytes
 @[simp, grind =] theorem MachineData.zmms_setReg (s : MachineData) {w} (r : Reg w) (v : w.type) :
     (s.setReg r v).zmms = s.zmms := rfl
 
-
 /-! ## Machine words in `grind`'s arithmetic
 
 A register holds a `UInt64` whose payload is a `BitVec 64`, and the instruction
@@ -82,12 +81,6 @@ below is one crossing that `grind` cannot take on its own. -/
 @[grind =] theorem Int64.ofNat_lit (n : Nat) : (OfNat.ofNat n : Int64) = Int64.ofNat n := rfl
 @[grind =] theorem Int64.toBitVec_lit (n : Nat) :
     (OfNat.ofNat n : Int64).toBitVec = BitVec.ofNat 64 n := rfl
-@[grind =] theorem BitVec.setWidth_64_64 (x : BitVec 64) :
-    BitVec.setWidth 64 x = x := BitVec.setWidth_eq x
-@[simp, grind =] theorem BitVec.ofInt_toInt_int64 (c : Int64) :
-    BitVec.ofInt 64 c.toInt = c.toBitVec := by
-  rw [show c.toInt = c.toBitVec.toInt from rfl, BitVec.ofInt_toInt]
-
 /-! ## Per-register field reads over `set64`, one lemma per field -/
 
 @[simp, grind =] theorem Reg64s.rax_set64 (s : Reg64s) (r : Reg64) (v : BitVec 64) :

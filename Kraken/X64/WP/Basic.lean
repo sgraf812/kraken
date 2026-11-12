@@ -103,7 +103,6 @@ open Lean.Order in
     @monotone _ _ _ ImplicationOrder.instOrder (fun x => step1 e st (f x)) :=
   fun _ _ hxy => Effects.All_mono fun st' => h _ _ hxy st'
 
-
 public theorem List.IsInfixAt.trans {α : Type} {l₁ l₂ l₃ : List α} {i j : Nat}
     (h₁ : l₁.IsInfixAt l₂ i) (h₂ : l₂.IsInfixAt l₃ j) : l₁.IsInfixAt l₃ (j + i) := by
   rw [List.isInfixAt_iff_getElem?] at *
@@ -441,18 +440,6 @@ variable [Host]
     (e.ofIsInfixAt (List.isInfixAt_cons_head d p)).endAddr =
       (e.ofIsInfixAt (List.isInfixAt_cons_tail d p)).startAddr :=
   rfl
-
-@[grind =] public theorem Embedding.startAddr_label_cons (l : Label) (p : Program)
-    (e : Embedding (.label l :: p)) : e.startAddr = label l :=
-  (Host.label_eq (i := 0) e.isInfixAt rfl).symm
-
-@[grind =_] public theorem Embedding.startAddr_label_cons_tail (l : Label) (p : Program)
-    (t : Embedding (.label l :: p)) :
-    (t.ofIsInfixAt (List.isInfixAt_cons_tail (.label l) p)).startAddr = t.startAddr := by
-  have hk : Host.prog[t.start + 0]? = some (.label l) := by
-    rw [List.isInfixAt_iff_getElem?.mp t.isInfixAt 0 (by simp)]; rfl
-  simp only [Embedding.startAddr, Embedding.start_ofIsInfixAt, Host.addrOf_succ hk, Host.label_size _ _ hk]
-  simp
 
 end
 

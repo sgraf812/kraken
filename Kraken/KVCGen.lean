@@ -19,9 +19,6 @@ adjacent literals to `evalGround`. -/
 @[vcgen_simp] theorem BitVec.add_assoc_rev {w : Nat} (a b c : BitVec w) : a + (b + c) = a + b + c :=
   (BitVec.add_assoc a b c).symm
 
-@[vcgen_simp] theorem BitVec.add_ofNat_zero {w : Nat} (x : BitVec w) : x + (0 : BitVec w) = x :=
-  BitVec.add_zero x
-
 @[vcgen_simp] theorem BitVec.ofInt_toInt_int64_zero {w : Nat} :
     BitVec.ofInt w (Int64.toInt 0) = (0 : BitVec w) := by
   simp

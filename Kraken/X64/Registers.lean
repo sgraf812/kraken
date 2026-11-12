@@ -249,11 +249,6 @@ the projections of a literal reduce by the lemmas below. -/
   simp only [CondCode.interp_ge, StatusFlags.neg]; cases s.sf <;> cases s.of <;> rfl
 @[grind =] theorem CondCode.interp_le_neg (s : StatusFlags) :
     CondCode.le.interp s = (s.neg || s.zf) := rfl
-@[grind =] theorem CondCode.interp_g_neg (s : StatusFlags) :
-    CondCode.g.interp s = (!s.neg && !s.zf) := by
-  simp only [CondCode.interp_g, StatusFlags.neg]
-  cases s.sf <;> cases s.of <;> cases s.zf <;> rfl
-
 theorem BitVec.toInt_lt_toInt_iff_flip (a b : BitVec 64) :
     a.toInt < b.toInt ↔ (a.toNat + 2 ^ 63) % 2 ^ 64 < (b.toNat + 2 ^ 63) % 2 ^ 64 := by
   have ha := a.isLt
@@ -401,15 +396,6 @@ theorem BitVec.signed_add_add_bne (a b : BitVec 64) (c : Bool) :
     BitVec.toInt_eq_toNat_cond, hv, hab, hcv, Bool.or_eq_true, decide_eq_true_eq, Nat.add_one_sub_one]
   split <;> split <;> split <;> split <;> split <;> omega
 
-@[vcgen_simp] theorem BitVec.saddcOverflow_ofNat_ofNat (w n m : Nat) (c : Bool) :
-    BitVec.saddcOverflow (BitVec.ofNat w n) (BitVec.ofNat w m) c
-      = (((BitVec.ofNat w n).getMsbD 0 == (BitVec.ofNat w m).getMsbD 0
-            && !((BitVec.ofNat w n + BitVec.ofNat w m).getMsbD 0 == (BitVec.ofNat w n).getMsbD 0))
-          ^^ ((BitVec.ofNat w n + BitVec.ofNat w m).getMsbD 0 == (BitVec.ofNat w c.toNat).getMsbD 0
-            && !((BitVec.ofNat w n + BitVec.ofNat w m + BitVec.ofNat w c.toNat).getMsbD 0
-              == (BitVec.ofNat w n + BitVec.ofNat w m).getMsbD 0))) := by
-  simp only [BitVec.saddcOverflow, BitVec.saddOverflow_eq, BitVec.msb_eq_getMsbD_zero]
-
 theorem BitVec.unsigned_take_add_bne {w} (a b : BitVec w) (hw : 4 ≤ w) :
     (((a + b).take 4).unsigned != (a.take 4).unsigned + (b.take 4).unsigned) = BitVec.carry 4 a b false := by
   have hdvd : 2 ^ 4 ∣ 2 ^ w := Nat.pow_dvd_pow 2 hw
@@ -524,15 +510,6 @@ theorem BitVec.ofInt_unsigned_mul_shiftRight {w} (x y : BitVec w) :
   rw [Nat.div_lt_iff_lt_mul (Nat.two_pow_pos w)]
   exact Nat.mul_lt_mul'' hx hy
 
-@[vcgen_simp] theorem BitVec.umulHi_ofNat_ofNat (w n m : Nat) :
-    BitVec.umulHi (BitVec.ofNat w n) (BitVec.ofNat w m)
-      = BitVec.ofNat w (n % 2 ^ w * (m % 2 ^ w) / 2 ^ w) := by
-  apply BitVec.eq_of_toNat_eq
-  rw [BitVec.toNat_umulHi, BitVec.toNat_ofNat, BitVec.toNat_ofNat, BitVec.toNat_ofNat]
-  refine (Nat.mod_eq_of_lt ?_).symm
-  rw [Nat.div_lt_iff_lt_mul (Nat.two_pow_pos w)]
-  exact Nat.mul_lt_mul'' (Nat.mod_lt _ (Nat.two_pow_pos w)) (Nat.mod_lt _ (Nat.two_pow_pos w))
-
 @[grind =] theorem BitVec.umulHi_eq_zero {w} {x y : BitVec w} (h : x.toNat * y.toNat < 2 ^ w) :
     BitVec.umulHi x y = 0#w := by
   apply BitVec.eq_of_toNat_eq
@@ -575,9 +552,6 @@ theorem BitVec.ofInt_unsigned_mul_shiftRight {w} (x y : BitVec w) :
     (StatusFlags.ofSub a b).of = BitVec.ssubOverflow a b := BitVec.signed_sub_bne a b
 @[simp, vcgen_simp] theorem StatusFlags.pf_ofSub {w} (a b : BitVec w) :
     (StatusFlags.ofSub a b).pf = (((a - b).take 8).cpop_ % 2 == BitVec.zero _) := rfl
-@[simp, vcgen_simp] theorem StatusFlags.af_ofSub (a b : BitVec 64) :
-    (StatusFlags.ofSub a b).af = BitVec.usubOverflow (a.take 4) (b.take 4) :=
-  BitVec.unsigned_take_sub_bne a b (by decide)
 theorem StatusFlags.neg_ofSub (a b : BitVec 64) : (StatusFlags.ofSub a b).neg = a.slt b := by
   rw [StatusFlags.neg, StatusFlags.sf_ofSub, StatusFlags.of_ofSub, ← BitVec.signed_sub_bne,
     BitVec.slt_eq_decide]
@@ -634,9 +608,6 @@ theorem StatusFlags.neg_ofSub (a b : BitVec 64) : (StatusFlags.ofSub a b).neg = 
     (StatusFlags.ofAdd a b).of = BitVec.saddOverflow a b := BitVec.signed_add_bne a b
 @[simp, vcgen_simp] theorem StatusFlags.pf_ofAdd {w} (a b : BitVec w) :
     (StatusFlags.ofAdd a b).pf = (((a + b).take 8).cpop_ % 2 == BitVec.zero _) := rfl
-@[simp, vcgen_simp] theorem StatusFlags.af_ofAdd (a b : BitVec 64) :
-    (StatusFlags.ofAdd a b).af = BitVec.carry 4 a b false :=
-  BitVec.unsigned_take_add_bne a b (by decide)
 theorem StatusFlags.neg_ofAdd (n : Nat) (b : BitVec 64) (hn : n % 2 ^ 64 ≠ 2 ^ 63) :
     (StatusFlags.ofAdd (OfNat.ofNat n) b).neg = b.slt (BitVec.ofNat 64 (2 ^ 64 - n % 2 ^ 64)) := by
   have hneg : BitVec.ofNat 64 (2 ^ 64 - n % 2 ^ 64) = -(OfNat.ofNat n : BitVec 64) := by
@@ -655,26 +626,16 @@ grind_pattern StatusFlags.neg_ofAdd => StatusFlags.neg (StatusFlags.ofAdd (OfNat
     (StatusFlags.ofDec a cf).cf = cf := rfl
 @[simp, vcgen_simp] theorem StatusFlags.sf_ofDec (a : BitVec 64) (cf : Bool) :
     (StatusFlags.ofDec a cf).sf = (a - 1).msb := rfl
-@[simp, vcgen_simp] theorem StatusFlags.of_ofDec (a : BitVec 64) (cf : Bool) :
-    (StatusFlags.ofDec a cf).of = BitVec.ssubOverflow a 1 := BitVec.signed_sub_bne a 1
 @[simp, vcgen_simp] theorem StatusFlags.pf_ofDec (a : BitVec 64) (cf : Bool) :
     (StatusFlags.ofDec a cf).pf = (((a - 1).take 8).cpop_ % 2 == BitVec.zero _) := rfl
-@[simp, vcgen_simp] theorem StatusFlags.af_ofDec (a : BitVec 64) (cf : Bool) :
-    (StatusFlags.ofDec a cf).af = BitVec.usubOverflow (a.take 4) 1 := BitVec.unsigned_take_sub_one_bne a
-
 @[simp, grind =, vcgen_simp] theorem StatusFlags.zf_ofInc (a : BitVec 64) (cf : Bool) :
     (StatusFlags.ofInc a cf).zf = (a + 1 == BitVec.zero 64) := rfl
 @[simp, grind =, vcgen_simp] theorem StatusFlags.cf_ofInc (a : BitVec 64) (cf : Bool) :
     (StatusFlags.ofInc a cf).cf = cf := rfl
 @[simp, vcgen_simp] theorem StatusFlags.sf_ofInc (a : BitVec 64) (cf : Bool) :
     (StatusFlags.ofInc a cf).sf = (a + 1).msb := rfl
-@[simp, vcgen_simp] theorem StatusFlags.of_ofInc (a : BitVec 64) (cf : Bool) :
-    (StatusFlags.ofInc a cf).of = BitVec.saddOverflow a 1 := BitVec.signed_add_bne a 1
 @[simp, vcgen_simp] theorem StatusFlags.pf_ofInc (a : BitVec 64) (cf : Bool) :
     (StatusFlags.ofInc a cf).pf = (((a + 1).take 8).cpop_ % 2 == BitVec.zero _) := rfl
-@[simp, vcgen_simp] theorem StatusFlags.af_ofInc (a : BitVec 64) (cf : Bool) :
-    (StatusFlags.ofInc a cf).af = BitVec.carry 4 a 1 false := BitVec.unsigned_take_add_one_bne a
-
 @[simp, grind =, vcgen_simp] theorem StatusFlags.zf_ofLogic {w} (v : BitVec w) (af : Bool) :
     (StatusFlags.ofLogic v af).zf = (v == BitVec.zero w) := rfl
 @[simp, grind =, vcgen_simp] theorem StatusFlags.cf_ofLogic {w} (v : BitVec w) (af : Bool) :
@@ -687,10 +648,6 @@ grind_pattern StatusFlags.neg_ofAdd => StatusFlags.neg (StatusFlags.ofAdd (OfNat
     (StatusFlags.ofLogic v af).pf = ((v.take 8).cpop_ % 2 == BitVec.zero _) := rfl
 @[simp, vcgen_simp] theorem StatusFlags.af_ofLogic {w} (v : BitVec w) (af : Bool) :
     (StatusFlags.ofLogic v af).af = af := rfl
-@[grind =] theorem StatusFlags.neg_ofLogic {w} (v : BitVec w) (af : Bool) :
-    (StatusFlags.ofLogic v af).neg = v.msb := by
-  simp [StatusFlags.neg]
-
 /-! ## Masks -/
 
 theorem Nat.and_two_pow_sub_two_pow {x w k : Nat} (hk : k ≤ w) (hx : x < 2 ^ w) :
@@ -795,7 +752,6 @@ theorem AddrExpr.zeroExtend_interp_base_disp [L : Labels] (b : Reg64) (d : Int64
   rw [hsigned, Int.add_zero,
     show ∀ y : BitVec Width.W64.bits, BitVec.zeroExtend 64 y = y from fun _ => rfl,
     BitVec.ofInt_add, BitVec.ofInt_toInt]
-
 
 theorem AddrExpr.zeroExtend_interp_sib1 [L : Labels] (b i : Reg64) (d : Int64)
     (regs : Reg64s) (rng : Std.Rco Int64) :

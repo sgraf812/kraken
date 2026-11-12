@@ -122,7 +122,6 @@ theorem At_append_sep {w : Nat} (bs1 bs2 : List UInt8) (a : BitVec w)
     rw [← h_union]
     rw [← List.At_append _ _ _ h_len]
 
-
 /-! ## Slices of a region
 
 An access of `n` bytes at `addr` inside a region `bs.At a` touches the bytes at
@@ -302,29 +301,10 @@ theorem Blocks.Inside.base_add_add {w : Nat} {a c x : BitVec w} {n len : Nat}
     have := Nat.mod_le (c.toNat + x.toNat) (2 ^ w)
     omega)
 
-/-- An access at offsets `c` and `x` around a block's base, as `c + a + x`: an
-operand whose index register holds the pointer to the block, such as
-`16(%rcx,%rsi,1)` for the block at `rsi`. -/
-theorem Blocks.Inside.add_base_add {w : Nat} {a c x : BitVec w} {n len : Nat}
-    {bs : List (BitVec w × Nat)} (h : c.toNat + x.toNat + n ≤ len) :
-    Blocks.Inside (c + a + x) n ((a, len) :: bs) :=
-  Or.inl (by
-    rw [BitVec.add_comm c a, BitVec.add_assoc, BitVec.add_comm, BitVec.add_sub_cancel,
-      BitVec.toNat_add]
-    have := Nat.mod_le (c.toNat + x.toNat) (2 ^ w)
-    omega)
-
 theorem Blocks.Inside.base_add_add_wrap {w : Nat} {a c x : BitVec w} {n len : Nat}
     {bs : List (BitVec w × Nat)} (h : (c + x).toNat + n ≤ len) :
     Blocks.Inside (a + c + x) n ((a, len) :: bs) :=
   Or.inl (by rw [BitVec.add_assoc, BitVec.add_comm, BitVec.add_sub_cancel]; exact h)
-
-theorem Blocks.Inside.add_base_add_wrap {w : Nat} {a c x : BitVec w} {n len : Nat}
-    {bs : List (BitVec w × Nat)} (h : (c + x).toNat + n ≤ len) :
-    Blocks.Inside (c + a + x) n ((a, len) :: bs) :=
-  Or.inl (by
-    rw [BitVec.add_comm c a, BitVec.add_assoc, BitVec.add_comm, BitVec.add_sub_cancel]
-    exact h)
 
 theorem Blocks.Inside.sub {w : Nat} {a p x : BitVec w} {n len : Nat}
     {bs : List (BitVec w × Nat)} (hx : x.toNat ≤ (p - a).toNat) (h : (p - a).toNat - x.toNat + n ≤ len) :
@@ -345,11 +325,6 @@ theorem Blocks.Inside.sub_sub {w : Nat} {a p x y : BitVec w} {n len : Nat}
         BitVec.add_assoc, BitVec.add_comm (-x), ← BitVec.add_assoc],
       BitVec.toNat_sub_of_le (BitVec.le_def.mpr (by omega))]
   exact Blocks.Inside.sub (by omega) (by omega)
-
-theorem Blocks.Inside.mono {w : Nat} {addr a : BitVec w} {n len len' : Nat}
-    {bs : List (BitVec w × Nat)} (h : Blocks.Inside addr n ((a, len) :: bs)) (hl : len ≤ len') :
-    Blocks.Inside addr n ((a, len') :: bs) :=
-  h.imp (fun h => by omega) id
 
 /-- An access at an offset `x` from a pointer `p` into a block, given the
 pointer's offset `p - a` from the base: the form in which a loop invariant
@@ -424,11 +399,7 @@ grind_pattern Blocks.Inside.base_add_sub => Blocks.Inside (a + x - y) n ((a, len
 grind_pattern Blocks.Inside.base_add_add => Blocks.Inside (a + c + x) n ((a, len) :: bs)
 grind_pattern Blocks.Inside.sub => Blocks.Inside (p - x) n ((a, len) :: bs), p - a
 grind_pattern Blocks.Inside.sub_sub => Blocks.Inside (p - x - y) n ((a, len) :: bs), p - a
-grind_pattern Blocks.Inside.mono => Blocks.Inside addr n ((a, len) :: bs), Blocks.Inside addr n ((a, len') :: bs) where
-  len =/= len'
-grind_pattern Blocks.Inside.add_base_add => Blocks.Inside (c + a + x) n ((a, len) :: bs)
 grind_pattern Blocks.Inside.base_add_add_wrap => Blocks.Inside (a + c + x) n ((a, len) :: bs)
-grind_pattern Blocks.Inside.add_base_add_wrap => Blocks.Inside (c + a + x) n ((a, len) :: bs)
 -- The pointer rule also needs the offset `p - a` among the terms, which an
 -- invariant about the pointer puts there. Otherwise any pointer into any block
 -- would match, and ruling out the wrong blocks swamps the arithmetic.
@@ -436,8 +407,6 @@ grind_pattern Blocks.Inside.ptr_add => Blocks.Inside (p + x) n ((a, len) :: bs),
 grind_pattern Blocks.Inside.ptr => Blocks.Inside p n ((a, len) :: bs), p - a
 grind_pattern Blocks.loadInt_isSome => sep (Blocks bs) F m, Mem.loadInt m addr n
 grind_pattern Blocks.storeInt => sep (Blocks bs) F m, Mem.storeInt m addr n v
-
-
 
 /-! ## Copying into a block: `Blocks` owns the destination, `loadBytes` tracks contents -/
 
@@ -467,32 +436,6 @@ private theorem Blocks_cons_sep {w : Nat} (a : BitVec w) (len : Nat) (l : List (
   cases l with
   | nil => rw [Blocks, Blocks, emp_sep]
   | cons b l => rw [Blocks, sep_assoc]
-
-theorem Blocks.storeInt_head {w : Nat} {a : BitVec w} {n : Nat} {l : List (BitVec w × Nat)}
-    {F : Mem w → Prop} {m : Mem w} (h : m =⋆ Blocks ((a, n) :: l) ⋆ F) (v : Int) :
-    m.storeInt a n v =⋆ Bytes a (Int.toBytes n v) ⋆ Blocks l ⋆ F := by
-  rw [Blocks_cons_sep] at h
-  obtain ⟨-, ys, hys, h⟩ := Block.sep_elim h
-  rw [Bytes, sep_assoc]
-  exact storeInt_sep a n ys _ m ⟨h, hys⟩ v
-
-theorem Blocks.storeInt₂ {w : Nat} {P F : Mem w → Prop} {bs : List (BitVec w × Nat)} {m : Mem w}
-    {addr : BitVec w} {n : Nat} (h : m =⋆ P ⋆ Blocks bs ⋆ F) (hin : Blocks.Inside addr n bs)
-    (v : Int) : m.storeInt addr n v =⋆ P ⋆ Blocks bs ⋆ F := by
-  rw [sep_assoc, sep_comm_l] at h ⊢
-  exact Blocks.storeInt h hin v
-
-theorem Blocks.loadInt_isSome₂ {w : Nat} {P F : Mem w → Prop} {bs : List (BitVec w × Nat)}
-    {m : Mem w} {addr : BitVec w} {n : Nat} (h : m =⋆ P ⋆ Blocks bs ⋆ F)
-    (hin : Blocks.Inside addr n bs) : (m.loadInt addr n).isSome = true := by
-  rw [sep_assoc, sep_comm_l] at h
-  exact Blocks.loadInt_isSome h hin
-
-theorem Bytes.loadInt₂ {w : Nat} {a : BitVec w} {bs : List UInt8} {n : Nat} {G F : Mem w → Prop}
-    {m : Mem w} (h : m =⋆ Bytes a bs ⋆ G ⋆ F) (hn : bs.length = n) (hw : n ≤ 2 ^ w) :
-    m.loadInt a n = some (Int.ofBytes bs) := by
-  rw [Bytes, sep_assoc] at h
-  exact loadInt_sep bs a n _ m h hn hw
 
 theorem loadBytes_eq_some_iff {w : Nat} {m : Mem w} {a : BitVec w} {n : Nat} {bs : List UInt8} :
     m.loadBytes a n = some bs ↔
@@ -634,10 +577,6 @@ theorem Contains.of_sep {w : Nat} {m : Mem w} {a : BitVec w} {bs : List UInt8} {
 
 attribute [grind =] Int.toBytes_length
 
-grind_pattern Blocks.storeInt_head => sep (Blocks ((a, n) :: l)) F m, Mem.storeInt m a n v
-grind_pattern Blocks.loadInt_isSome₂ => sep (sep P (Blocks bs)) F m, Mem.loadInt m addr n
-grind_pattern Blocks.storeInt₂ => sep (sep P (Blocks bs)) F m, Mem.storeInt m addr n v
-grind_pattern Bytes.loadInt₂ => sep (sep (Bytes a bs) G) F m, Mem.loadInt m a n
 grind_pattern Contains.of_length => Contains m a bs
 grind_pattern Contains.loadInt_take => Contains m a (List.take r bs), Mem.loadInt m addr 1
 grind_pattern Contains.loadInt_head => Contains m a bs, Mem.loadInt m a 1
@@ -668,22 +607,6 @@ theorem Blocks.mapped {w : Nat} {bs : List (BitVec w × Nat)} {F : Mem w → Pro
   have := Blocks.loadInt_isSome h hb
   rw [Mem.loadInt_one] at this
   simpa using this
-
-theorem UnchangedOutside.loadInt_singleton {w : Nat} {m m' : Mem w} {a b : BitVec w} {n len : Nat}
-    (h : UnchangedOutside [(b, len)] m m') (hl : len ≤ (a - b).toNat) (hw : (a - b).toNat + n ≤ 2 ^ w) :
-    m'.loadInt a n = m.loadInt a n := by
-  simp only [Mem.loadInt, Mem.loadBytes]
-  rw [List.map_congr_left (fun i hi => h _ fun hin => ?_)]
-  have hi := List.mem_range.mp hi
-  rcases hin with hin | hin
-  · rw [show a + BitVec.ofNat w i - b = (a - b) + BitVec.ofNat w i by
-      rw [BitVec.sub_eq_add_neg, BitVec.sub_eq_add_neg, BitVec.add_assoc, BitVec.add_comm _ (-b),
-        ← BitVec.add_assoc], BitVec.toNat_add, BitVec.toNat_ofNat, Nat.mod_eq_of_lt (a := i) (by omega),
-      Nat.mod_eq_of_lt (by omega)] at hin
-    omega
-  · exact hin
-
-grind_pattern UnchangedOutside.loadInt_singleton => UnchangedOutside [(b, len)] m m', Mem.loadInt m' a n
 
 def Blocks.Disjoint {w : Nat} (bs bs' : List (BitVec w × Nat)) : Prop :=
   ∀ b, Blocks.Inside b 1 bs → ¬ Blocks.Inside b 1 bs'
@@ -754,14 +677,6 @@ theorem Mapped.contains_get! {w : Nat} {bs : List (BitVec w × Nat)} {m : Mem w}
   have hl := length_of_loadBytes_eq_some h'
   exact ⟨by rw [Contains, hl]; exact h', hl⟩
 
-theorem Contains.storeInt_of_disjoint {w : Nat} {m : Mem w} {a addr : BitVec w} {bs : List UInt8}
-    {n : Nat} {bs₁ bs₂ : List (BitVec w × Nat)} (h : Contains m a bs)
-    (hin : Blocks.Inside addr n bs₁) (hd : Blocks.Disjoint bs₁ bs₂)
-    (ha : Blocks.Inside a bs.length bs₂) (v : Int) : Contains (m.storeInt addr n v) a bs :=
-  Contains.iff.mpr fun i hi => by
-    rw [hin.get?_storeInt (fun hb => hd _ hb (ha.add_ofNat hi)) v]
-    exact Contains.iff.mp h i hi
-
 theorem Contains.storeInt_of_disjoint' {w : Nat} {m : Mem w} {a addr : BitVec w} {bs : List UInt8}
     {n : Nat} {bs₁ bs₂ : List (BitVec w × Nat)} (h : Contains m a bs)
     (hin : Blocks.Inside addr n bs₁) (hd : Blocks.Disjoint bs₂ bs₁)
@@ -771,8 +686,6 @@ theorem Contains.storeInt_of_disjoint' {w : Nat} {m : Mem w} {a addr : BitVec w}
     exact Contains.iff.mp h i hi
 
 grind_pattern Mapped.contains_get! => Mapped bs m, Option.get! (Mem.loadBytes m addr n)
-grind_pattern Contains.storeInt_of_disjoint => Contains m a bs, Mem.storeInt m addr n v, Blocks.Disjoint bs₁ bs₂ where
-  guard Blocks.Disjoint bs₁ bs₂
 grind_pattern Contains.storeInt_of_disjoint' => Contains m a bs, Mem.storeInt m addr n v, Blocks.Disjoint bs₂ bs₁ where
   guard Blocks.Disjoint bs₂ bs₁
 
@@ -1067,19 +980,6 @@ theorem havoc_havoc {w : Nat} (m : Mem w) (bs cs : List (BitVec w × Nat)) (y z 
   by_cases hb : Blocks.Inside b 1 bs <;> by_cases hc : Blocks.Inside b 1 cs <;>
     cases y.get? b <;> cases z.get? b <;> cases m.get? b <;> simp [hb, hc]
 
-theorem havoc_append_self {w : Nat} (m : Mem w) (bs : List (BitVec w × Nat)) (y : Mem w) :
-    m.havoc (bs ++ bs) y = m.havoc bs y := by
-  apply ExtHashMap.ext_getElem?
-  intro b
-  simp only [← ExtHashMap.get?_eq_getElem?, get?_havoc, Blocks.Inside.append_iff, or_self]
-
-theorem havoc_restrict_havoc {w : Nat} (m : Mem w) (bs : List (BitVec w × Nat)) (y z : Mem w) :
-    m.havoc bs ((y.restrict bs).havoc bs z) = m.havoc bs (y.havoc bs z) := by
-  apply ExtHashMap.ext_getElem?
-  intro b
-  simp only [← ExtHashMap.get?_eq_getElem?, get?_havoc, get?_restrict]
-  by_cases hb : Blocks.Inside b 1 bs <;> simp [hb]
-
 theorem get?_storeInt {w : Nat} (m : Mem w) (a b : BitVec w) (n : Nat) (v : Int) :
     (m.storeInt a n v).get? b = ((Int.toBytes n v).At a)[b]?.or (m.get? b) := by
   simp only [Mem.storeInt, Mem.storeBytes, ExtHashMap.get?_eq_getElem?, ExtHashMap.union_eq,
@@ -1092,23 +992,6 @@ theorem Blocks.Inside.mem_At {w : Nat} {a b : BitVec w} {n : Nat} {v : Int}
   · refine ⟨(b - a).toNat, by omega, ?_⟩
     rw [BitVec.ofNat_toNat, BitVec.setWidth_eq, BitVec.add_comm, BitVec.sub_add_cancel]
   · exact h.elim
-
-theorem storeInt_havoc {w : Nat} (m : Mem w) (bs : List (BitVec w × Nat)) (y : Mem w) (a : BitVec w)
-    (n : Nat) (v : Int) :
-    (m.havoc bs y).storeInt a n v = m.havoc ([(a, n)] ++ bs) (y.storeInt a n v) := by
-  apply ExtHashMap.ext_getElem?
-  intro b
-  simp only [← ExtHashMap.get?_eq_getElem?, get?_storeInt, get?_havoc, Blocks.Inside.append_iff]
-  by_cases hs : b ∈ (Int.toBytes n v).At a
-  · obtain ⟨x, hx⟩ := Option.isSome_iff_exists.mp (ExtHashMap.isSome_getElem?_iff_mem.mpr hs)
-    have hi : Blocks.Inside b 1 [(a, n)] := by
-      rw [mem_At_iff, Int.toBytes_length] at hs
-      obtain ⟨i, hi, rfl⟩ := hs
-      exact (Blocks.Inside.base (Nat.le_refl n)).add_ofNat hi
-    simp [hx, hi]
-  · have hi : ¬ Blocks.Inside b 1 [(a, n)] := fun h => hs h.mem_At
-    rw [ExtHashMap.get?_eq_getElem? (a := b), ExtHashMap.getElem?_eq_none hs]
-    by_cases hb : Blocks.Inside b 1 bs <;> simp [hb, hi]
 
 theorem loadBytes_congr {w : Nat} {m m' : Mem w} {a : BitVec w} {n : Nat}
     (h : ∀ i < n, m.get? (a + .ofNat w i) = m'.get? (a + .ofNat w i)) :
@@ -1138,25 +1021,12 @@ theorem loadInt_havoc_of_disjoint {w : Nat} {m y : Mem w} {bs : List (BitVec w �
     {n : Nat} (hd : Blocks.Disjoint [(a, n)] bs) : (m.havoc bs y).loadInt a n = m.loadInt a n := by
   rw [Mem.loadInt, loadBytes_havoc_of_disjoint hd, ← Mem.loadInt]
 
-theorem loadInt_havoc_of_inside {w : Nat} {m y : Mem w} {bs : List (BitVec w × Nat)} {a : BitVec w}
-    {n : Nat} (h : Blocks.Inside a n bs) (hy : (y.loadInt a n).isSome) :
-    (m.havoc bs y).loadInt a n = y.loadInt a n := by
-  rw [Mem.loadInt, loadBytes_havoc_of_inside h (by simpa [Mem.loadInt] using hy), ← Mem.loadInt]
-
-theorem loadInt_restrict_of_inside {w : Nat} {y : Mem w} {bs : List (BitVec w × Nat)} {a : BitVec w}
-    {n : Nat} (h : Blocks.Inside a n bs) : (y.restrict bs).loadInt a n = y.loadInt a n := by
-  rw [Mem.loadInt, loadBytes_restrict_of_inside h, ← Mem.loadInt]
-
 theorem DomainGrows.havoc {w : Nat} (m : Mem w) (bs : List (BitVec w × Nat)) (y : Mem w) :
     DomainGrows m (m.havoc bs y) := fun b hb => by
   rw [get?_havoc]
   split
   · cases y.get? b <;> simp_all
   · exact hb
-
-theorem Mapped.havoc {w : Nat} {cs : List (BitVec w × Nat)} {m : Mem w} (hm : Mapped cs m)
-    (bs : List (BitVec w × Nat)) (y : Mem w) : Mapped cs (m.havoc bs y) :=
-  fun b hb => DomainGrows.havoc m bs y b (hm b hb)
 
 theorem WritesOnly.eq_havoc {w : Nat} {bs : List (BitVec w × Nat)} {m m' : Mem w} (h : WritesOnly bs m m') :
     m' = m.havoc bs m' := by
@@ -1186,47 +1056,22 @@ theorem Blocks.Disjoint.cons_cons_right_iff {w : Nat} {xs : List (BitVec w × Na
     Blocks.Disjoint xs (b :: c :: cs) ↔ Blocks.Disjoint xs [b] ∧ Blocks.Disjoint xs (c :: cs) :=
   Blocks.Disjoint.append_right_iff (bs := [b]) (cs := c :: cs)
 
-theorem WritesOnly.loadBytes {w : Nat} {bs : List (BitVec w × Nat)} {m m' : Mem w} {a : BitVec w} {n : Nat}
-    (h : WritesOnly bs m m') (hd : Blocks.Disjoint [(a, n)] bs) : m'.loadBytes a n = m.loadBytes a n :=
-  loadBytes_congr fun _ hi => h.1 _ (hd _ ((Blocks.Inside.base (Nat.le_refl n)).add_ofNat hi))
-
 theorem loadBytes_storeInt_of_disjoint {w : Nat} {m : Mem w} {a x : BitVec w} {n k : Nat}
     (hd : Blocks.Disjoint [(x, k)] [(a, n)]) (v : Int) : (m.storeInt a n v).loadBytes x k = m.loadBytes x k :=
   loadBytes_congr fun _ hi =>
     (Blocks.Inside.base (Nat.le_refl n)).get?_storeInt
       (hd _ ((Blocks.Inside.base (Nat.le_refl k)).add_ofNat hi)) v
 
-theorem loadBytes_storeInt_of_inside {w : Nat} {m : Mem w} {a x : BitVec w} {n k : Nat}
-    {bs₁ bs₂ : List (BitVec w × Nat)} (hd : Blocks.Disjoint bs₁ bs₂) (hx : Blocks.Inside x k bs₁)
-    (ha : Blocks.Inside a n bs₂) (v : Int) : (m.storeInt a n v).loadBytes x k = m.loadBytes x k :=
-  loadBytes_congr fun _ hi =>
-    (Blocks.Inside.base (Nat.le_refl n)).get?_storeInt
-      (hd.of_inside hx ha _ ((Blocks.Inside.base (Nat.le_refl k)).add_ofNat hi)) v
-
-theorem loadBytes_storeInt_of_inside' {w : Nat} {m : Mem w} {a x : BitVec w} {n k : Nat}
-    {bs₁ bs₂ : List (BitVec w × Nat)} (hd : Blocks.Disjoint bs₁ bs₂) (hx : Blocks.Inside x k bs₂)
-    (ha : Blocks.Inside a n bs₁) (v : Int) : (m.storeInt a n v).loadBytes x k = m.loadBytes x k :=
-  loadBytes_congr fun _ hi =>
-    (Blocks.Inside.base (Nat.le_refl n)).get?_storeInt
-      (hd.of_inside' hx ha _ ((Blocks.Inside.base (Nat.le_refl k)).add_ofNat hi)) v
-
-attribute [vcgen_simp] havoc_havoc havoc_append_self havoc_restrict_havoc storeInt_havoc
+attribute [vcgen_simp] havoc_havoc
 attribute [grind norm] Blocks.Inside.append_iff Blocks.Disjoint.append_right_iff
   Blocks.Disjoint.cons_cons_right_iff
 
 grind_pattern loadInt_havoc_of_disjoint => Mem.loadInt (havoc m bs y) a n
-grind_pattern loadInt_havoc_of_inside => Mem.loadInt (havoc m bs y) a n
-grind_pattern loadInt_restrict_of_inside => Mem.loadInt (restrict y bs) a n
 grind_pattern loadBytes_havoc_of_disjoint => Mem.loadBytes (havoc m bs y) a n
 grind_pattern loadBytes_havoc_of_inside => Mem.loadBytes (havoc m bs y) a n
 grind_pattern loadBytes_restrict_of_inside => Mem.loadBytes (restrict y bs) a n
 grind_pattern WritesOnly.havoc => havoc m bs y where
   m =/= restrict _ _
 grind_pattern loadBytes_storeInt_of_disjoint => Mem.loadBytes (Mem.storeInt m a n v) x k
-grind_pattern WritesOnly.loadBytes => WritesOnly bs m m', Mem.loadBytes m' a n
-grind_pattern loadBytes_storeInt_of_inside => Mem.loadBytes (Mem.storeInt m a n v) x k, Blocks.Disjoint bs₁ bs₂ where
-  guard Blocks.Disjoint bs₁ bs₂
-grind_pattern loadBytes_storeInt_of_inside' => Mem.loadBytes (Mem.storeInt m a n v) x k, Blocks.Disjoint bs₁ bs₂ where
-  guard Blocks.Disjoint bs₁ bs₂
 
 end Mem
