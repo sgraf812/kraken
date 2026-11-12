@@ -93,8 +93,8 @@ public theorem Effects.All_mono {P₁ P₂ : MachineState → Prop} {e : Effects
   | done a => exact h _ h₁
   | unimplemented | gp_unaligned | nonmem_load | nonmem_store => exact h₁
   | undefined ret ih => exact fun v => ih v (h₁ v)
-  | require_read_access _ _ ok ih => exact ih () h₁
-  | require_write_access _ _ ok ih => exact ih () h₁
+  | require_read_access _ ok ih => exact ih () h₁
+  | require_write_access _ ok ih => exact ih () h₁
   | require_exec_access _ ok ih => exact ih () h₁
 
 public theorem step1_mono [Layout] {e : Executable} {x : MachineState} {P₁ P₂ : MachineState → Prop}
@@ -107,8 +107,8 @@ public theorem Effects.All_and {P₁ P₂ : MachineState → Prop} {e : Effects}
   | done a => exact ⟨h₁, h₂⟩
   | unimplemented | gp_unaligned | nonmem_load | nonmem_store => exact h₁
   | undefined ret ih => exact fun v => ih v (h₁ v) (h₂ v)
-  | require_read_access _ _ ok ih => exact ih () h₁ h₂
-  | require_write_access _ _ ok ih => exact ih () h₁ h₂
+  | require_read_access _ ok ih => exact ih () h₁ h₂
+  | require_write_access _ ok ih => exact ih () h₁ h₂
   | require_exec_access _ ok ih => exact ih () h₁ h₂
 
 open Lean.Order in
@@ -342,7 +342,7 @@ public theorem Host.addrOf_ne {i m j : Nat} {ins : Instr} (hm : Host.prog[m]? = 
     (hpad : ¬ ins.IsPadding) (him : i ≤ m) (hmj : m < j) : Host.addrOf i ≠ Host.addrOf j := by
   intro he
   have hz := Host.instr_size_pos _ _ hm hpad
-  have hs := Host.exe.sizeBefore_succ (n := m) (c := {directive := .instr ins, size := Kraken.Layout.size Directive m})
+  have hs := Host.exe.sizeBefore_succ (n := m) (c := {directive := .instr ins, size := Host.layout.size m})
     (by rw [Host.exe_getElem?, hm]; rfl)
   have h₁ := Host.sizeBefore_eq_of_addrOf_eq he
   have h₂ := Host.exe.sizeBefore_mono him
@@ -356,7 +356,7 @@ public theorem Host.fallthrough_addrOf {k : Nat} {c : Kraken.Sized Directive}
   obtain ⟨pre, hat, hpre⟩ := Host.directivesAtAddress_addrOf hc hz
   have hk : Host.prog[k]? = some c.directive := by
     rw [Host.exe_getElem?] at hc; grind
-  have hzk : Kraken.Layout.size Directive k = c.size := by
+  have hzk : Host.layout.size k = c.size := by
     rw [Host.exe_getElem?] at hc; grind
   unfold Executable.fallthrough
   rw [hat, Directives.endPc_append, Directives.endPc_of_size_zero hpre, Host.addrOf_succ hk, hzk]
@@ -375,7 +375,7 @@ public theorem Host.stepIn_addrOf {k : Nat} {c : Kraken.Sized Directive}
       Kraken.Executable.mem_of_mem_directivesAtAddress (hat ▸ List.mem_append_left _ hc))⟩
   have hk : Host.prog[k]? = some c.directive := by
     rw [Host.exe_getElem?] at hc; grind
-  have hzk : Kraken.Layout.size Directive k = c.size := by
+  have hzk : Host.layout.size k = c.size := by
     rw [Host.exe_getElem?] at hc; grind
   have hsucc : Host.addrOf (k + 1) = Host.addrOf k + .ofNat c.size := by rw [Host.addrOf_succ hk, hzk]
   change (@Directives.interp Host.exe.labels (Host.exe.directivesAtAddress (Host.addrOf k)) s (Host.addrOf k) _ _).All P
@@ -398,7 +398,7 @@ public theorem Host.interp_addrOf {k : Nat} {c : Kraken.Sized Directive}
       Kraken.Executable.mem_of_mem_directivesAtAddress (hat ▸ List.mem_append_left _ hc))⟩
   have hk : Host.prog[k]? = some c.directive := by
     rw [Host.exe_getElem?] at hc; grind
-  have hzk : Kraken.Layout.size Directive k = c.size := by
+  have hzk : Host.layout.size k = c.size := by
     rw [Host.exe_getElem?] at hc; grind
   have hsucc : Host.addrOf (k + 1) = Host.addrOf k + .ofNat c.size := by rw [Host.addrOf_succ hk, hzk]
   rw [hat, Directives.interp_inert_append hinert s _ _ P (fun a s => jmp ⟨s, a⟩)]
@@ -490,9 +490,9 @@ public theorem Host.at_of_ne {j e : Nat} (hje : j ≤ e) (hne : Host.addrOf j �
     have hje' : j < e := Nat.lt_of_le_of_ne hje fun h => hne (by rw [h])
     have hjl := Host.lt_length_of_addrOf_ne hje hne
     obtain ⟨d, hd⟩ := Option.isSome_iff_exists.mp (by simpa using hjl : Host.prog[j]?.isSome)
-    have hc : Host.exe.program[j]? = some {directive := d, size := Kraken.Layout.size Directive j} := by
+    have hc : Host.exe.program[j]? = some {directive := d, size := Host.layout.size j} := by
       rw [Host.exe_getElem?, hd]; rfl
-    rcases Nat.eq_zero_or_pos (Kraken.Layout.size Directive j) with h0 | hz
+    rcases Nat.eq_zero_or_pos (Host.layout.size j) with h0 | hz
     · have ha : Host.addrOf (j + 1) = Host.addrOf j := by rw [Host.addrOf_succ hd, h0]; simp
       obtain ⟨m, c, hm₁, hm₂, hm₃, hm₄, hm₅⟩ := ih (j := j + 1) hje' (ha ▸ hne) (by omega)
       exact ⟨m, c, by omega, hm₂, hm₃, hm₄, hm₅.trans ha⟩
@@ -524,7 +524,7 @@ public theorem Program.wp_cons {d : Directive} {p : Program} {done exit : Machin
   simp only [Program.continueOnInternalExit_of_noInternal nd] at hw
   simp only [Program.continueOnInternalExit_of_noInternal ndp]
   have hd : Host.exe.program[H.embedding.start]? =
-      some {directive := d, size := Kraken.Layout.size Directive H.embedding.start} := by
+      some {directive := d, size := Host.layout.size H.embedding.start} := by
     rw [Host.exe_getElem?, hk.cons.1]; rfl
   refine While.seq (fun y => y.pc ≠ Host.addrOf (H.embedding.start + 1) → y.pc = Host.addrOf H.embedding.start)
     (fun y hI hc => ?_) (fun U y hI hc hb => ?_) (fun _ => rfl) (While.imp (fun U y _ hb => hb) (fun st hc hst => ?_) hw)
@@ -534,7 +534,7 @@ public theorem Program.wp_cons {d : Directive} {p : Program} {done exit : Machin
     rw [show H.embedding.start + (p.length + 1) = H.embedding.start + 1 + p.length by omega]
     exact Host.addrOf_ne_of_succ_ne (hy ▸ hc)
   · have hy := hI hc
-    have hz : 0 < Kraken.Layout.size Directive H.embedding.start := by
+    have hz : 0 < Host.layout.size H.embedding.start := by
       refine Nat.pos_of_ne_zero fun h0 => hc ?_
       rw [hy]; show _ = Host.addrOf (H.embedding.start + 0 + 1)
       rw [Host.addrOf_succ hk.cons.1, h0]; simp
@@ -578,10 +578,10 @@ public theorem Program.wp_single {d : Directive} {done exit : MachineState → P
   have hw := hw h
   have hdk : Host.prog[h.embedding.start]? = some d := hk.cons.1
   have hd : Host.exe.program[h.embedding.start]? =
-      some {directive := d, size := Kraken.Layout.size Directive h.embedding.start} := by
+      some {directive := d, size := Host.layout.size h.embedding.start} := by
     rw [Host.exe_getElem?, hdk]; rfl
   have hend : h.embedding.endAddr = Host.addrOf (h.embedding.start + 1) := rfl
-  rcases Nat.eq_zero_or_pos (Kraken.Layout.size Directive h.embedding.start) with h0 | hz
+  rcases Nat.eq_zero_or_pos (Host.layout.size h.embedding.start) with h0 | hz
   · have ha : Host.addrOf (h.embedding.start + 1) = Host.addrOf h.embedding.start := by
       rw [Host.addrOf_succ hdk, h0]; simp
     rw [h0] at hd

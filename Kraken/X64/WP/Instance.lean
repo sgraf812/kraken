@@ -21,8 +21,8 @@ public theorem Int64.add_sub_self_left (a b : Int64) : a + (b - a) = b := by
     t.retAddr = (Mem.loadInt t.dmem (t.regs.get64 .rsp) 8).map
       (fun i => Int64.ofBitVec (BitVec.ofInt 64 i)) := rfl
 
-@[vcgen_simp] public theorem MachineData.retAddr_mk (r z st d) :
-    (MachineData.mk r z st d).retAddr = (Mem.loadInt d (r.get64 .rsp) 8).map
+@[vcgen_simp] public theorem MachineData.retAddr_mk (r z st f d) :
+    (MachineData.mk r z st f d).retAddr = (Mem.loadInt d (r.get64 .rsp) 8).map
       (fun i => Int64.ofBitVec (BitVec.ofInt 64 i)) := rfl
 
 namespace Program.WP

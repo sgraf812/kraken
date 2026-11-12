@@ -14,13 +14,13 @@ set_option experimental.vcgen true
 
 namespace State.ChangingFrames
 
-def poke : Program := parse("
+def poke : Program := ⸨prog|
 poke:
   movq %rax, (%rdi)
   ret
-")
+⸩
 
-def many : Program := parse("
+def many : Program := ⸨prog|
 many:
   call poke
   addq $8, %rdi
@@ -38,7 +38,7 @@ many:
   addq $8, %rdi
   call poke
   ret
-")
+⸩
 
 funspec poke_spec "poke" [Host] [FunDecls] [Embeds poke]
     (hp : FunDecls.at (label "poke") = some ⟨poke⟩) at s

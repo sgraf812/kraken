@@ -14,7 +14,7 @@ open scoped Program.WP
 namespace CarryFlags
 
 @[expose] public def prog (n : Nat) : Program :=
-  Directive.instr (.regular .W64 .W64
+  (@Kraken.Directive.instr Instr ConstExpr) (.regular .W64 .W64
       (.add (.reg (.low .rax .W64)) (.imm (.int64 0))))
     :: AdcChain.chain n
 

@@ -45,13 +45,31 @@ public theorem bind {β : Type} {F : (α → Effects) → Effects} {G : α → (
     Natural (fun k => Effects.nonmem_store dm a v (fun d => G d k)) :=
   fun _ _ _ _ _ _ _ h => h.elim
 
-@[natural] public theorem require_read_access {a : BitVec 64} {w : Width} {G : Unit → (α → Effects) → Effects}
-    (h : ∀ u, Natural (G u)) : Natural (fun k => Effects.require_read_access a w (fun u => G u k)) :=
+@[natural] public theorem require_read_access {r : Std.Rco AddressBound} {G : Unit → (α → Effects) → Effects}
+    (h : ∀ u, Natural (G u)) : Natural (fun k => Effects.require_read_access r (fun u => G u k)) :=
   fun _ _ _ _ _ _ hk h₁ h₂ => h () hk h₁ h₂
 
-@[natural] public theorem require_write_access {a : BitVec 64} {w : Width} {G : Unit → (α → Effects) → Effects}
-    (h : ∀ u, Natural (G u)) : Natural (fun k => Effects.require_write_access a w (fun u => G u k)) :=
+@[natural] public theorem require_write_access {r : Std.Rco AddressBound} {G : Unit → (α → Effects) → Effects}
+    (h : ∀ u, Natural (G u)) : Natural (fun k => Effects.require_write_access r (fun u => G u k)) :=
   fun _ _ _ _ _ _ hk h₁ h₂ => h () hk h₁ h₂
+
+@[natural] public theorem require_access_read {addr : BitVec 64} {bytes : UInt64}
+    {G : Unit → (α → Effects) → Effects} (h : ∀ u, Natural (G u)) :
+    Natural (fun k => require_access Effects.require_read_access addr bytes (fun u => G u k)) := by
+  unfold require_access
+  dsimp only
+  split
+  · exact require_read_access h
+  · exact require_read_access fun _ => require_read_access h
+
+@[natural] public theorem require_access_write {addr : BitVec 64} {bytes : UInt64}
+    {G : Unit → (α → Effects) → Effects} (h : ∀ u, Natural (G u)) :
+    Natural (fun k => require_access Effects.require_write_access addr bytes (fun u => G u k)) := by
+  unfold require_access
+  dsimp only
+  split
+  · exact require_write_access h
+  · exact require_write_access fun _ => require_write_access h
 
 @[natural] public theorem require_exec_access {r : Std.Rco Int64} {G : Unit → (α → Effects) → Effects}
     (h : ∀ u, Natural (G u)) : Natural (fun k => Effects.require_exec_access r (fun u => G u k)) :=
@@ -78,7 +96,7 @@ variable {α : Type}
     {G : w.type → MachineData → (α → Effects) → Effects} (h : ∀ v s, Natural (G v s)) :
     Natural (fun k => s.load a w (fun v s => G v s k)) := by
   unfold MachineData.load
-  refine Natural.require_read_access fun _ => ?_
+  refine Natural.require_access_read fun _ => ?_
   split
   · exact h _ _
   · exact Natural.nonmem_load
@@ -87,7 +105,7 @@ variable {α : Type}
     {G : MachineData → (α → Effects) → Effects} (h : ∀ s, Natural (G s)) :
     Natural (fun k => s.store a v (fun s => G s k)) := by
   unfold MachineData.store
-  refine Natural.require_write_access fun _ => ?_
+  refine Natural.require_access_write fun _ => ?_
   split
   · exact h _
   · exact Natural.nonmem_store
@@ -97,7 +115,7 @@ variable {α : Type}
     {G : w.type → MachineData → (α → Effects) → Effects} (h : ∀ v s, Natural (G v s)) :
     Natural (fun k => s.loadAvx a w (fun v s => G v s k) ca) := by
   unfold MachineData.loadAvx
-  refine Natural.ite (Natural.gp_unaligned _ _) (Natural.require_read_access fun _ => ?_)
+  refine Natural.ite (Natural.gp_unaligned _ _) (Natural.require_access_read fun _ => ?_)
   split
   · exact h _ _
   · exact Natural.unimplemented _
@@ -106,7 +124,7 @@ variable {α : Type}
     {G : MachineData → (α → Effects) → Effects} (h : ∀ s, Natural (G s)) :
     Natural (fun k => s.storeAvx a v (fun s => G s k) ca) := by
   unfold MachineData.storeAvx
-  refine Natural.ite (Natural.gp_unaligned _ _) (Natural.require_write_access fun _ => ?_)
+  refine Natural.ite (Natural.gp_unaligned _ _) (Natural.require_access_write fun _ => ?_)
   split
   · exact h _
   · exact Natural.unimplemented _
@@ -174,6 +192,18 @@ variable [Labels] [AddressSize]
   · exact h _ _
   · exact MachineData.load_natural h
 
+
+@[natural] public theorem MachineData.repeatString_natural
+    {step : MachineData → (MachineData → Effects) → Effects} (hstep : ∀ s, Natural (step s))
+    {count : Nat} {s : MachineData} {G : MachineData → (α → Effects) → Effects}
+    (h : ∀ s, Natural (G s)) :
+    Natural (fun k => MachineData.repeatString step count s (fun s => G s k)) := by
+  induction count generalizing s with
+  | zero => exact h s
+  | succ c ih =>
+    show Natural (fun k => step s (fun s' => MachineData.repeatString step c (s'.stepString .rcx (-1))
+      (fun s => G s k)))
+    exact Natural.bind (hstep s) fun _ => ih
 
 @[natural] public theorem Reg.interp_natural {w} {r : Reg w} {s : MachineData} {p : Std.Rco Int64}
     {G : w.type → MachineData → (α → Effects) → Effects} (h : ∀ v s, Natural (G v s)) :

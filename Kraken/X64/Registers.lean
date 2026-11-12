@@ -173,10 +173,11 @@ the projections of a literal reduce by the lemmas below. -/
 
 /-! ## The machine record and the flags -/
 
-@[simp, vcgen_simp] theorem MachineData.regs_mk (r z st d) : (MachineData.mk r z st d).regs = r := rfl
-@[simp, vcgen_simp] theorem MachineData.dmem_mk (r z st d) : (MachineData.mk r z st d).dmem = d := rfl
-@[simp, vcgen_simp] theorem MachineData.status_mk (r z st d) : (MachineData.mk r z st d).status = st := rfl
-@[simp, vcgen_simp] theorem MachineData.zmms_mk (r z st d) : (MachineData.mk r z st d).zmms = z := rfl
+@[simp, vcgen_simp] theorem MachineData.regs_mk (r z st f d) : (MachineData.mk r z st f d).regs = r := rfl
+@[simp, vcgen_simp] theorem MachineData.dmem_mk (r z st f d) : (MachineData.mk r z st f d).dmem = d := rfl
+@[simp, vcgen_simp] theorem MachineData.status_mk (r z st f d) : (MachineData.mk r z st f d).status = st := rfl
+@[simp, vcgen_simp] theorem MachineData.zmms_mk (r z st f d) : (MachineData.mk r z st f d).zmms = z := rfl
+@[simp, vcgen_simp] theorem MachineData.df_mk (r z st f d) : (MachineData.mk r z st f d).df = f := rfl
 
 @[simp, vcgen_simp] theorem BitVec.unsigned_eq {w} (x : BitVec w) : x.unsigned = (x.toNat : Int) := rfl
 

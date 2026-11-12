@@ -14,12 +14,12 @@ set_option experimental.vcgen true
 
 namespace State.ManyCalls
 
-def touch : Program := parse("
+def touch : Program := ⸨prog|
 touch:
   ret
-")
+⸩
 
-def many : Program := parse("
+def many : Program := ⸨prog|
 many:
   call touch
   call touch
@@ -32,7 +32,7 @@ many:
   movq $0, %rax
   addq (%rdi), %rax
   ret
-")
+⸩
 
 funspec touch_spec "touch" [Host] [FunDecls] [Embeds touch]
     (ht : FunDecls.at (label "touch") = some ⟨touch⟩) at s

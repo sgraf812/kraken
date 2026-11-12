@@ -38,11 +38,11 @@ the run no longer owns the state. The back jump leaves the fragment at
 fragment that started below the released stack, such as the function that
 pushed it. -/
 
-def drain : Program := parse("
+def drain : Program := ⸨prog|
 drain:
   add $8, %rsp
   dec %rcx
-  jnz drain")
+  jnz drain⸩
 
 example [Host] [FunDecls] (s : MachineData) (hc : s.regs.rcx.toNat = 2) :
     WP.wp drain (fun _ _ => False) (fun a s' => a = label "drain" ∧ s'.regs.rcx.toNat = 1) s := by
@@ -60,9 +60,9 @@ declared function that returns to the address in the slot, the machine runs
 so `Executable.StepOut` does not treat it as a call. The jump leaves the
 fragment at `label "f"`, whatever `FunDecls` declares. -/
 
-def manualCall : Program := parse("
+def manualCall : Program := ⸨prog|
   sub $8, %rsp
-  jmp f")
+  jmp f⸩
 
 example [Host] [FunDecls] :
     ⦃ fun _ => True ⦄ manualCall ⦃ fun _ _ => False; fun a _ => a = label "f" ⦄ := by
@@ -74,9 +74,9 @@ example [Host] [FunDecls] :
 call. The function's run exits at `label "f"`, and the effect of `f` is not
 part of the function's triple. -/
 
-def tailCall : Program := parse("
+def tailCall : Program := ⸨prog|
   mov $1, %rax
-  jmp f")
+  jmp f⸩
 
 example [Host] [FunDecls] :
     ⦃ fun _ => True ⦄ tailCall ⦃ fun _ _ => False; fun a s => a = label "f" ∧ s.regs.rax = 1 ⦄ := by

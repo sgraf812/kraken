@@ -24,7 +24,7 @@ namespace State
 
 /-- The callee: copy `rdx` bytes from `rsi` to `rdi`, forward when `rdi ≤ rsi` and backward
 otherwise, so that an overlapping source is read before it is overwritten. -/
-def memmove : Program := parse("
+def memmove : Program := ⸨prog|
 memmove:
   cmp %rsi, %rdi
   jbe fwd
@@ -52,17 +52,17 @@ fwd:
   jmp fwd
 fdone:
   ret
-")
+⸩
 
 /-- The caller, with the callee linked between its two blocks. -/
-def memmoveProg : Program := parse("
+def memmoveProg : Program := ⸨prog|
 start:
   call memmove
   jmp done
-") ++ memmove ++ parse("
+⸩ ++ memmove ++ ⸨prog|
 done:
   nop
-")
+⸩
 
 funspec memmove_spec "memmove" [Host] [FunDecls] [Embeds memmove]
     (hm : FunDecls.at (label "memmove") = some ⟨memmove⟩) at s

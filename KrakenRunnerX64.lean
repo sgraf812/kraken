@@ -61,7 +61,7 @@ def summarize (s : MachineData) : StateSummary :=
              ("zmm24", z.zmm24), ("zmm25", z.zmm25), ("zmm26", z.zmm26), ("zmm27", z.zmm27),
              ("zmm28", z.zmm28), ("zmm29", z.zmm29), ("zmm30", z.zmm30), ("zmm31", z.zmm31)],
     flags := [("cf", f.cf), ("pf", f.pf), ("af", f.af),
-              ("zf", f.zf), ("sf", f.sf), ("of", f.of)] }
+              ("zf", f.zf), ("sf", f.sf), ("of", f.of), ("df", s.df)] }
 
 -- Place the stack somewhere high in memory, aligned to 256 bytes. This will
 -- help us avoid disagreements with the actual machine: we will avoid over/underflow
@@ -94,7 +94,7 @@ instance : StatusFlagBits StatusFlags where
 -- whether any `undefined` choice was made.
 partial def evalEffects (h : UInt64) (sawUndef : Bool) : Effects → Option (MachineData × Bool)
   | .done st => some (st.data, sawUndef)
-  | .require_read_access _ _ ok | .require_write_access _ _ ok | .require_exec_access _ ok => evalEffects h sawUndef (ok ())
+  | .require_read_access _ ok | .require_write_access _ ok | .require_exec_access _ ok => evalEffects h sawUndef (ok ())
   | @Effects.undefined _ t cont => evalEffects h true (cont (t.from_hash h))
   | _ => none
 
@@ -107,6 +107,8 @@ instance : Gen AddrIndex := ⟨gen_ctors% AddrIndex⟩
 
 -- No nop lengths or alignments; other control flow is rejected by `stepDeterministic`.
 instance : Gen Nat := ⟨failure⟩
+-- A string instruction whose pointers leave the stack mapping faults, and the candidate is dropped.
+instance : Gen Bool := ⟨pick #[true, false]⟩
 instance : Gen Int64 := ⟨genInt64 #[3, 8, 16, 32, 64]⟩
 instance : Gen UInt8 := ⟨UInt8.ofNat <$> nextNat 256⟩
 -- Code addresses differ between Kraken's layout and the hardware binary, so no labels, nor
@@ -132,8 +134,13 @@ instance {w} : Gen (Operation w) := ⟨gen_ctors% Operation⟩
 instance {w} : Gen (AvxOperation w) := ⟨gen_ctors% AvxOperation⟩
 instance : Gen Instr := ⟨gen_ctors% Instr⟩
 
--- Loads a random 64-bit value into a register other than rsp.
+-- Loads a random 64-bit value into a register other than rsp, or sets up a string instruction.
 def genSeed : GenM String := do
+  -- A pointer into the stack mapping, far enough from both ends for a short string, or a small count.
+  match ← nextNat 4 with
+  | 0 => return s!"leaq -{100 + (← nextNat 600)}(%rsp), %{← pick #["rsi", "rdi"]}"
+  | 1 => return s!"movq ${← nextNat 12}, %rcx"
+  | _ => pure ()
   let r ← gen; guard (r != Reg64.rsp)
   let r := Kraken.X64.ATT.reg (.low r .W64)
   let movabs := s!"movabsq ${← nextNat (2 ^ 64)}, {r}"
@@ -151,7 +158,7 @@ def fuzzConfig : FuzzConfig MachineData StatusFlags StateSummary where
   parseSteps asmCode := do
     let exe := (← (Kraken.X64.Parser.parse asmCode).toOption).fakeLayout
     let := exe.labels
-    return exe.withAddresses.map fun d =>
+    return exe.withAddresses.map fun d : Kraken.Addressable Directive =>
       { d with directive := fun s p h => evalEffects h false (d.directive.interp s p (fun s => .done ⟨s, p.upper⟩) (fun _ _ => .unimplemented "jump")) }
   summarize := summarize
   genInstr := Kraken.X64.ATT.instr <$> gen

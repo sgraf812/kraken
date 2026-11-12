@@ -14,10 +14,10 @@ set_option experimental.vcgen true
 
 namespace ManyCalls
 
-public def touch : Program := parse("
+public def touch : Program := ⸨prog|
 touch:
   ret
-")
+⸩
 
 public funspec touch_spec "touch" [Host] [FunDecls] [Embeds touch]
     (ht : FunDecls.at (label "touch") = some ⟨touch⟩) at s
@@ -34,17 +34,17 @@ public funspec touch_spec "touch" [Host] [FunDecls] [Embeds touch]
 
 @[expose] public def calls : Nat → Program
   | 0 =>
-    [Directive.instr (.regular .W64 .W64
+    [(@Kraken.Directive.instr Instr ConstExpr) (.regular .W64 .W64
         (.mov (.reg (.low .rax .W64)) (.imm (.int64 0)))),
-      Directive.instr (.regular .W64 .W64
+      (@Kraken.Directive.instr Instr ConstExpr) (.regular .W64 .W64
         (.add (.reg (.low .rax .W64))
           (.regOrMem (.mem { base := some (.reg .rdi), idx := none, disp := .int64 0 })))),
-      Directive.instr (.regular .W64 .W64 .ret)]
+      (@Kraken.Directive.instr Instr ConstExpr) (.regular .W64 .W64 .ret)]
   | n + 1 =>
-    Directive.instr (.regular .W64 .W64
+    (@Kraken.Directive.instr Instr ConstExpr) (.regular .W64 .W64
       (.call (.rel (.sub (.label "touch") .after_current_instruction)))) :: calls n
 
-@[expose] public def many (n : Nat) : Program := Directive.label "many" :: calls n
+@[expose] public def many (n : Nat) : Program := (@Kraken.Directive.label Instr ConstExpr) "many" :: calls n
 
 @[expose] public def Goal (n : Nat) : Prop :=
   ∀ [Host] [FunDecls] [Embeds touch] [Embeds (many n)],

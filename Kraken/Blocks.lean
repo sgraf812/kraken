@@ -28,19 +28,19 @@ scope a restriction of its host's scope. -/
 def Program.fromLabel : Program → Label → Program
   | [], _ => []
   | d :: p, l =>
-      if Program.fromLabel p l = [] ∧ d = Directive.label l then d :: p
+      if Program.fromLabel p l = [] ∧ d = (@Kraken.Directive.label Instr ConstExpr) l then d :: p
       else Program.fromLabel p l
 
 @[simp] theorem Program.fromLabel_nil (l : Label) : Program.fromLabel [] l = [] := rfl
 
 @[simp] theorem Program.fromLabel_cons (d : Directive) (p : Program) (l : Label) :
     Program.fromLabel (d :: p) l =
-      if Program.fromLabel p l = [] ∧ d = Directive.label l then d :: p
+      if Program.fromLabel p l = [] ∧ d = (@Kraken.Directive.label Instr ConstExpr) l then d :: p
       else Program.fromLabel p l := rfl
 
 /-- An instruction cell is invisible to the scope lookup. -/
 @[simp] theorem Program.fromLabel_cons_instr (i : Instr) (p : Program) (l : Label) :
-    Program.fromLabel (Directive.instr i :: p) l = Program.fromLabel p l := by
+    Program.fromLabel ((@Kraken.Directive.instr Instr ConstExpr) i :: p) l = Program.fromLabel p l := by
   rw [Program.fromLabel_cons, if_neg (by rintro ⟨-, h⟩; cases h)]
 
 theorem Program.fromLabel_suffix (p : Program) (l : Label) :
@@ -55,12 +55,12 @@ theorem Program.fromLabel_suffix (p : Program) (l : Label) :
 
 /-- A label with a scope suffix is a cell of the program. -/
 theorem Program.fromLabel_mem {p : Program} {l : Label}
-    (h : Program.fromLabel p l ≠ []) : Directive.label l ∈ p := by
+    (h : Program.fromLabel p l ≠ []) : (@Kraken.Directive.label Instr ConstExpr) l ∈ p := by
   induction p with
   | nil => exact absurd rfl h
   | cons d p ih =>
     rw [Program.fromLabel_cons] at h
-    by_cases hc : Program.fromLabel p l = [] ∧ d = Directive.label l
+    by_cases hc : Program.fromLabel p l = [] ∧ d = (@Kraken.Directive.label Instr ConstExpr) l
     · rw [hc.2]
       exact List.mem_cons_self
     · rw [if_neg hc] at h
@@ -83,6 +83,9 @@ theorem Program.straight_cons_label (l : Label) (p : Program) :
 theorem Program.straight_cons_byteArray (a : ByteArray) (p : Program) :
     Program.straight (.byteArray a :: p) = .byteArray a :: Program.straight p := rfl
 
+theorem Program.straight_cons_word (n : Nat) (e : ConstExpr) (p : Program) :
+    Program.straight (.word n e :: p) = .word n e :: Program.straight p := rfl
+
 theorem Program.labels_straight (p : Program) : Program.labels (Program.straight p) = [] := by
   induction p with
   | nil => rfl
@@ -91,6 +94,7 @@ theorem Program.labels_straight (p : Program) : Program.labels (Program.straight
     | label l => rw [Program.straight_cons_label]; exact ih
     | instr i => rw [Program.straight_cons_instr, Program.labels_cons_instr]; exact ih
     | byteArray a => rw [Program.straight_cons_byteArray, Program.labels_cons_byteArray]; exact ih
+    | word n e => rw [Program.straight_cons_word, Program.labels_cons_word]; exact ih
 
 theorem Program.straight_eq_self {p : Program} (h : ∀ d ∈ p, d.isLabel = false) :
     Program.straight p = p :=
@@ -106,6 +110,7 @@ theorem Program.straight_eq_self_of_labels {p : Program} (h : Program.labels p =
       cases this
     | instr i => rfl
     | byteArray a => rfl
+    | word n e => rfl
 
 /-! ### Basic blocks
 
@@ -116,14 +121,14 @@ entry segment has no entering label, and the last block falls into no label. -/
 /-- A nonempty scope suffix starts with its own label cell. -/
 theorem Program.fromLabel_head :
     ∀ (p : Program) {l : Label}, Program.fromLabel p l ≠ [] →
-      ∃ rest, Program.fromLabel p l = Directive.label l :: rest := by
+      ∃ rest, Program.fromLabel p l = (@Kraken.Directive.label Instr ConstExpr) l :: rest := by
   intro p
   induction p with
   | nil => intro l h; exact absurd rfl h
   | cons d p ih =>
     intro l h
     rw [Program.fromLabel_cons] at h ⊢
-    by_cases hc : Program.fromLabel p l = [] ∧ d = Directive.label l
+    by_cases hc : Program.fromLabel p l = [] ∧ d = (@Kraken.Directive.label Instr ConstExpr) l
     · rw [if_pos hc]
       exact ⟨p, by rw [hc.2]⟩
     · rw [if_neg hc] at h ⊢
@@ -151,6 +156,9 @@ theorem Program.fromLabel_ne_nil_of_mem {p : Program} {l : Label}
       rw [Program.fromLabel_cons_instr]
       exact ih h
     | byteArray a =>
+      rw [Program.fromLabel_cons, if_neg (fun hc => by cases hc.2)]
+      exact ih h
+    | word n e =>
       rw [Program.fromLabel_cons, if_neg (fun hc => by cases hc.2)]
       exact ih h
 
@@ -189,7 +197,7 @@ def Program.view : Program → Program × List (Label × Program)
 
 /-- The glue of one block: its label cell, then its body. -/
 abbrev Program.blockCells (lb : Label × Program) : Program :=
-  Directive.label lb.1 :: lb.2
+  (@Kraken.Directive.label Instr ConstExpr) lb.1 :: lb.2
 
 /-- The text is its entry segment followed by its labeled blocks. -/
 theorem Program.view_eq (p : Program) :
@@ -201,13 +209,16 @@ theorem Program.view_eq (p : Program) :
     | label l =>
       simp only [Program.view, List.flatMap_cons, List.nil_append, List.cons_append,
         Program.blockCells]
-      exact congrArg (Directive.label l :: ·) ih
+      exact congrArg ((@Kraken.Directive.label Instr ConstExpr) l :: ·) ih
     | instr i =>
       simp only [Program.view, List.cons_append]
-      exact congrArg (Directive.instr i :: ·) ih
+      exact congrArg ((@Kraken.Directive.instr Instr ConstExpr) i :: ·) ih
     | byteArray a =>
       simp only [Program.view, List.cons_append]
-      exact congrArg (Directive.byteArray a :: ·) ih
+      exact congrArg ((@Kraken.Directive.byteArray Instr ConstExpr) a :: ·) ih
+    | word n e =>
+      simp only [Program.view, List.cons_append]
+      exact congrArg ((@Kraken.Directive.word Instr ConstExpr) n e :: ·) ih
 
 /-- The entry segment and every body are label-free. -/
 theorem Program.view_free (p : Program) :
@@ -233,6 +244,11 @@ theorem Program.view_free (p : Program) :
       rcases List.mem_cons.mp hd' with heq | hmem
       · rw [heq]; rfl
       · exact ih.1 d' hmem
+    | word n e =>
+      refine ⟨fun d' hd' => ?_, ih.2⟩
+      rcases List.mem_cons.mp hd' with heq | hmem
+      · rw [heq]; rfl
+      · exact ih.1 d' hmem
 
 /-- The labels are the view's block labels, in order. -/
 theorem Program.labels_view (p : Program) :
@@ -244,6 +260,7 @@ theorem Program.labels_view (p : Program) :
     | label l => simp only [Program.labels_cons_label, Program.view, List.map_cons, ih]
     | instr i => exact ih
     | byteArray a => exact ih
+    | word n e => exact ih
 
 /-- The scope suffix at a label, through the view: the blocks from the
 label's position. -/
@@ -272,7 +289,7 @@ theorem Program.fromLabel_view {p : Program} (hnd : (Program.labels p).Nodup) :
         rw [Program.fromLabel_cons, if_pos ⟨hnil, rfl⟩]
         simp only [Program.view, List.drop_zero, List.flatMap_cons, Program.blockCells,
           List.cons_append]
-        exact congrArg (Directive.label l' :: ·) (Program.view_eq p)
+        exact congrArg ((@Kraken.Directive.label Instr ConstExpr) l' :: ·) (Program.view_eq p)
       | succ j =>
         simp only [List.getElem?_cons_succ] at hi
         have hmem : l ∈ Program.labels p := by
@@ -288,6 +305,11 @@ theorem Program.fromLabel_view {p : Program} (hnd : (Program.labels p).Nodup) :
       simp only [Program.view]
       exact ih hnd hi
     | byteArray a =>
+      simp only [Program.view] at hi
+      rw [Program.fromLabel_cons, if_neg (fun hc => by cases hc.2)]
+      simp only [Program.view]
+      exact ih hnd hi
+    | word n e =>
       simp only [Program.view] at hi
       rw [Program.fromLabel_cons, if_neg (fun hc => by cases hc.2)]
       simp only [Program.view]
@@ -417,7 +439,7 @@ theorem Program.blockIdx_eq_of_getElem? {p : Program} (hnd : (Program.labels p).
 theorem Program.drop_flatMap_cons {bs : List (Label × Program)} {i : Nat}
     {l : Label} {b : Program} (hi : bs[i]? = some (l, b)) :
     (bs.drop i).flatMap Program.blockCells
-      = Directive.label l :: (b ++ (bs.drop (i + 1)).flatMap Program.blockCells) := by
+      = (@Kraken.Directive.label Instr ConstExpr) l :: (b ++ (bs.drop (i + 1)).flatMap Program.blockCells) := by
   have hlt : i < bs.length := by
     by_cases h : i < bs.length
     · exact h
@@ -431,8 +453,8 @@ theorem Program.drop_flatMap_cons {bs : List (Label × Program)} {i : Nat}
 
 theorem Program.fromLabel_split {p : Program} {l : Label}
     (hnd : (Program.labels p).Nodup) (hne : Program.fromLabel p l ≠ []) :
-    ∃ t rest, p = t ++ (Directive.label l :: rest)
-      ∧ Program.fromLabel p l = Directive.label l :: rest
+    ∃ t rest, p = t ++ ((@Kraken.Directive.label Instr ConstExpr) l :: rest)
+      ∧ Program.fromLabel p l = (@Kraken.Directive.label Instr ConstExpr) l :: rest
       ∧ l ∉ Program.labels t
       ∧ t.length = p.length - (Program.fromLabel p l).length := by
   obtain ⟨rest, hr⟩ := Program.fromLabel_head p hne
@@ -546,6 +568,9 @@ theorem Program.mem_blocks_of_blockAt {p : Program} {l : Label} {blk : Program.B
 
 @[vcgen_simp] theorem Program.view_cons_byteArray (a : ByteArray) (p : Program) :
     Program.view (.byteArray a :: p) = (.byteArray a :: (Program.view p).1, (Program.view p).2) := rfl
+
+@[vcgen_simp] theorem Program.view_cons_word (n : Nat) (e : ConstExpr) (p : Program) :
+    Program.view (.word n e :: p) = (.word n e :: (Program.view p).1, (Program.view p).2) := rfl
 
 @[vcgen_simp] theorem Program.blocks_eq (p : Program) :
     Program.blocks p = Program.blocksFrom none 0 (Program.view p).1 (Program.view p).2 := rfl

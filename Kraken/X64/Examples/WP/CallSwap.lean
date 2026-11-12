@@ -14,23 +14,23 @@ set_option experimental.vcgen true
 
 namespace State
 
-def swap : Program := parse("
+def swap : Program := ⸨prog|
 swap:
   xor %rbx, %rax
   xor %rax, %rbx
   xor %rbx, %rax
   ret
-")
+⸩
 
-def pswap : Program := parse("
+def pswap : Program := ⸨prog|
 start:
   call swap
   call swap
   jmp done
-") ++ swap ++ parse("
+⸩ ++ swap ++ ⸨prog|
 done:
   nop
-")
+⸩
 
 funspec swap_spec "swap" [Host] [FunDecls] [Embeds swap]
     (hs : FunDecls.at (label "swap") = some ⟨swap⟩) at s

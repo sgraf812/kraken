@@ -49,11 +49,11 @@ public class Host where
   layout : Layout
   labels_nodup : (Program.labels prog).Nodup
   /-- Labels have size zero. -/
-  label_size : ∀ i l, prog[i]? = some (.label l) → @Kraken.Layout.size _ layout i = 0
-  instr_size_pos : ∀ i ins, prog[i]? = some (.instr ins) → ¬ ins.IsPadding → 0 < @Kraken.Layout.size _ layout i
+  label_size : ∀ i l, prog[i]? = some (.label l) → layout.size i = 0
+  instr_size_pos : ∀ i ins, prog[i]? = some (.instr ins) → ¬ ins.IsPadding → 0 < layout.size i
   instr_addr_ne : ∀ i ins, prog[i]? = some (.instr ins) → (layout.apply prog).addrOf i ≠ -1
   /-- Any directive that occupies zero space in the executable must be semantically inert. -/
-  zero_inert : ∀ i d, prog[i]? = some d → @Kraken.Layout.size _ layout i = 0 → d.Inert
+  zero_inert : ∀ i d, prog[i]? = some d → layout.size i = 0 → d.Inert
   /-- Two directives at the same address have the same offset in the executable. -/
   addr_determines_offset : ∀ j k, (layout.apply prog).addrOf j = (layout.apply prog).addrOf k →
     (layout.apply prog).sizeBefore j = (layout.apply prog).sizeBefore k
@@ -71,7 +71,7 @@ public theorem Host.sizeBefore_eq_of_addrOf_eq [Host] {j k : Nat} (h : Host.addr
   Host.addr_determines_offset j k h
 
 public theorem Host.inert_of_getElem? [Host] {i : Nat} {d : Directive} (h : Host.prog[i]? = some d)
-    (hz : Kraken.Layout.size Directive i = 0) : d.Inert :=
+    (hz : Host.layout.size i = 0) : d.Inert :=
   Host.zero_inert i d h hz
 
 @[expose] public def Host.startAddr [Host] {p : Program} (h : p.IsInfix Host.prog) : Int64 :=
@@ -83,16 +83,16 @@ public theorem Host.inert_of_getElem? [Host] {i : Nat} {d : Directive} (h : Host
 export Host (startAddr endAddr)
 
 public theorem Layout.apply_getElem? [layout : Layout] (p : Program) (i : Nat) :
-    (layout p).program[i]? = (p[i]?).map (fun d => {directive := d, size := Kraken.Layout.size Directive i}) := by
+    (layout p).program[i]? = (p[i]?).map (fun d => {directive := d, size := layout.size i}) := by
   simp [Kraken.Layout.apply, List.getElem?_mapIdx]
 
 public theorem Host.exe_getElem? [Host] (i : Nat) :
-    Host.exe.program[i]? = Host.prog[i]?.map (fun d => {directive := d, size := Kraken.Layout.size Directive i}) :=
+    Host.exe.program[i]? = Host.prog[i]?.map (fun d => {directive := d, size := Host.layout.size i}) :=
   Layout.apply_getElem? _ _
 
 public theorem Host.addrOf_succ [Host] {k : Nat} {d : Directive} (hd : Host.prog[k]? = some d) :
-    Host.addrOf (k + 1) = Host.addrOf k + .ofNat (Kraken.Layout.size Directive k) :=
-  Kraken.Executable.addrOf_succ _ (c := {directive := d, size := Kraken.Layout.size Directive k}) (by rw [Host.exe_getElem?, hd]; rfl)
+    Host.addrOf (k + 1) = Host.addrOf k + .ofNat (Host.layout.size k) :=
+  Kraken.Executable.addrOf_succ _ (c := {directive := d, size := Host.layout.size k}) (by rw [Host.exe_getElem?, hd]; rfl)
 
 section
 variable [Host]
@@ -103,7 +103,7 @@ public theorem Host.inert_of_size_zero {d : Directive} (h : {directive := d, siz
 
 public theorem Host.directivesAtAddress_addrOf {k : Nat} {c : Kraken.Sized Directive}
     (hc : Host.exe.program[k]? = some c) (hz : 0 < c.size) :
-    ∃ pre, Host.exe.directivesAtAddress (Host.addrOf k) = pre ++ [c] ∧
+    ∃ pre : List (Kraken.Sized Directive), Host.exe.directivesAtAddress (Host.addrOf k) = pre ++ [c] ∧
       ∀ c ∈ pre, c.size = 0 := by
   obtain ⟨j, hjk, hj, hmin⟩ :=
     exists_least_le (P := fun i => Host.exe.addrOf i = Host.exe.addrOf k) rfl
@@ -133,7 +133,7 @@ public theorem Host.directivesAtAddress_addrOf {k : Nat} {c : Kraken.Sized Direc
 
 end
 
-public theorem Kraken.Executable.label_addrOf (e : Kraken.Executable Directive) (l : Label) (n : Nat)
+public theorem Kraken.Executable.label_addrOf (e : _root_.Executable) (l : Label) (n : Nat)
     (hn : e.program[n]? = some {directive := .label l, size := 0})
     (hfirst : ∀ k z, k < n → e.program[k]? ≠ some {directive := .label l, size := z}) :
     (_root_.Executable.labels e).label l = e.addrOf n := by
@@ -177,7 +177,7 @@ public theorem Host.label_ne [Host] {p : Program} {k : Nat} (i j : Nat) {l l' : 
   have hP : Host.prog[k + (i + 1)]? = some (.instr ins) := by
     rw [List.isInfixAt_iff_getElem?.mp hp (i + 1) hlt, hpm]
   have hc : Host.exe.program[k + (i + 1)]? =
-      some {directive := .instr ins, size := Kraken.Layout.size Directive (k + (i + 1))} := by
+      some {directive := .instr ins, size := Host.layout.size (k + (i + 1))} := by
     rw [Host.exe_getElem?, hP]
     rfl
   have := Host.exe.sizeBefore_succ hc

@@ -14,17 +14,17 @@ namespace State.Jumps
 
 example [Host] [FunDecls] (l : Label) (Q : Unit → MachineData → Prop)
     (E : Int64 → MachineData → Prop) (s : MachineData) (hq : Q () s) :
-    WP.wp ([Directive.label l]) Q E s := by
+    WP.wp ([(@Kraken.Directive.label Instr ConstExpr) l]) Q E s := by
   vcgen
     invariants
     · fun _ s' => Q () s'
     · fun _ _ => 0
     with kfinish
 
-def jmpNext : Program := parse("
+def jmpNext : Program := ⸨prog|
   jmp next
 next:
-  mov $2, %rax")
+  mov $2, %rax⸩
 
 example [Host] [FunDecls] (s : MachineData) :
     WP.wp jmpNext (fun _ t => t.regs.get64 .rax = 2) (fun _ _ => False) s := by
@@ -34,11 +34,11 @@ example [Host] [FunDecls] (s : MachineData) :
     · fun _ _ => 0
     with kfinish
 
-def decMid : Program := parse("
+def decMid : Program := ⸨prog|
 top:
   dec %rcx
   jnz top
-  mov $1, %rax")
+  mov $1, %rax⸩
 
 example [Host] [FunDecls] (s : MachineData) (h : 0 < s.regs.rcx.toNat) :
     WP.wp decMid (fun _ t => t.regs.rcx = 0 ∧ t.regs.rax = 1) (fun _ _ => False) s := by
@@ -48,11 +48,11 @@ example [Host] [FunDecls] (s : MachineData) (h : 0 < s.regs.rcx.toNat) :
     · fun _ s' => s'.regs.rcx.toNat
     with kfinish
 
-def jmpOver : Program := parse("
+def jmpOver : Program := ⸨prog|
   jmp done
   mov $1, %rbx
 done:
-  mov $2, %rax")
+  mov $2, %rax⸩
 
 example [Host] [FunDecls] (s : MachineData) (h : s.regs.rbx = 0) :
     WP.wp jmpOver (fun _ t => t.regs.rbx = 0 ∧ t.regs.rax = 2) (fun _ _ => False) s := by
@@ -62,11 +62,11 @@ example [Host] [FunDecls] (s : MachineData) (h : s.regs.rbx = 0) :
     · fun _ _ => 0
     with kfinish
 
-def jmpGap : Program := parse("
+def jmpGap : Program := ⸨prog|
   jmp b
 a:
 b:
-  mov $2, %rax")
+  mov $2, %rax⸩
 
 example [Host] [FunDecls] (s : MachineData) :
     WP.wp jmpGap (fun _ t => t.regs.rax = 2) (fun _ _ => False) s := by
@@ -76,12 +76,12 @@ example [Host] [FunDecls] (s : MachineData) :
     · fun _ _ => 0
     with kfinish
 
-def jccOver : Program := parse("
+def jccOver : Program := ⸨prog|
   dec %rcx
   jz done
   mov $1, %rbx
 done:
-  mov $2, %rax")
+  mov $2, %rax⸩
 
 example [Host] [FunDecls] (s : MachineData) :
     WP.wp jccOver (fun _ t => t.regs.rax = 2) (fun _ _ => False) s := by
@@ -91,10 +91,10 @@ example [Host] [FunDecls] (s : MachineData) :
     · fun _ _ => 0
     with kfinish
 
-def countdown : Program := parse("
+def countdown : Program := ⸨prog|
 top:
   dec %rcx
-  jnz top")
+  jnz top⸩
 
 example [Host] (hp : countdown.IsInfix Host.prog) (s : MachineData) (h : 0 < s.regs.rcx.toNat) :
     Eventually (step1 Host.exe) (fun st => st.data.regs.rcx = 0) ⟨s, startAddr hp⟩ := by
@@ -105,13 +105,13 @@ example [Host] (hp : countdown.IsInfix Host.prog) (s : MachineData) (h : 0 < s.r
     · fun _ s' => s'.regs.rcx.toNat
     with kfinish
 
-def skip : Program := parse("
+def skip : Program := ⸨prog|
 start:
   dec %rcx
   jz done
   mov $1, %rbx
 done:
-  mov $2, %rax")
+  mov $2, %rax⸩
 
 example [Host] (hp : skip.IsInfix Host.prog) (s : MachineData) :
     Eventually (step1 Host.exe) (fun st => st.data.regs.rax = 2) ⟨s, startAddr hp⟩ := by
@@ -122,7 +122,7 @@ example [Host] (hp : skip.IsInfix Host.prog) (s : MachineData) :
     · fun _ _ => 0
     with kfinish
 
-def fnReuse : Program := parse("
+def fnReuse : Program := ⸨prog|
 entry:
   mov %r8, %rdi
   mov %r9, %rsi
@@ -138,7 +138,7 @@ add:
   add %rsi, %rax
   jmp %rcx
 cont2:
-")
+⸩
 
 example [Host] (hp : fnReuse.IsInfix Host.prog) (s : MachineData) :
     Eventually (step1 Host.exe) (fun st => st.data.regs.rax = 2 * (s.regs.r8 + s.regs.r9))
@@ -164,13 +164,13 @@ example [Host] (hp : fnReuse.IsInfix Host.prog) (s : MachineData) :
     · fun l s' => if l = "entry" ∨ (l = "add" ∧ Int64.ofBitVec (s'.regs.get64 .rcx) = label "cont1") then 1 else 0
     with kfinish
 
-def retJump : Program := parse("
+def retJump : Program := ⸨prog|
   leaq target(%rip), %rax
   push %rax
   ret
 target:
   mov $1, %rbx
-")
+⸩
 
 example [Host] [FunDecls] (s : MachineData) (hm : Mem.Mapped [(s.regs.get64 .rsp - 8#64, 8)] s.dmem) :
     WP.wp retJump (fun _ t => t.regs.get64 .rbx = 1) (fun _ _ => False) s := by

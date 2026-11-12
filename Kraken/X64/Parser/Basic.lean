@@ -319,14 +319,15 @@ def parseLabel : Parser ConstExpr := do
   let n ← parseLabelRaw
   pure (.label n)
 
-/-- Parse a symbolic constant: a label, optionally offset by a constant, e.g.
-  `sym`, `sym+8`, `.L0-4`. -/
+/-- Parse a symbolic constant: a label, optionally offset by a constant or by another label, e.g.
+  `sym`, `sym+8`, `.L0-4`, `.Lcase0-.Ltable`. -/
 def parseSymExpr : Parser ConstExpr := do
   let l ← parseLabel
   (attempt do
     skipHWs
     let op ← pchar '+' <|> pchar '-'
-    let i ← parseInt64Raw
+    skipHWs
+    let i ← parseInt64Raw <|> parseLabel
     pure (if op == '+' then .add l i else .sub l i)
   ) <|> pure l
 
@@ -540,6 +541,13 @@ def toAvxInstr (addr : MaybeAddrWidth) {w : AvxWidth} (op : AvxOperation w) : In
   let _ : AddressSize := { address_size := addr.getD .W64 }
   ↑op
 
+/-- Parse an xmm register. -/
+def parseXmm : Parser (AvxReg .W128) := do
+  skipHWs
+  match ← parseAvxRegW with
+  | ⟨ .W128, r ⟩ => pure r
+  | _ => fail "expected an xmm register"
+
 /-- Parse a comma separator. -/
 def parseComma : Parser Unit := do
   skipHWs
@@ -635,6 +643,18 @@ def parseAvxXmm3 (mk : AvxReg .W128 → AvxReg .W128 → AvxReg .W128 → AvxOpe
   let dst ← parseAvxRegO .W128
   pure (toAvxInstr .none (mk dst src1 src2))
 
+/-- Three AVX operands of one width, in AT&T order: the second source, the first source, then the
+destination. -/
+def commaSeparatedAvx3
+    (mk: {op_w: AvxWidth} → AvxRegOrMem op_w → AvxRegOrMem op_w → AvxRegOrMem op_w → AvxOperation op_w) :
+    Parser Instr := do
+  let src2 ← parseAvxRegOrMem; parseComma
+  let src1 ← parseAvxRegOrMem; parseComma
+  let (addr_w1, ⟨ w, src2, src1 ⟩) ← ascribeOrInferAvx src2 (pure src1)
+  let (addr_w2, dst) ← parseAvxAO parseAvxRegOrMem w
+  let addr_w ← mergeAddrWidths addr_w1 addr_w2
+  pure (toAvxInstr addr_w (mk dst src1 src2))
+
 def assertW {T} (v: MaybeOpWidth T): Parser (Σ w: Width, T w) :=
   match v with
   | ⟨ .none, _ ⟩ => fail "missing type annotation"
@@ -650,6 +670,25 @@ instance {T} : Coe (Option T) (Parser T) where coe := Option.toParser
 def parseWidthSuffix : Char → Option Width
   | 'b' => pure .W8 | 'w' => pure .W16 | 'l' => pure .W32 | 'q' => pure .W64
   | _ =>  none
+
+/-- A string move or store, named with its width suffix, once or repeated, at the address size
+    `addr`. -/
+def stringInstr (addr : MaybeAddrWidth) (mn : String) (rep : Bool) : Parser Instr := do
+  let some w := parseWidthSuffix (String.Pos.Raw.get mn (.mk (mn.length - 1)))
+    | fail s!"expected a string instruction, got {mn}"
+  if mn.length != 5 then fail s!"expected a string instruction, got {mn}"
+  else if mn.startsWith "movs" then pure (toInstr addr (w := w) (.movs rep))
+  else if mn.startsWith "stos" then pure (toInstr addr (w := w) (.stos rep))
+  else fail s!"expected a string instruction, got {mn}"
+
+/-- A string instruction after its prefixes: an optional `rep`, then the mnemonic. -/
+def repStringInstr (addr : MaybeAddrWidth) : Parser Instr := do
+  skipHWs
+  let mn := (← parseName).toLower
+  if mn == "rep" then
+    skipHWs
+    stringInstr addr (← parseName).toLower true
+  else stringInstr addr mn false
 
 /-- Parse an instruction mnemonic and its operands.
     AT&T syntax: src, dst (reversed from Intel). -/
@@ -915,8 +954,87 @@ def parseInstr : Parser Instr := do
   | "vmovss" => parseAvxXmm3 .vmovss
   | "vaddss" => parseAvxXmm3 .vaddss
 
+
+  | "movdqu" =>
+    commaSeparatedAvx .none parseAvxRegOrMem parseAvxRegOrMem .movdqu
+
+  | "movdqa" =>
+    commaSeparatedAvx .none parseAvxRegOrMem parseAvxRegOrMem .movdqa
+
+  | "paddd" =>
+    commaSeparatedAvx .none parseAvxRegOrMem parseAvxRegOrMem .paddd
+
+  | "pshufb" =>
+    commaSeparatedAvx .none parseAvxRegOrMem parseAvxRegOrMem .pshufb
+
+  | "pshufd" =>
+    let imm ← (skipHWs *> parseImmediate); parseComma
+    commaSeparatedAvx .none parseAvxRegOrMem parseAvxRegOrMem (fun d x => .pshufd d x imm)
+
+  | "palignr" =>
+    let imm ← (skipHWs *> parseImmediate); parseComma
+    commaSeparatedAvx .none parseAvxRegOrMem parseAvxRegOrMem (fun d x => .palignr d x imm)
+
+  -- The explicit form names the implicit xmm0 first, as `as` prints it.
+  | "sha256rnds2" =>
+    attempt (do
+      skipHWs
+      match ← parseAvxRegW with
+      | ⟨ .W128, .xmm .mm0 ⟩ => parseComma
+      | _ => fail "the implicit operand of sha256rnds2 is %xmm0"
+      commaSeparatedAvx .none parseAvxRegOrMem parseAvxRegOrMem .sha256rnds2)
+    <|> commaSeparatedAvx .none parseAvxRegOrMem parseAvxRegOrMem .sha256rnds2
+
+  | "sha256msg1" =>
+    commaSeparatedAvx .none parseAvxRegOrMem parseAvxRegOrMem .sha256msg1
+
+  | "sha256msg2" =>
+    commaSeparatedAvx .none parseAvxRegOrMem parseAvxRegOrMem .sha256msg2
+
+  | "pblendw" =>
+    let imm ← (skipHWs *> parseImmediate); parseComma
+    commaSeparatedAvx .none parseAvxRegOrMem parseAvxRegOrMem (fun d x => .pblendw d x imm)
+
+  | "vmovdqu" =>
+    commaSeparatedAvx .none parseAvxRegOrMem parseAvxRegOrMem .vmovdqu
+
+  | "vmovd" | "vmovq" =>
+    let n : Width := if mn == "vmovd" then .W32 else .W64
+    -- An xmm source goes out to a register or memory, or to another xmm for `vmovq`.
+    (attempt do
+      let src ← parseXmm; parseComma
+      (attempt do
+        if n != .W64 then fail "vmovd takes no two xmm operands"
+        let dst ← parseXmm
+        pure (toAvxInstr .none (.vmovq dst src))) <|> (do
+        let (addr_w, dst) ← parseRegOrMemAO n
+        pure (toAvxInstr addr_w (.vmovOut n dst src)))) <|> (do
+    let (addr_w, src) ← parseRegOrMemAO n; parseComma
+    let dst ← parseXmm
+    pure (toAvxInstr addr_w (.vmovIn n dst src)))
+
   | "vzeroupper" =>
     pure (toAvxInstr .none (w := .W128) .vzeroupper)
+  | "vmovdqu32" =>
+    commaSeparatedAvx .none parseAvxRegOrMem parseAvxRegOrMem .vmovdqu32
+
+  | "vmovdqa32" =>
+    commaSeparatedAvx .none parseAvxRegOrMem parseAvxRegOrMem .vmovdqa32
+
+  | "vpaddd" =>
+    commaSeparatedAvx3 .vpaddd
+
+  | "vprord" =>
+    let imm ← (skipHWs *> parseImmediate); parseComma
+    commaSeparatedAvx .none parseAvxRegOrMem parseAvxRegOrMem (fun d x => .vprord d x imm)
+
+  | "vpsrld" =>
+    let imm ← (skipHWs *> parseImmediate); parseComma
+    commaSeparatedAvx .none parseAvxRegOrMem parseAvxRegOrMem (fun d x => .vpsrld d x imm)
+
+  | "vpternlogd" =>
+    let imm ← (skipHWs *> parseImmediate); parseComma
+    commaSeparatedAvx3 (fun d x y => .vpternlogd d x y imm)
 
   -- Bitwise - 64-bit
   | "xor" =>
@@ -1105,8 +1223,23 @@ def parseInstr : Parser Instr := do
     let ( addr_w, dst ) ← parseRegOrMemAO w
     pure (toInstr addr_w (.pop dst))
 
+  | "movsb" | "movsw" | "movsl" | "movsq" | "stosb" | "stosw" | "stosl" | "stosq" =>
+    stringInstr .none mn false
+
+  | "rep" =>
+    skipHWs
+    let mn ← parseName
+    stringInstr .none mn.toLower true
+
+  -- 32-bit addressing, which only a string instruction cannot spell through its operands.
+  | "addr32" =>
+    repStringInstr (some .W32)
+
   | "ret" | "retq" =>
     pure (toInstr .none (w := .W64) .ret)
+
+  | "cld" => pure (toInstr .none (w := .W64) .cld)
+  | "std" => pure (toInstr .none (w := .W64) .std)
 
   | "call" | "callq" =>
     let ( addr_w, target ) ← parseRelRegOrMem
@@ -1195,12 +1328,23 @@ def skipSpaceAndCheckLineEnd : Parser Bool := do
   | some _ =>
     pure false
 
-def parseOptionalInstr : Parser (Option Directive) := do
+/-- Parse a data word: `.short`, `.long` or `.quad` followed by an integer or a symbolic
+constant (`sym`, `sym+8`, `.Lcase0-.Ltable`). The value stays symbolic. -/
+def parseDataWord : Parser _root_.Directive := do
+  let bytes ← (pstring ".short" *> pure 2) <|> (pstring ".long" *> pure 4) <|> (pstring ".quad" *> pure 8)
+  skipHWs
+  let e ← parseInt64Raw <|> parseSymExpr
+  pure (.word bytes e)
+
+-- NOTE TO ROBOT: `Kraken` is open because we are under the `Kraken.*` namespace.
+-- However, I would like `Directive` to resolve to the `_root_.Directive` definition
+-- instead of `Kraken.Directive`. Is there a way to do this?
+def parseOptionalInstr : Parser (Option _root_.Directive) := do
   if (← skipSpaceAndCheckLineEnd) then
     pure none
   else
-    let i ← parseAlign <|> parseInstr
-    pure (some (Directive.instr i))
+    let d ← parseDataWord <|> (Directive.instr <$> (parseAlign <|> parseInstr))
+    pure (some d)
 
 def checkLineEnd : Parser Unit := do
   if (← skipSpaceAndCheckLineEnd) then
@@ -1210,7 +1354,7 @@ def checkLineEnd : Parser Unit := do
 
 /-- Parse a single line: optional label, followed by optional instruction or directive.
     Returns a list of directives found on the line. -/
-def parseLine : Parser (List Directive) := do
+def parseLine : Parser (List _root_.Directive) := do
   skipHWs
   let labels ← many (attempt do
     let l ← parseLabelDecl
@@ -1232,49 +1376,13 @@ instance {T1} : Coe (ParseResult (List T1) (Sigma String.Pos)) (Except String (L
   | .error _ .eof => .error "unexpected end of input"
   | .error _ (.other msg) => .error msg
 
-public def parse (input: String) : Except String Program := do
+public def parse (input: String) : Except String _root_.Program := do
   let rawLines := (input.splitOn "\n")
   let (_, lines) ← rawLines.foldlM (fun (lineNum, acc) x => do
-    match (parseLine ⟨ x, x.startPos ⟩ : Except String (List Directive)) with
+    match (parseLine ⟨ x, x.startPos ⟩ : Except String (List _root_.Directive)) with
     | .ok v => pure (lineNum + 1, v :: acc)
     | .error msg => .error s!"line {lineNum}: {msg}"
   ) ((1 : Nat), [])
   pure lines.reverse.flatten
-
--- ============================================================================
--- Assembly Preprocessing (Directive Stripping)
--- ============================================================================
--- These delete code that is not presently handled by Kraken. This is useful
--- for running on code without needing to modify it to delete things we do not
--- model. These are used in file parsing.
-
-private def directiveKeywords : List String :=
-  ["file", "text", "data", "p2align", "balign",
-   "globl", "global", "type", "size", "section",
-   "weak", "hidden", "protected", "internal", "ident",
-   "cfi_startproc", "cfi_endproc", "cfi_def_cfa",
-   "cfi_offset", "cfi_adjust_cfa_offset", "cfi_def_cfa_offset",
-   "cfi_def_cfa_register", "cfi_restore", "cfi_remember_state",
-   "cfi_restore_state"]
-
-private def extractDirectiveName (s : String) : String :=
-  let rest := s.drop 1
-  let nameStr := (rest.takeWhile (fun c => c != ' ' && c != '\t' && c != ',' && c != ':')).toString
-  nameStr.toLower
-
-private def keepLine (line : String) : Bool :=
-  let stripped := (line.trimAsciiStart).toString
-  if stripped.isEmpty || stripped.startsWith "#" then true
-  else if !stripped.startsWith "." then true
-  else
-    let dirName := extractDirectiveName stripped
-    if stripped.any (· == ':') then true
-    else if directiveKeywords.contains dirName then false
-    else false
-
-public def stripDirectives (content : String) : String :=
-  let lines := content.splitOn "\n"
-  let kept := lines.filter keepLine
-  "\n".intercalate kept
 
 end Kraken.X64.Parser

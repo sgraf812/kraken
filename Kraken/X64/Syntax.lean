@@ -195,6 +195,9 @@ inductive Operation (w : Width)
   | pop  (_ : Dst w)
   | setcc (_ : CondCode) (_ : Dst w) -- {_ : w = .W8}
   | cmovcc (_ : CondCode) (_ : Reg w) (src : RegOrMem w)
+  -- String moves and stores, once or with a `rep` prefix
+  | movs (rep : Bool)
+  | stos (rep : Bool)
   -- Arithmetic
   | lea (_ : Reg w) (src : AddrExpr) -- {_ : 16 <= w.bits}
   | add  (_ : Dst w) (src : Operand w)
@@ -229,6 +232,9 @@ inductive Operation (w : Width)
   | rcl  (_ : Dst w) (_ : ShiftCountExpr)
   | rcr  (_ : Dst w) (_ : ShiftCountExpr)
   | bswap  (dst : Reg w) -- (_ : w = .W32 ∨ w = .W64)
+  -- Flag control
+  | cld
+  | std
   -- Control flow
   | jcc (cc : CondCode) (target : Label)
   | jmp (target : RelRegOrMem)
@@ -258,7 +264,32 @@ inductive AvxOperation (w : AvxWidth)
   | vmovhlps (_ : AvxReg .W128) (src1 src2 : AvxReg .W128)
   | vmovss (_ : AvxReg .W128) (src1 src2 : AvxReg .W128)
   | vaddss (_ : AvxReg .W128) (src1 src2 : AvxReg .W128)
+  -- SSE2, SSSE3, and SSE4.1 integer operations
+  | movdqu (_ : AvxDst w) (src : AvxRegOrMem w)
+  | movdqa (_ : AvxDst w) (src : AvxRegOrMem w)
+  | paddd (_ : AvxDst w) (src : AvxRegOrMem w)
+  | pshufb (_ : AvxDst w) (src : AvxRegOrMem w)
+  | pshufd (_ : AvxDst w) (src : AvxRegOrMem w) (imm : ConstExpr)
+  | palignr (_ : AvxDst w) (src : AvxRegOrMem w) (imm : ConstExpr)
+  | pblendw (_ : AvxDst w) (src : AvxRegOrMem w) (imm : ConstExpr)
+  -- VEX moves, which clear every bit above what they write
+  | vmovdqu (_ : AvxDst w) (src : AvxRegOrMem w)
+  -- `vmovd` when `n` is 32 bits, `vmovq` when it is 64
+  | vmovIn (n : Width) (_ : AvxReg w) (src : RegOrMem n)
+  | vmovOut (n : Width) (_ : Dst n) (src : AvxReg w)
+  | vmovq (_ : AvxReg w) (src : AvxReg w)
   | vzeroupper
+  -- SHA extensions
+  | sha256rnds2 (_ : AvxDst w) (src : AvxRegOrMem w)  -- reads xmm0 implicitly
+  | sha256msg1 (_ : AvxDst w) (src : AvxRegOrMem w)
+  | sha256msg2 (_ : AvxDst w) (src : AvxRegOrMem w)
+  -- AVX-512 integer operations, without write-masking
+  | vmovdqu32 (_ : AvxDst w) (src : AvxRegOrMem w)
+  | vmovdqa32 (_ : AvxDst w) (src : AvxRegOrMem w)
+  | vpaddd (_ : AvxDst w) (src1 src2 : AvxRegOrMem w)
+  | vprord (_ : AvxDst w) (src : AvxRegOrMem w) (imm : ConstExpr)
+  | vpsrld (_ : AvxDst w) (src : AvxRegOrMem w) (imm : ConstExpr)
+  | vpternlogd (_ : AvxDst w) (src2 src3 : AvxRegOrMem w) (imm : ConstExpr)
   deriving Repr, DecidableEq, Hashable, Lean.ToExpr
 
 inductive Instr
@@ -272,14 +303,7 @@ instance [AddressSize] {w : Width} : CoeOut (Operation w) Instr where
 instance [AddressSize] {w : AvxWidth} : CoeOut (AvxOperation w) Instr where
   coe op := Instr.avx address_size w op
 
-instance : Repr ByteArray where reprPrec _ _ := "<opaque byte array>"
-
-deriving instance Lean.ToExpr for ByteArray
-inductive Directive
-  | instr (_ : Instr)
-  | label (_ : Label)
-  | byteArray (_ : ByteArray)
-  deriving BEq, DecidableEq, Repr, Hashable, Lean.ToExpr
+abbrev Directive := Kraken.Directive Instr ConstExpr
 
 abbrev Program := List Directive
 
@@ -301,11 +325,14 @@ def Program.labels (p : Program) : List Label := p.filterMap Directive.label?
 @[simp, grind =] theorem Program.labels_cons_byteArray (a : ByteArray) (p : Program) :
     Program.labels (.byteArray a :: p) = Program.labels p := rfl
 
+@[simp, grind =] theorem Program.labels_cons_word (n : Nat) (e : ConstExpr) (p : Program) :
+    Program.labels (.word n e :: p) = Program.labels p := rfl
+
 theorem Program.labels_append (a b : Program) :
     Program.labels (a ++ b) = Program.labels a ++ Program.labels b :=
   List.filterMap_append
 
-theorem Program.mem_labels {p : Program} {l : Label} : l ∈ Program.labels p ↔ Directive.label l ∈ p := by
+theorem Program.mem_labels {p : Program} {l : Label} : l ∈ Program.labels p ↔ (@Kraken.Directive.label Instr ConstExpr) l ∈ p := by
   rw [Program.labels, List.mem_filterMap]
   constructor
   · rintro ⟨d, hd, hl⟩
@@ -319,10 +346,10 @@ theorem List.Nodup.eq_of_getElem?_label {P : Program} (hnd : (Program.labels P).
   | cons d P ih =>
     cases i <;> cases j <;> cases d <;>
       grind [Program.labels_cons_label, Program.labels_cons_instr, Program.labels_cons_byteArray,
-        Program.mem_labels, List.mem_of_getElem?]
+        Program.labels_cons_word, Program.mem_labels, List.mem_of_getElem?]
 
 
-abbrev Executable := Kraken.Executable Directive
+abbrev Executable := Kraken.Executable Instr ConstExpr
 
 namespace Reg
 @[match_pattern] abbrev rax := low .rax .W64

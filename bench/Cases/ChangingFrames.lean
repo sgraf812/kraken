@@ -14,11 +14,11 @@ set_option experimental.vcgen true
 
 namespace ChangingFrames
 
-public def poke : Program := parse("
+public def poke : Program := ⸨prog|
 poke:
   movq %rax, (%rdi)
   ret
-")
+⸩
 
 public funspec poke_spec "poke" [Host] [FunDecls] [Embeds poke]
     (hp : FunDecls.at (label "poke") = some ⟨poke⟩) at s
@@ -37,15 +37,15 @@ public funspec poke_spec "poke" [Host] [FunDecls] [Embeds poke]
     with kfinish
 
 @[expose] public def pokes : Nat → Program
-  | 0 => [Directive.instr (.regular .W64 .W64 .ret)]
+  | 0 => [(@Kraken.Directive.instr Instr ConstExpr) (.regular .W64 .W64 .ret)]
   | n + 1 =>
-    Directive.instr (.regular .W64 .W64
+    (@Kraken.Directive.instr Instr ConstExpr) (.regular .W64 .W64
       (.call (.rel (.sub (.label "poke") .after_current_instruction))))
-    :: Directive.instr (.regular .W64 .W64
+    :: (@Kraken.Directive.instr Instr ConstExpr) (.regular .W64 .W64
       (.add (.reg (.low .rdi .W64)) (.imm (.int64 8))))
     :: pokes n
 
-@[expose] public def many (n : Nat) : Program := Directive.label "many" :: pokes n
+@[expose] public def many (n : Nat) : Program := (@Kraken.Directive.label Instr ConstExpr) "many" :: pokes n
 
 @[expose] public def Goal (n : Nat) : Prop :=
   ∀ [Host] [FunDecls] [Embeds poke] [Embeds (many n)],

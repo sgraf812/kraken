@@ -14,7 +14,7 @@ set_option experimental.vcgen true
 
 namespace State.EvenOdd
 
-def even : Program := parse("
+def even : Program := ⸨prog|
 even:
   test %rdi, %rdi
   jz even_zero
@@ -24,9 +24,9 @@ even:
 even_zero:
   mov $1, %rax
   ret
-")
+⸩
 
-def odd : Program := parse("
+def odd : Program := ⸨prog|
 odd:
   test %rdi, %rdi
   jz odd_zero
@@ -36,7 +36,7 @@ odd:
 odd_zero:
   mov $0, %rax
   ret
-")
+⸩
 
 mutual
 
@@ -76,14 +76,14 @@ termination_by s.regs.rdi.toNat
 
 end
 
-def evenOddProg : Program := parse("
+def evenOddProg : Program := ⸨prog|
 start:
   call even
   jmp done
-") ++ even ++ odd ++ parse("
+⸩ ++ even ++ odd ++ ⸨prog|
 done:
   nop
-")
+⸩
 
 theorem evenOdd_correct [Host] (hp : evenOddProg.IsInfix Host.prog)
     (s : MachineData) (base : BitVec 64) (sz : Nat)

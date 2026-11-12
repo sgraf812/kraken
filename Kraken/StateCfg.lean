@@ -36,7 +36,7 @@ theorem Program.flatMap_drop_view {p : Program} (hnd : (Program.labels p).Nodup)
 
 theorem Program.fromLabel_block {p : Program} (hnd : (Program.labels p).Nodup)
     {l : Label} {blk : Program.Block} (h : Program.blockAt p l = some blk) :
-    Program.fromLabel p l = Directive.label l :: (blk.body ++ Program.fromNext p blk.next) := by
+    Program.fromLabel p l = (@Kraken.Directive.label Instr ConstExpr) l :: (blk.body ++ Program.fromNext p blk.next) := by
   obtain ⟨-, i, hi, hnext, -⟩ := Program.blockAtAux_spec h
   rw [Program.fromLabel_view hnd hi, Program.drop_flatMap_cons hi, hnext, Program.flatMap_drop_view hnd]
 
@@ -159,7 +159,7 @@ theorem cfg {p : Program} {s₀ : MachineData} {Q : Unit → MachineData → Pro
   have hnd : (Program.labels p).Nodup := Program.labels_nodup_of_embeds
   have hK : ∀ l, Program.blockIdx p l ≤ (Program.view p).2.length := Program.blockIdx_le p
   have hcellOf : ∀ l, Program.fromLabel p l ≠ [] →
-      p[p.length - (Program.fromLabel p l).length]? = some (Directive.label l) := by
+      p[p.length - (Program.fromLabel p l).length]? = some ((@Kraken.Directive.label Instr ConstExpr) l) := by
     intro l hne
     have hdrop := Program.drop_fromLabel p l
     obtain ⟨t, rest, -, hfl, -, -⟩ := Program.fromLabel_split hnd hne

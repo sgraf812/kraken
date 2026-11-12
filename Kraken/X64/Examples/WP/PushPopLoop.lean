@@ -15,7 +15,7 @@ namespace State
 
 attribute [local grind →] BitVec.lt_toNat_sub_of_serialLt
 
-def pushPop : Program := parse("
+def pushPop : Program := ⸨prog|
 fill:
   push %rax
   dec %rcx
@@ -23,7 +23,7 @@ fill:
 drain:
   pop %rbx
   dec %rdx
-  jnz drain")
+  jnz drain⸩
 
 theorem pushPop_spec [Host] [FunDecls] (n : Nat) (R : DataMem → Prop) (s : MachineData)
     (hn : 0 < n) (hb : 8 * n < 2 ^ 63) (hrcx : (s.regs.get64 .rcx).toNat = n)

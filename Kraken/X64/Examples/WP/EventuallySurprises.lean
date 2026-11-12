@@ -73,13 +73,13 @@ jumps back to the end of `p`. `Eventually` proves both that the run reaches the 
 `rax = 7` and that it reaches the end of `p` with `rax = 8`. `Program.wp` takes the first arrival:
 it proves `rax = 7` and refutes `rax = 8`. -/
 
-def p₁ : Program := parse("
-  mov $7, %rax")
+def p₁ : Program := ⸨prog|
+  mov $7, %rax⸩
 
-def q₁ : Program := parse("
+def q₁ : Program := ⸨prog|
 back:
   mov $8, %rax
-  jmp back")
+  jmp back⸩
 
 omit [FunDecls] in
 theorem p₁_ends_rax7_eventually {k : Nat} (hk : (p₁ ++ q₁).IsInfixAt Host.prog k) (s : MachineData) :
@@ -88,7 +88,7 @@ theorem p₁_ends_rax7_eventually {k : Nat} (hk : (p₁ ++ q₁).IsInfixAt Host.
   have hP : ∀ i (h : i < (p₁ ++ q₁).length), Host.prog[k + i]? = some (p₁ ++ q₁)[i] := fun i h =>
     List.isInfixAt_iff_getElem?.mp hk i h
   have hcell : ∀ i (h : i < (p₁ ++ q₁).length), Host.exe.program[k + i]? =
-      some {directive := (p₁ ++ q₁)[i], size := Kraken.Layout.size Directive (k + i)} := by
+      some {directive := (p₁ ++ q₁)[i], size := Host.layout.size (k + i)} := by
     intro i h; rw [Host.exe_getElem?, hP i h]; rfl
   rw [show p₁.length = 1 from rfl]
   estep 0 [p₁, q₁]
@@ -101,7 +101,7 @@ theorem p₁_ends_rax8_eventually {k : Nat} (hk : (p₁ ++ q₁).IsInfixAt Host.
   have hP : ∀ i (h : i < (p₁ ++ q₁).length), Host.prog[k + i]? = some (p₁ ++ q₁)[i] := fun i h =>
     List.isInfixAt_iff_getElem?.mp hk i h
   have hcell : ∀ i (h : i < (p₁ ++ q₁).length), Host.exe.program[k + i]? =
-      some {directive := (p₁ ++ q₁)[i], size := Kraken.Layout.size Directive (k + i)} := by
+      some {directive := (p₁ ++ q₁)[i], size := Host.layout.size (k + i)} := by
     intro i h; rw [Host.exe_getElem?, hP i h]; rfl
   have hlab : Host.prog[k + 1]? = some (.label "back") := hP 1 (by decide)
   have h12 : Host.addrOf (k + 1) = Host.addrOf (k + 2) := by
@@ -131,7 +131,7 @@ theorem p₁_not_ends_rax8 [H : Embeds p₁] (s : MachineData) :
   generalize H.embedding.start = k at hk hw
   have hP : Host.prog[k + 0]? = some p₁[0] := List.isInfixAt_iff_getElem?.mp hk 0 (by decide)
   have hcell : Host.exe.program[k + 0]? =
-      some {directive := p₁[0], size := Kraken.Layout.size Directive (k + 0)} := by
+      some {directive := p₁[0], size := Host.layout.size (k + 0)} := by
     rw [Host.exe_getElem?, hP]; rfl
   have hz := Host.instr_size_pos _ _ hP (by rintro ⟨⟩)
   have hne := Host.addrOf_succ_ne hcell hz
@@ -158,15 +158,15 @@ end of `p`. `Eventually` proves that the run reaches the end of `p` with `rax = 
 never falls off its end. `Program.wp` refutes every spec of `p` without an exit: `away` is no
 label of `p`, so the run of `p` exits there. -/
 
-def p₂ : Program := parse("
-  jmp away")
+def p₂ : Program := ⸨prog|
+  jmp away⸩
 
-def q₂ : Program := parse("
+def q₂ : Program := ⸨prog|
 halt:
   jmp halt
 away:
   mov $8, %rax
-  jmp halt")
+  jmp halt⸩
 
 omit [FunDecls] in
 theorem p₂_ends_rax8_eventually {k : Nat} (hk : (p₂ ++ q₂).IsInfixAt Host.prog k) (s : MachineData) :
@@ -175,7 +175,7 @@ theorem p₂_ends_rax8_eventually {k : Nat} (hk : (p₂ ++ q₂).IsInfixAt Host.
   have hP : ∀ i (h : i < (p₂ ++ q₂).length), Host.prog[k + i]? = some (p₂ ++ q₂)[i] := fun i h =>
     List.isInfixAt_iff_getElem?.mp hk i h
   have hcell : ∀ i (h : i < (p₂ ++ q₂).length), Host.exe.program[k + i]? =
-      some {directive := (p₂ ++ q₂)[i], size := Kraken.Layout.size Directive (k + i)} := by
+      some {directive := (p₂ ++ q₂)[i], size := Host.layout.size (k + i)} := by
     intro i h; rw [Host.exe_getElem?, hP i h]; rfl
   have hlab : Host.prog[k + 3]? = some (.label "away") := hP 3 (by decide)
   have haway : label "away" = Host.addrOf (k + 4) := by
@@ -200,7 +200,7 @@ theorem p₂_no_wp [H : Embeds p₂] (Q : Unit → MachineData → Prop) (s : Ma
   generalize H.embedding.start = k at hk hw
   have hP : Host.prog[k + 0]? = some p₂[0] := List.isInfixAt_iff_getElem?.mp hk 0 (by decide)
   have hcell : Host.exe.program[k + 0]? =
-      some {directive := p₂[0], size := Kraken.Layout.size Directive (k + 0)} := by
+      some {directive := p₂[0], size := Host.layout.size (k + 0)} := by
     rw [Host.exe_getElem?, hP]; rfl
   have hz := Host.instr_size_pos _ _ hP (by rintro ⟨⟩)
   have hne := Host.addrOf_succ_ne hcell hz

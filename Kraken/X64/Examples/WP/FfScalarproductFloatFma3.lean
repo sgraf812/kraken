@@ -14,7 +14,7 @@ set_option experimental.vcgen true
 
 namespace State.FfScalarproductFloatFma3
 
-def scalarproduct_fma3_prog : Program := parse("
+def scalarproduct_fma3_prog : Program := ⸨prog|
 ff_scalarproduct_float_fma3:
     xor %r8,%r8
     vxorps %ymm0,%ymm0,%ymm0
@@ -129,11 +129,11 @@ ff_scalarproduct_float_fma3:
     vzeroupper
 done:
     nop
-")
+⸩
 
-def scalarproduct_fma3 : Program := scalarproduct_fma3_prog ++ parse("
+def scalarproduct_fma3 : Program := scalarproduct_fma3_prog ++ ⸨prog|
     ret
-")
+⸩
 
 theorem scalarproduct_fma3_spec [Host] [FunDecls] (s : MachineData) (len : Nat)
     (h_len_reg : (s.regs.get64 .rdx).take 32 = BitVec.ofNat 32 len)

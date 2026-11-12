@@ -16,12 +16,12 @@ namespace CarryJumps
 @[expose] public def chain : Nat → Program
   | 0 => []
   | n + 1 =>
-    Directive.instr (.regular .W64 .W64
+    (@Kraken.Directive.instr Instr ConstExpr) (.regular .W64 .W64
       (.adc (.reg (.low .rax .W64)) (.regOrMem (.reg (.low .rbx .W64)))))
-    :: Directive.instr (.regular .W64 .W64 (.jcc .z "out")) :: chain n
+    :: (@Kraken.Directive.instr Instr ConstExpr) (.regular .W64 .W64 (.jcc .z "out")) :: chain n
 
 @[expose] public def prog (n : Nat) : Program :=
-  Directive.instr (.regular .W64 .W64
+  (@Kraken.Directive.instr Instr ConstExpr) (.regular .W64 .W64
       (.add (.reg (.low .rax .W64)) (.imm (.int64 0))))
     :: chain n
 
