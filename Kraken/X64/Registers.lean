@@ -179,7 +179,7 @@ the projections of a literal reduce by the lemmas below. -/
 @[simp, vcgen_simp] theorem MachineData.zmms_mk (r z st f d) : (MachineData.mk r z st f d).zmms = z := rfl
 @[simp, vcgen_simp] theorem MachineData.df_mk (r z st f d) : (MachineData.mk r z st f d).df = f := rfl
 
-@[simp, vcgen_simp] theorem BitVec.unsigned_eq {w} (x : BitVec w) : x.unsigned = (x.toNat : Int) := rfl
+@[simp, grind hom, vcgen_simp] theorem BitVec.unsigned_eq {w} (x : BitVec w) : x.unsigned = (x.toNat : Int) := rfl
 
 @[simp] theorem BitVec.signed_eq {w} (x : BitVec w) : x.signed = x.toInt := rfl
 

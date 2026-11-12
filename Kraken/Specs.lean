@@ -30,14 +30,6 @@ result is the width spelling the proof engines read. -/
 def AddrExpr.interp64 (labels : Labels) (a : AddrExpr) (s : Reg64s) (p : Std.Rco Int64) : BitVec 64 :=
   @AddrExpr.interp labels (.mk .W64) a s p
 
-/-! ## `.unsigned`/`.signed` reductions -/
-@[grind hom] theorem BitVec.unsigned_hom {w} (x : BitVec w) : x.unsigned = (x.toNat : Int) := rfl
-
-/-! ## Condition-code reductions, one lemma per code -/
-
-/-! ## Reading a named register, one lemma per field -/
-
-
 /-! ## Register identity as a number
 
 The state-simplification pass reduces ground terms of the builtin types, so a
@@ -76,13 +68,6 @@ attribute [grind =] Width.bytes
 @[simp, grind =] theorem Reg64s.get64_set64 (s : Reg64s) (r r' : Reg64) (v : BitVec 64) :
     (s.set64 r v).get64 r' = if r' = r then v else s.get64 r' := by
   cases r <;> cases r' <;> simp [Reg64s.set64, Reg64s.get64]
-
-@[simp, grind =] theorem Reg64s.get_low64 (s : Reg64s) (r : Reg64) :
-    s.get (.low r .W64) = s.get64 r := by
-  simp [Reg64s.get, Reg.base, Reg.offset, BitVec.take, BitVec.drop]
-
-@[simp, grind =] theorem Reg64s.set_low64 (s : Reg64s) (r : Reg64) (v : BitVec 64) :
-    Reg64s.set s (.low r .W64) v = s.set64 r v := rfl
 
 @[simp, grind =] theorem MachineData.regs_setReg (s : MachineData) {w} (r : Reg w) (v : w.type) :
     (s.setReg r v).regs = s.regs.set r v := rfl
