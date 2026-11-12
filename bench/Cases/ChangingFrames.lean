@@ -25,7 +25,8 @@ public funspec poke_spec "poke" [Host] [FunDecls] [Embeds poke]
     requires Mem.Mapped [(s.regs.rsp.toBitVec - 8#64, 8)] s.dmem
       ∧ Mem.Mapped [(s.regs.rdi.toBitVec, 8)] s.dmem
       ∧ Mem.Blocks.Disjoint [(s.regs.rdi.toBitVec, 8)] [(s.regs.rsp.toBitVec - 8#64, 8)]
-    ensures s' => True
+    ensures s' => Mem.Mapped [(s'.regs.rsp.toBitVec - 8#64, 8)] s'.dmem
+      ∧ Mem.Mapped [(s'.regs.rdi.toBitVec, 8)] s'.dmem
     autoframes calling_conv SysV preserves rax rcx rdx rsi rdi r8 r9 r10 r11
       writes s.regs.rdi.toBitVec[*...<8] := by
   vcgen [poke]
@@ -64,6 +65,18 @@ public funspec poke_spec "poke" [Host] [FunDecls] [Embeds poke]
         (fun (_ : Unit) (_ : MachineData) => False)
         (fun a s' => (a = ra →
             s'.dmem.loadBytes s.regs.rdx.toBitVec 16 = s.dmem.loadBytes s.regs.rdx.toBitVec 16)
+          ∧ Mem.Mapped [(s'.regs.rdx.toBitVec, 16)] s'.dmem
           ∧ (a ≠ ra → False))
+
+example : Goal 4 := by
+  simp only [Goal, many, pokes]
+  intro _ _ _ _ _ _ _ _
+  vcgen [poke_spec]
+    invariants
+    · fun {s₀} l s' => match l with
+        | "many" => s' = s₀
+        | _ => False
+    · fun _ _ => 0
+    with kfinish
 
 end ChangingFrames
