@@ -205,6 +205,17 @@ variable [Labels] [AddressSize]
       (fun s => G s k)))
     exact Natural.bind (hstep s) fun _ => ih
 
+@[natural] public theorem MachineData.repString_natural
+    {step : MachineData → (MachineData → Effects) → Effects} (hstep : ∀ s, Natural (step s))
+    {rs : List Reg64} {s : MachineData} {G : MachineData → (α → Effects) → Effects}
+    (h : ∀ s, Natural (G s)) :
+    Natural (fun k => MachineData.repString step rs s (fun s => G s k)) := by
+  unfold MachineData.repString
+  dsimp only
+  split
+  · exact Natural.undefined fun _ => h _
+  · exact MachineData.repeatString_natural hstep h
+
 @[natural] public theorem Reg.interp_natural {w} {r : Reg w} {s : MachineData} {p : Std.Rco Int64}
     {G : w.type → MachineData → (α → Effects) → Effects} (h : ∀ v s, Natural (G v s)) :
     Natural (fun k => r.interp s p (fun v s => G v s k)) := h _ _
