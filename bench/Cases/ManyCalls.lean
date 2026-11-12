@@ -16,14 +16,18 @@ namespace ManyCalls
 
 public def touch : Program := ⸨prog|
 touch:
+  movq %rax, (%rsi)
   ret
 ⸩
 
 public funspec touch_spec "touch" [Host] [FunDecls] [Embeds touch]
     (ht : FunDecls.at (label "touch") = some ⟨touch⟩) at s
     requires Mem.Mapped [(s.regs.rsp.toBitVec - 8#64, 8)] s.dmem
+      ∧ Mem.Mapped [(s.regs.rsi.toBitVec, 8)] s.dmem
+      ∧ Mem.Blocks.Disjoint [(s.regs.rsi.toBitVec, 8)] [(s.regs.rsp.toBitVec - 8#64, 8)]
     ensures s' => True
-    autoframes calling_conv SysV preserves rax rcx rdx rsi rdi r8 r9 r10 r11 := by
+    autoframes calling_conv SysV preserves rax rcx rdx rsi rdi r8 r9 r10 r11
+      writes s.regs.rsi.toBitVec[*...<8] := by
   vcgen [touch]
     invariants
     · fun {s₀} l s' => match l with
@@ -57,7 +61,12 @@ public funspec touch_spec "touch" [Host] [FunDecls] [Embeds touch]
           ∧ Mem.Mapped [(s.regs.rsp.toBitVec - 8#64, 8), (s.regs.rdi.toBitVec, 8),
             (s.regs.rdx.toBitVec, 16)] s.dmem
           ∧ Mem.Blocks.Disjoint [(s.regs.rdi.toBitVec, 8)] [Mem.Block.ofStackSlots s.regs.rsp 1]
-          ∧ Mem.Blocks.Disjoint [(s.regs.rdx.toBitVec, 16)] [Mem.Block.ofStackSlots s.regs.rsp 1])
+          ∧ Mem.Blocks.Disjoint [(s.regs.rdx.toBitVec, 16)] [Mem.Block.ofStackSlots s.regs.rsp 1]
+          ∧ Mem.Mapped [(s.regs.rsi.toBitVec, 8)] s.dmem
+          ∧ Mem.Blocks.Disjoint [(s.regs.rsi.toBitVec, 8)] [(s.regs.rsp.toBitVec - 16#64, 8)]
+          ∧ Mem.Blocks.Disjoint [(s.regs.rsi.toBitVec, 8)] [(s.regs.rsp.toBitVec - 8#64, 8)]
+          ∧ Mem.Blocks.Disjoint [(s.regs.rdi.toBitVec, 8)] [(s.regs.rsi.toBitVec, 8)]
+          ∧ Mem.Blocks.Disjoint [(s.regs.rdx.toBitVec, 16)] [(s.regs.rsi.toBitVec, 8)])
         (fun (_ : Unit) (_ : MachineData) => False)
         (fun a s' => (a = ra →
             s'.dmem.loadInt s.regs.rdi.toBitVec 8 = s.dmem.loadInt s.regs.rdi.toBitVec 8
