@@ -1,5 +1,6 @@
 module
 
+public import Kraken.X64.OmniSemantics
 public import Kraken.X64.WP.Host
 public import Kraken.X64.WP.Step
 
@@ -98,7 +99,7 @@ public theorem Effects.All_mono {P₁ P₂ : MachineState → Prop} {e : Effects
   | require_exec_access _ ok ih => exact ih () h₁
 
 open Lean.Order in
-@[partial_fixpoint_monotone] public theorem step1_monotone [Layout] {α : Type} [PartialOrder α]
+@[partial_fixpoint_monotone] public theorem step1_monotone {α : Type} [PartialOrder α]
     {e : Executable} {st : MachineState} (f : α → MachineState → ImplicationOrder) (h : monotone f) :
     @monotone _ _ _ ImplicationOrder.instOrder (fun x => step1 e st (f x)) :=
   fun _ _ hxy => Effects.All_mono fun st' => h _ _ hxy st'
@@ -175,6 +176,27 @@ variable [Host]
 
 public abbrev Fragment.startAddr (f : Fragment) : Int64 := f.embeds.embedding.startAddr
 
+public theorem Host.eventually_of_interp {k : Nat} {d : Directive} {p : Program}
+    (hdp : (d :: p).IsInfixAt Host.prog k) {post : @Post MachineState} {s : MachineData}
+    (h : (d.interp s ⟨Host.addrOf k, Host.addrOf (k + 1)⟩
+      (fun s' => .done ⟨s', Host.addrOf (k + 1)⟩) (fun a s' => .done ⟨s', a⟩)).All post) :
+    Eventually (step1 Host.exe) post ⟨s, Host.addrOf k⟩ :=
+  _root_.eventually_of_interp hdp.cons.1 h
+
+private theorem Host.directives_interp_zero_append
+    {pre rest : List (Kraken.Sized Directive)}
+    (hpre : ∀ c ∈ pre, ∃ m d', Host.prog[m]? = some d' ∧ c = {directive := d', size := 0} ∧ Host.layout.size m = 0)
+    (s : MachineData) (pc : Int64) (ret jmp : Int64 → MachineData → Effects) :
+    @Directives.interp Host.exe.labels (pre ++ rest) s pc ret jmp =
+      @Directives.interp Host.exe.labels rest s pc ret jmp := by
+  induction pre generalizing s with
+  | nil => rfl
+  | cons c pre ih =>
+    obtain ⟨m, d', hd', rfl, hz0⟩ := hpre c List.mem_cons_self
+    simp only [List.cons_append, Directives.interp, Int64.reduceOfNat, Int64.add_zero,
+      inert_of_size_zero hd' hz0]
+    exact ih (fun c' hc' => hpre c' (List.mem_cons_of_mem _ hc')) s
+
 end
 
 public class FunDecls [Host] where
@@ -223,8 +245,8 @@ public theorem Program.continueOnInternalExit_mono {p : Program} {s : MachineDat
     (h : p.ContinueOnInternalExit s c₁ e₁ u) : p.ContinueOnInternalExit s c₂ e₂ u := by
   unfold Program.ContinueOnInternalExit at h ⊢
   by_cases hcond : p.InternalTarget u.pc ∧ u.data.StackAtOrBelow s
-  · rw [if_pos hcond] at h ⊢; exact hc _ h
-  · rw [if_neg hcond] at h ⊢; exact he _ h
+  · rw [ite_eq_left hcond] at h ⊢; exact hc _ h
+  · rw [ite_eq_right hcond] at h ⊢; exact he _ h
 
 omit [FunDecls] in
 public theorem Program.continueOnInternalExit_and {p : Program} {s : MachineData}
@@ -233,8 +255,8 @@ public theorem Program.continueOnInternalExit_and {p : Program} {s : MachineData
     p.ContinueOnInternalExit s (fun u => c₁ u ∧ c₂ u) (fun u => e₁ u ∧ e₂ u) u := by
   unfold Program.ContinueOnInternalExit at h₁ h₂ ⊢
   by_cases hcond : p.InternalTarget u.pc ∧ u.data.StackAtOrBelow s
-  · rw [if_pos hcond] at h₁ h₂ ⊢; exact ⟨h₁, h₂⟩
-  · rw [if_neg hcond] at h₁ h₂ ⊢; exact ⟨h₁, h₂⟩
+  · rw [ite_eq_left hcond] at h₁ h₂ ⊢; exact ⟨h₁, h₂⟩
+  · rw [ite_eq_right hcond] at h₁ h₂ ⊢; exact ⟨h₁, h₂⟩
 
 omit [FunDecls] in
 public theorem Program.continueOnInternalExit_of_noInternal {p : Program} (h : ∀ a, ¬ p.InternalTarget a)
@@ -344,7 +366,9 @@ public theorem Host.fallthrough_addrOf {k : Nat} {c : Kraken.Sized Directive}
   have hzk : Host.layout.size k = c.size := by
     rw [Host.exe_getElem?] at hc; grind
   unfold Executable.fallthrough
-  rw [hat, Directives.endPc_append, Directives.endPc_of_size_zero hpre, Host.addrOf_succ hk, hzk]
+  rw [hat, Directives.endPc_append,
+    Directives.endPc_of_size_zero (ds := pre) (fun c' hc' => by obtain ⟨_, _, _, rfl, _⟩ := hpre c' hc'; rfl),
+    Host.addrOf_succ hk, hzk]
   rfl
 
 public theorem Host.stepIn_addrOf {k : Nat} {c : Kraken.Sized Directive}
@@ -355,16 +379,13 @@ public theorem Host.stepIn_addrOf {k : Nat} {c : Kraken.Sized Directive}
     Host.exe.StepIn next jump ⟨s, Host.addrOf k⟩ := by
   intro P r j hr hj
   obtain ⟨pre, hat, hpre⟩ := Host.directivesAtAddress_addrOf hc hz
-  have hinert : ∀ c ∈ pre, c.size = 0 ∧ c.directive.Inert := fun c hc =>
-    ⟨hpre c hc, Host.inert_of_size_zero (hpre c hc ▸
-      Kraken.Executable.mem_of_mem_directivesAtAddress (hat ▸ List.mem_append_left _ hc))⟩
   have hk : Host.prog[k]? = some c.directive := by
     rw [Host.exe_getElem?] at hc; grind
   have hzk : Host.layout.size k = c.size := by
     rw [Host.exe_getElem?] at hc; grind
   have hsucc : Host.addrOf (k + 1) = Host.addrOf k + .ofNat c.size := by rw [Host.addrOf_succ hk, hzk]
   change (@Directives.interp Host.exe.labels (Host.exe.directivesAtAddress (Host.addrOf k)) s (Host.addrOf k) _ _).All P
-  rw [hat, Directives.interp_inert_append hinert s _ _ P (fun a s => j ⟨s, a⟩)]
+  rw [hat, Host.directives_interp_zero_append hpre]
   obtain ⟨d, z⟩ := c
   simp only [Directives.interp] at hsucc ⊢
   rw [← hsucc]
@@ -378,15 +399,12 @@ public theorem Host.interp_addrOf {k : Nat} {c : Kraken.Sized Directive}
       (c.directive.interp s ⟨Host.addrOf k, Host.addrOf (k + 1)⟩ (fun s' => ret ⟨s', Host.addrOf (k + 1)⟩)
         (fun a s' => jmp ⟨s', a⟩)).All P := by
   obtain ⟨pre, hat, hpre⟩ := Host.directivesAtAddress_addrOf hc hz
-  have hinert : ∀ c ∈ pre, c.size = 0 ∧ c.directive.Inert := fun c hc =>
-    ⟨hpre c hc, Host.inert_of_size_zero (hpre c hc ▸
-      Kraken.Executable.mem_of_mem_directivesAtAddress (hat ▸ List.mem_append_left _ hc))⟩
   have hk : Host.prog[k]? = some c.directive := by
     rw [Host.exe_getElem?] at hc; grind
   have hzk : Host.layout.size k = c.size := by
     rw [Host.exe_getElem?] at hc; grind
   have hsucc : Host.addrOf (k + 1) = Host.addrOf k + .ofNat c.size := by rw [Host.addrOf_succ hk, hzk]
-  rw [hat, Directives.interp_inert_append hinert s _ _ P (fun a s => jmp ⟨s, a⟩)]
+  rw [hat, Host.directives_interp_zero_append hpre]
   obtain ⟨d, z⟩ := c
   simp only [Directives.interp] at hsucc ⊢
   rw [← hsucc]
@@ -557,11 +575,12 @@ public theorem Program.wp_single {d : Directive} {done exit : MachineState → P
   rcases Nat.eq_zero_or_pos (Host.layout.size h.embedding.start) with h0 | hz
   · have ha : Host.addrOf (h.embedding.start + 1) = Host.addrOf h.embedding.start := by
       rw [Host.addrOf_succ hdk, h0]; simp
-    rw [h0] at hd
-    have hq := (Host.inert_of_size_zero (List.mem_of_getElem? hd) s _ (fun s' => .done ⟨s', 0⟩)
-      (fun _ s' => .done ⟨s', 1⟩) (fun st => st.pc = 0 → done ⟨st.data, h.embedding.endAddr⟩)).mp
-      (@hw (fun st => st.pc = 0 → done ⟨st.data, h.embedding.endAddr⟩) _ _ (fun _ hq _ => hq)
-        fun _ _ _ h => by simp at h)
+    have hq : (@Directive.interp Host.exe.labels d s ⟨h.embedding.startAddr, h.embedding.endAddr⟩
+        (fun s' => .done ⟨s', 0⟩) (fun _ s' => .done ⟨s', 1⟩)).All
+        (fun st => st.pc = 0 → done ⟨st.data, h.embedding.endAddr⟩) :=
+      @hw (fun st => st.pc = 0 → done ⟨st.data, h.embedding.endAddr⟩) _ _ (fun _ hq _ => hq)
+        fun _ _ _ h => by simp at h
+    rw [inert_of_size_zero hdk h0] at hq
     refine While.stop (by simp [hend, ha, Embedding.startAddr]) ?_
     have : (⟨s, h.embedding.startAddr⟩ : MachineState) = ⟨s, h.embedding.endAddr⟩ := by
       simp [hend, ha, Embedding.startAddr]

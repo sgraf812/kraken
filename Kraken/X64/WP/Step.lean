@@ -78,15 +78,15 @@ public theorem bind {β : Type} {F : (α → Effects) → Effects} {G : α → (
 @[natural] public theorem ite {c : Prop} [Decidable c] {F G : (α → Effects) → Effects} (hF : Natural F) (hG : Natural G) :
     Natural (fun k => if c then F k else G k) := by
   by_cases hc : c
-  · rw [show (fun k => if c then F k else G k) = F from funext fun _ => if_pos hc]; exact hF
-  · rw [show (fun k => if c then F k else G k) = G from funext fun _ => if_neg hc]; exact hG
+  · rw [show (fun k => if c then F k else G k) = F from funext fun _ => ite_eq_left hc]; exact hF
+  · rw [show (fun k => if c then F k else G k) = G from funext fun _ => ite_eq_right hc]; exact hG
 
 @[natural] public theorem dite {c : Prop} [Decidable c] {F : c → (α → Effects) → Effects} {G : ¬ c → (α → Effects) → Effects}
     (hF : ∀ h, Natural (F h)) (hG : ∀ h, Natural (G h)) :
     Natural (fun k => if h : c then F h k else G h k) := by
   by_cases hc : c
-  · rw [show (fun k => if h : c then F h k else G h k) = F hc from funext fun _ => dif_pos hc]; exact hF hc
-  · rw [show (fun k => if h : c then F h k else G h k) = G hc from funext fun _ => dif_neg hc]; exact hG hc
+  · rw [show (fun k => if h : c then F h k else G h k) = F hc from funext fun _ => dite_eq_left hc]; exact hF hc
+  · rw [show (fun k => if h : c then F h k else G h k) = G hc from funext fun _ => dite_eq_right hc]; exact hG hc
 
 end Natural
 
@@ -240,7 +240,9 @@ end
 public theorem Directive.interp_natural [Labels] (d : Directive) (s : MachineData) (p : Std.Rco Int64) :
     Natural (fun k : MachineData ⊕ (Int64 × MachineData) → Effects =>
       d.interp s p (fun s => k (.inl s)) (fun a s => k (.inr (a, s)))) := by
-  cases d <;> natural Directive.interp
+  cases d with
+  | word bytes _ => cases bytes <;> natural Directive.interp
+  | _ => natural Directive.interp
 
 public theorem Directives.interp_natural [Labels] (ds : List (Kraken.Sized Directive)) (s : MachineData)
     (pc : Int64) :
@@ -354,7 +356,7 @@ public theorem restrict {next jump : MachineState → Prop} (h : e.StepIn next j
   · exact hr _ ⟨(hprobe _).mp e₁, rfl⟩
   · exact hj _ ((hprobe _).mp e₁)
 
-public theorem all [Layout] {next jump post : MachineState → Prop} (h : e.StepIn next jump st)
+public theorem all {next jump post : MachineState → Prop} (h : e.StepIn next jump st)
     (hn : ∀ u, next u → post u) (hj : ∀ u, jump u → post u) : step1 e st post := by
   unfold step1 Executable.step
   exact h (fun _ h => hn _ h) (fun _ h => hj _ h)

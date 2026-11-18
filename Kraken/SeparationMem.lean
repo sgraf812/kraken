@@ -76,10 +76,10 @@ theorem loadBytes_sep {w : Nat} (bs : List UInt8) (a : BitVec w) (n : Nat) (R : 
   rw [Mem.loadBytes]
   rw [show (List.range n).map (fun i => ((bs.At a).union m2).get? (a + BitVec.ofNat w i)) =
            (List.range n).map (fun i => if h : i < n then some (bs.get ⟨i, Hl ▸ h⟩) else none) by
-    apply List.map_congr_left; intro i hi; rw [List.mem_range] at hi; rw [dif_pos hi]; exact h_get i hi]
+    apply List.map_congr_left; intro i hi; rw [List.mem_range] at hi; rw [dite_eq_left hi]; exact h_get i hi]
   cases Hl
   rw [List.range_get_eq_map_some]
-  rw [List.allSome_map_some]
+  simpa using List.mapM_pure (m := Option) (f := id) (l := bs)
 
 theorem storeBytes_sep {w : Nat} (a : BitVec w) (n : Nat) (_bs bs : List UInt8)
     (R : Mem w → Prop) (m : Mem w)
@@ -441,7 +441,7 @@ theorem loadBytes_eq_some_iff {w : Nat} {m : Mem w} {a : BitVec w} {n : Nat} {bs
     m.loadBytes a n = some bs ↔
       bs.length = n ∧ ∀ i (h : i < bs.length), m.get? (a + .ofNat w i) = some bs[i] := by
   refine ⟨fun h => ?_, fun ⟨hn, h⟩ => ?_⟩
-  · have hl := List.allSome_eq_map_some h
+  · have hl := List.mapM_id_eq_map_some h
     have hlen : bs.length = n := by simpa using (congrArg List.length hl).symm
     refine ⟨hlen, fun i hi => ?_⟩
     have := congrArg (·[i]?) hl
@@ -449,7 +449,7 @@ theorem loadBytes_eq_some_iff {w : Nat} {m : Mem w} {a : BitVec w} {n : Nat} {bs
   · subst hn
     rw [Mem.loadBytes, List.map_congr_left (fun i hi => (h i (List.mem_range.mp hi)).trans
       (List.getElem?_eq_getElem (List.mem_range.mp hi)).symm), List.map_range_getElem?,
-      List.allSome_map_some]
+      List.mapM_id_map_some]
 
 theorem length_of_loadBytes_eq_some {w : Nat} {m : Mem w} {a : BitVec w} {n : Nat}
     {bs : List UInt8} (h : m.loadBytes a n = some bs) : bs.length = n :=
@@ -648,7 +648,7 @@ theorem Mapped.loadBytes_isSome {w : Nat} {bs : List (BitVec w × Nat)} {m : Mem
         (ih fun j hj => hl j (List.mem_cons_of_mem _ hj))
       simp only [List.map_cons, List.mapM_cons, id, hx, hxs]
       rfl
-  simpa only [Mem.loadBytes, List.allSome] using hl (List.range n) fun i hi => List.mem_range.mp hi
+  simpa only [Mem.loadBytes] using hl (List.range n) fun i hi => List.mem_range.mp hi
 
 theorem Mapped.loadBytes_eq_some_get! {w : Nat} {bs : List (BitVec w × Nat)} {m : Mem w}
     {addr : BitVec w} {n : Nat} (h : Mapped bs m) (hin : Blocks.Inside addr n bs) :

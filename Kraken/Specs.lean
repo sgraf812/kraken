@@ -17,7 +17,7 @@ public import Std.WP
 
 open Std.WP
 
-set_option mvcgen.warning false
+set_option experimental.vcgen true
 set_option grind.warning false
 
 /-! ## Register identity as a number

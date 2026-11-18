@@ -37,8 +37,8 @@ namespace Program.WP
 variable [Host] [FunDecls]
 
 theorem MachineData.stackBelow_push64 (s : MachineData) (ra : Int64) : (s.push64 ra).StackBelow s := by
-  simp only [MachineData.StackBelow, MachineData.push64, Reg64s.set64_rsp, Reg64s.get64_rsp, Reg64s.rsp_mk,
-    UInt64.toBitVec_ofBitVec]
+  simp only [MachineData.StackBelow, MachineData.push64, Reg64s.set64_rsp, Reg64s.get64_rsp,
+    ]
   exact BitVec.serialLt_sub _ _ (by decide)
 
 def _root_.FunDecls.body (f : Label) : Program := ((FunDecls.at (label f)).map Fragment.prog).getD []
@@ -60,7 +60,7 @@ theorem wp_call_iff {f : Label} {g : Fragment} (hg : FunDecls.at (label f) = som
     (p := [(@Kraken.Directive.instr Instr ConstExpr) (.regular asz osz (.call (.rel (.sub (.label f) .after_current_instruction))))]) rfl
   constructor
   · intro hw H
-    have hw : Program.wp _ (fun st => Q () st.data) (fun st => E st.pc st.data) s := hw
+    rw [Program.WP.wp_directive_def] at hw
     rw [Program.wp_eq] at hw
     have hw := @hw H
     simp only [Program.continueOnInternalExit_of_noInternal nd] at hw
@@ -79,7 +79,7 @@ theorem wp_call_iff {f : Label} {g : Fragment} (hg : FunDecls.at (label f) = som
       have hst := ht.2
       let probe : Prop → Effects := fun c => if c then .done ⟨s, 0⟩ else .unimplemented ""
       have hprobe : ∀ c, (probe c).All (fun _ => True) ↔ c := fun c => by
-        by_cases hc : c <;> simp [probe, hc, Effects.All, Effects.All_require_read_access, Effects.All_require_write_access]
+        by_cases hc : c <;> simp [probe, hc, Effects.All]
       have t := Host.stepIn_elim hd hz hst (P := fun _ => True) (ret := fun u => probe (mid u))
         (jmp := fun u => probe (Host.exe.StepOut (fun a => (FunDecls.at a).map fun f => f.prog.wp (fun _ => False))
           ⟨s, H.embedding.startAddr⟩ mid (fun st => E st.pc st.data) u))
@@ -87,11 +87,11 @@ theorem wp_call_iff {f : Label} {g : Fragment} (hg : FunDecls.at (label f) = som
       cases hload : Mem.loadInt s.dmem (s.regs.get64 .rsp - 8#64) 8 with
       | none =>
         simp only [Directive.interp, Instr.interp, Operation.interp, RelRegOrMem.interp,
-          ConstExpr.interp, MachineData.store, hload, Effects.All, Effects.All_require_read_access, Effects.All_require_write_access] at t
+          ConstExpr.interp, MachineData.store, hload, Effects.All, Effects.All_require_write_access] at t
       | some i =>
         refine ⟨rfl, ?_⟩
         simp only [Directive.interp, Instr.interp, Operation.interp, RelRegOrMem.interp,
-          ConstExpr.interp, MachineData.store, hload, Effects.All, Effects.All_require_read_access, Effects.All_require_write_access] at t
+          ConstExpr.interp, MachineData.store, hload, Effects.All, Effects.All_require_write_access] at t
         rw [Int64.ofBitVec_toBitVec, Int64.add_sub_self_left] at t
         have t := (hprobe (Host.exe.StepOut (fun a => (FunDecls.at a).map fun f => f.prog.wp (fun _ => False))
           ⟨s, H.embedding.startAddr⟩ mid (fun st => E st.pc st.data)
@@ -99,6 +99,7 @@ theorem wp_call_iff {f : Label} {g : Fragment} (hg : FunDecls.at (label f) = som
         unfold Executable.StepOut at t
         simp only [hg, Option.map_some, MachineData.stackBelow_push64, ite_true] at t
         rw [hft] at t
+        rw [Program.WP.wp_def]
         refine Program.wp_mono (fun _ h => h) ?_ t
         intro u hu
         by_cases hpc : u.pc = H.embedding.endAddr
@@ -111,11 +112,11 @@ theorem wp_call_iff {f : Label} {g : Fragment} (hg : FunDecls.at (label f) = som
         · simp only [hpc, ite_false] at hu ⊢
           exact hu
   · intro hr
-    refine Program.wp_single fun h _ _ _ _ hj => ?_
+    refine Program.WP.wp_single fun h _ _ _ _ hj => ?_
     obtain ⟨hmapped, hbody⟩ := @hr h
     obtain ⟨i, hload⟩ := Option.isSome_iff_exists.mp hmapped
     simp only [Directive.interp, Instr.interp, Operation.interp, RelRegOrMem.interp,
-      ConstExpr.interp, MachineData.store, hload, Effects.All, Effects.All_require_read_access, Effects.All_require_write_access]
+      ConstExpr.interp, MachineData.store, hload, Effects.All, Effects.All_require_write_access]
     rw [Int64.ofBitVec_toBitVec, Int64.add_sub_self_left]
     refine hj (label f) (s.push64 h.embedding.endAddr) ?_
     unfold Executable.StepOut
@@ -128,6 +129,7 @@ theorem wp_call_iff {f : Label} {g : Fragment} (hg : FunDecls.at (label f) = som
     have hft : Host.exe.fallthrough h.embedding.startAddr = h.embedding.endAddr :=
       Host.fallthrough_addrOf hd hz
     rw [hft]
+    rw [Program.WP.wp_def] at hbody
     refine Program.wp_mono (fun _ h => h) ?_ hbody
     intro u hu
     by_cases hpc : u.pc = h.embedding.endAddr
@@ -147,7 +149,7 @@ public theorem MachineData.not_stackBelow_self (s : MachineData) : ¬ s.StackBel
 
 public theorem MachineData.not_stackBelow_pop (s : MachineData) :
     ¬ ({ s with regs := s.regs.set64 .rsp (s.regs.get64 .rsp + 8#64) } : MachineData).StackBelow s := by
-  simp only [MachineData.StackBelow, Reg64s.set64_rsp, Reg64s.get64_rsp, Reg64s.rsp_mk, UInt64.toBitVec_ofBitVec]
+  simp only [MachineData.StackBelow, Reg64s.set64_rsp, Reg64s.get64_rsp]
   exact (BitVec.serialLt_add _ _ (by decide)).asymm
 
 end Program.WP
@@ -162,7 +164,7 @@ namespace Program.WP.Spec
 variable [Host] [FunDecls] {Q : Unit → MachineData → Prop} {E : Int64 → MachineData → Prop}
 
 @[spec] public theorem nil : ⦃ fun s => Q () s ⦄ ([] : Program) ⦃ Q; E ⦄ :=
-  Triple.intro fun _ hq => Program.wp_nil fun _ => hq
+  Triple.intro fun _ hq => by rw [Program.WP.wp_def]; exact Program.wp_nil fun _ => hq
 
 @[spec] public theorem cons (d : Directive) (p : Program) :
     ⦃ fun s => (Program.labels (d :: p) = [] → WP.wp (Program.straight (d :: p)) Q E s)
@@ -175,12 +177,13 @@ variable [Host] [FunDecls] {Q : Unit → MachineData → Prop} {E : Int64 → Ma
       exact hc h
 
 @[spec] public theorem straight_nil : ⦃ fun s => Q () s ⦄ Program.straight [] ⦃ Q; E ⦄ :=
-  Triple.intro fun _ hq => Program.wp_nil fun _ => hq
+  Triple.intro fun _ hq => by rw [Program.WP.wp_def]; exact Program.wp_nil fun _ => hq
 
 @[spec] public theorem straight_instr (i : Instr) (p : Program) :
     ⦃ fun s => WP.wp ((@Kraken.Directive.instr Instr ConstExpr) i) (fun _ => WP.wp (Program.straight p) Q E) E s ⦄
       Program.straight ((@Kraken.Directive.instr Instr ConstExpr) i :: p) ⦃ Q; E ⦄ :=
   Triple.intro fun _ hw => by
+    simp only [Program.WP.wp_directive_def, Program.WP.wp_def] at hw ⊢
     rw [Program.straight_cons_instr]
     exact Program.wp_cons (by rw [Program.labels_cons_instr]; exact Program.labels_straight p) hw
 
@@ -194,6 +197,7 @@ variable [Host] [FunDecls] {Q : Unit → MachineData → Prop} {E : Int64 → Ma
     ⦃ fun s => WP.wp ((@Kraken.Directive.byteArray Instr ConstExpr) a) (fun _ => WP.wp (Program.straight p) Q E) E s ⦄
       Program.straight ((@Kraken.Directive.byteArray Instr ConstExpr) a :: p) ⦃ Q; E ⦄ :=
   Triple.intro fun _ hw => by
+    simp only [Program.WP.wp_directive_def, Program.WP.wp_def] at hw ⊢
     rw [Program.straight_cons_byteArray]
     exact Program.wp_cons (by rw [Program.labels_cons_byteArray]; exact Program.labels_straight p) hw
 
@@ -201,6 +205,7 @@ variable [Host] [FunDecls] {Q : Unit → MachineData → Prop} {E : Int64 → Ma
     ⦃ fun s => WP.wp ((@Kraken.Directive.word Instr ConstExpr) n e) (fun _ => WP.wp (Program.straight p) Q E) E s ⦄
       Program.straight ((@Kraken.Directive.word Instr ConstExpr) n e :: p) ⦃ Q; E ⦄ :=
   Triple.intro fun _ hw => by
+    simp only [Program.WP.wp_directive_def, Program.WP.wp_def] at hw ⊢
     rw [Program.straight_cons_word]
     exact Program.wp_cons (by rw [Program.labels_cons_word]; exact Program.labels_straight p) hw
 
@@ -213,9 +218,9 @@ variable [Host] [FunDecls] {Q : Unit → MachineData → Prop} {E : Int64 → Ma
       ((@Kraken.Directive.instr Instr ConstExpr) (.regular asz .W64 (.mov (.reg (.low r .W64)) (.imm (.int64 i)))))
     ⦃ Q; E ⦄ := by
   refine Triple.intro fun s hpre => ?_
-  refine Program.wp_single fun _ _ _ _ hn _ => ?_
+  refine Program.WP.wp_single fun _ _ _ _ hn _ => ?_
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
-    MachineData.set, MachineData.setReg, Reg64s.set_low_W64, Effects.All, Effects.All_require_read_access, Effects.All_require_write_access, ite_true]
+    MachineData.set, MachineData.setReg, Reg64s.set_low_W64, Effects.All]
   exact hn _ hpre
 
 @[spec] public theorem mov_mem_reg (b : Reg64) (d : Int64) (rs : Reg64) :
@@ -230,10 +235,10 @@ variable [Host] [FunDecls] {Q : Unit → MachineData → Prop} {E : Int64 → Ma
   refine Triple.intro fun s hpre => ?_
   obtain ⟨hmapped, hpre⟩ := hpre
   obtain ⟨i, hload⟩ := Option.isSome_iff_exists.mp hmapped
-  refine Program.wp_single fun _ _ _ _ hn _ => ?_
+  refine Program.WP.wp_single fun _ _ _ _ hn _ => ?_
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
     RegOrMem.interp, MachineData.set, MachineData.store, Reg64s.get_low_W64,
-    AddrExpr.zeroExtend_interp_base_disp, hload, Effects.All, Effects.All_require_read_access, Effects.All_require_write_access, ite_true]
+    AddrExpr.zeroExtend_interp_base_disp, hload, Effects.All, Effects.All_require_write_access]
   exact hn _ hpre
 
 @[spec] public theorem add_reg_mem (rd b : Reg64) (d : Int64) :
@@ -247,11 +252,11 @@ variable [Host] [FunDecls] {Q : Unit → MachineData → Prop} {E : Int64 → Ma
   refine Triple.intro fun s hpre => ?_
   obtain ⟨hmapped, hpre⟩ := hpre
   obtain ⟨i, hload⟩ := Option.isSome_iff_exists.mp hmapped
-  refine Program.wp_single fun _ _ _ _ hn _ => ?_
+  refine Program.WP.wp_single fun _ _ _ _ hn _ => ?_
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
     RegOrMem.interp, MachineData.load, MachineData.set, MachineData.setReg,
     Reg64s.get_low_W64, Reg64s.set_low_W64, AddrExpr.zeroExtend_interp_base_disp,
-    hload, Effects.All, Effects.All_require_read_access, Effects.All_require_write_access, ite_true]
+    hload, Effects.All, Effects.All_require_read_access]
   exact hn _ (by rwa [hload, Option.get!_some] at hpre)
 
 @[spec] public theorem mov_reg_sib8 (r b i : Reg64) (d : Int64) :
@@ -264,10 +269,10 @@ variable [Host] [FunDecls] {Q : Unit → MachineData → Prop} {E : Int64 → Ma
     ⦃ Q; E ⦄ := by
   refine Triple.intro fun s ⟨hsome, hq⟩ => ?_
   obtain ⟨v, hv⟩ := Option.isSome_iff_exists.mp hsome
-  refine Program.wp_single fun _ _ _ _ hn _ => ?_
+  refine Program.WP.wp_single fun _ _ _ _ hn _ => ?_
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
     RegOrMem.interp, MachineData.load, MachineData.set, MachineData.setReg, Reg64s.set_low_W64,
-    AddrExpr.zeroExtend_interp_sib, hv, Effects.All, Effects.All_require_read_access, Effects.All_require_write_access, ite_true]
+    AddrExpr.zeroExtend_interp_sib, hv, Effects.All, Effects.All_require_read_access]
   exact hn _ (by rwa [hv, Option.get!_some] at hq)
 
 @[spec] public theorem mov_sib8_reg (b i : Reg64) (d : Int64) (rs : Reg64) :
@@ -280,10 +285,10 @@ variable [Host] [FunDecls] {Q : Unit → MachineData → Prop} {E : Int64 → Ma
     ⦃ Q; E ⦄ := by
   refine Triple.intro fun s ⟨hsome, hq⟩ => ?_
   obtain ⟨v, hv⟩ := Option.isSome_iff_exists.mp hsome
-  refine Program.wp_single fun _ _ _ _ hn _ => ?_
+  refine Program.WP.wp_single fun _ _ _ _ hn _ => ?_
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
     RegOrMem.interp, MachineData.set, MachineData.store, Reg64s.get_low_W64,
-    AddrExpr.zeroExtend_interp_sib, hv, Effects.All, Effects.All_require_read_access, Effects.All_require_write_access, ite_true]
+    AddrExpr.zeroExtend_interp_sib, hv, Effects.All, Effects.All_require_write_access]
   exact hn _ hq
 
 @[spec] public theorem add_reg_sib8 (rd b i : Reg64) (d : Int64) :
@@ -297,11 +302,11 @@ variable [Host] [FunDecls] {Q : Unit → MachineData → Prop} {E : Int64 → Ma
     ⦃ Q; E ⦄ := by
   refine Triple.intro fun s ⟨hsome, hq⟩ => ?_
   obtain ⟨v, hv⟩ := Option.isSome_iff_exists.mp hsome
-  refine Program.wp_single fun _ _ _ _ hn _ => ?_
+  refine Program.WP.wp_single fun _ _ _ _ hn _ => ?_
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
     RegOrMem.interp, MachineData.load, MachineData.set, MachineData.setReg,
     Reg64s.get_low_W64, Reg64s.set_low_W64, AddrExpr.zeroExtend_interp_sib,
-    hv, Effects.All, Effects.All_require_read_access, Effects.All_require_write_access, ite_true]
+    hv, Effects.All, Effects.All_require_read_access]
   exact hn _ (by rwa [hv, Option.get!_some] at hq)
 
 local macro "run_step" : tactic =>
@@ -311,11 +316,11 @@ local macro "run_step" : tactic =>
 
 @[spec] public theorem label_directive (l : Label) :
     ⦃ fun s => Q () s ⦄ ((@Kraken.Directive.label Instr ConstExpr) l) ⦃ Q; E ⦄ :=
-  Triple.intro fun _ hq => Program.wp_single fun _ _ _ _ hn _ => by run_step; exact hn _ hq
+  Triple.intro fun _ hq => Program.WP.wp_single fun _ _ _ _ hn _ => by run_step; exact hn _ hq
 
 @[spec] public theorem nop (asz osz : Width) (n : Nat) :
     ⦃ fun s => Q () s ⦄ ((@Kraken.Directive.instr Instr ConstExpr) (.regular asz osz (.nop n))) ⦃ Q; E ⦄ :=
-  Triple.intro fun _ hq => Program.wp_single fun _ _ _ _ hn _ => by run_step; exact hn _ hq
+  Triple.intro fun _ hq => Program.WP.wp_single fun _ _ _ _ hn _ => by run_step; exact hn _ hq
 
 @[spec] public theorem sub_reg_imm (asz : Width) (r : Reg64) (i : Int64) :
     ⦃ fun s =>
@@ -324,7 +329,7 @@ local macro "run_step" : tactic =>
       ((@Kraken.Directive.instr Instr ConstExpr) (.regular asz .W64 (.sub (.reg (.low r .W64)) (.imm (.int64 i)))))
     ⦃ Q; E ⦄ := by
   refine Triple.intro fun s hpre => ?_
-  refine Program.wp_single fun _ _ _ _ hn _ => ?_
+  refine Program.WP.wp_single fun _ _ _ _ hn _ => ?_
   run_step
   exact hn _ hpre
 
@@ -334,7 +339,7 @@ local macro "run_step" : tactic =>
           (BitVec.umulHi (s.regs.get64 rs) (s.regs.get64 .rdx))) } ⦄
       ((@Kraken.Directive.instr Instr ConstExpr) (.regular asz .W64 (.mulx (.low hi .W64) (.low lo .W64) (.reg (.low rs .W64)))))
     ⦃ Q; E ⦄ :=
-  Triple.intro fun _ hq => Program.wp_single fun _ _ _ _ hn _ => by
+  Triple.intro fun _ hq => Program.WP.wp_single fun _ _ _ _ hn _ => by
     run_step
     rw [BitVec.ofInt_unsigned_mul, BitVec.ofInt_unsigned_mul_shiftRight]
     exact hn _ hq
@@ -346,7 +351,7 @@ local macro "run_step" : tactic =>
       ((@Kraken.Directive.instr Instr ConstExpr) (.regular asz .W64 (.add (.reg (.low r .W64)) (.imm (.int64 i)))))
     ⦃ Q; E ⦄ := by
   refine Triple.intro fun s hpre => ?_
-  refine Program.wp_single fun _ _ _ _ hn _ => ?_
+  refine Program.WP.wp_single fun _ _ _ _ hn _ => ?_
   run_step
   exact hn _ hpre
 
@@ -363,7 +368,7 @@ local macro "run_step" : tactic =>
           (.adc (.reg (.low rd .W64)) (.regOrMem (.reg (.low rs .W64))))))
     ⦃ Q; E ⦄ := by
   refine Triple.intro fun s hpre => ?_
-  refine Program.wp_single fun _ _ _ _ hn _ => ?_
+  refine Program.WP.wp_single fun _ _ _ _ hn _ => ?_
   run_step
   rw [BitVec.unsigned_add_add_bne, BitVec.unsigned_take_add_add_bne _ _ _ (by decide),
     BitVec.signed_add_add_bne]
@@ -376,7 +381,7 @@ local macro "run_step" : tactic =>
           (.add (.reg (.low rd .W64)) (.regOrMem (.reg (.low rs .W64))))))
     ⦃ Q; E ⦄ := by
   refine Triple.intro fun s hpre => ?_
-  refine Program.wp_single fun _ _ _ _ hn _ => ?_
+  refine Program.WP.wp_single fun _ _ _ _ hn _ => ?_
   run_step
   exact hn _ hpre
 
@@ -385,7 +390,7 @@ local macro "run_step" : tactic =>
       ((@Kraken.Directive.instr Instr ConstExpr) (.regular asz .W64 (.mov (.reg (.low rd .W64)) (.regOrMem (.reg (.low rs .W64))))))
     ⦃ Q; E ⦄ := by
   refine Triple.intro fun s hpre => ?_
-  refine Program.wp_single fun _ _ _ _ hn _ => ?_
+  refine Program.WP.wp_single fun _ _ _ _ hn _ => ?_
   run_step
   exact hn _ hpre
 
@@ -395,7 +400,7 @@ local macro "run_step" : tactic =>
         { base := some .rip, idx := none, disp := .sub (.label l) .after_current_instruction })))
     ⦃ Q; E ⦄ := by
   refine Triple.intro fun s hpre => ?_
-  refine Program.wp_single fun _ _ _ _ hn _ => ?_
+  refine Program.WP.wp_single fun _ _ _ _ hn _ => ?_
   run_step
   simp only [AddrExpr.interp, ConstExpr.interp, Int.add_zero]
   rw [show BitVec.zeroExtend Width.W64.bits (BitVec.ofInt Width.W64.bits
@@ -412,7 +417,7 @@ local macro "run_step" : tactic =>
           (.cmp (.reg (.low ra .W64)) (.regOrMem (.reg (.low rb .W64))))))
     ⦃ Q; E ⦄ := by
   refine Triple.intro fun s hpre => ?_
-  refine Program.wp_single fun _ _ _ _ hn _ => ?_
+  refine Program.WP.wp_single fun _ _ _ _ hn _ => ?_
   run_step
   exact hn _ hpre
 
@@ -424,7 +429,7 @@ local macro "run_step" : tactic =>
           (.test (.reg (.low ra .W64)) (.regOrMem (.reg (.low rb .W64))))))
     ⦃ Q; E ⦄ := by
   refine Triple.intro fun s hpre => ?_
-  refine Program.wp_single fun _ _ _ _ hn _ => ?_
+  refine Program.WP.wp_single fun _ _ _ _ hn _ => ?_
   run_step
   intro af
   exact hn _ (hpre af)
@@ -439,10 +444,10 @@ local macro "run_step" : tactic =>
   refine Triple.intro fun s hpre => ?_
   obtain ⟨hmapped, hpre⟩ := hpre
   obtain ⟨i, hload⟩ := Option.isSome_iff_exists.mp hmapped
-  refine Program.wp_single fun _ _ _ _ hn _ => ?_
+  refine Program.WP.wp_single fun _ _ _ _ hn _ => ?_
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
     RegOrMem.interp, MachineData.load, MachineData.set, MachineData.setReg,
-    AddrExpr.zeroExtend_interp_base_disp, Width.bytes, hload, Effects.All, Effects.All_require_read_access, Effects.All_require_write_access, ite_true]
+    AddrExpr.zeroExtend_interp_base_disp, Width.bytes, hload, Effects.All, Effects.All_require_read_access]
   exact hn _ (by rwa [hload, Option.get!_some] at hpre)
 
 @[spec] public theorem mov_mem_reg8 (b : Reg64) (d : Int64) (r : Reg64) :
@@ -456,10 +461,10 @@ local macro "run_step" : tactic =>
   refine Triple.intro fun s hpre => ?_
   obtain ⟨hmapped, hpre⟩ := hpre
   obtain ⟨i, hload⟩ := Option.isSome_iff_exists.mp hmapped
-  refine Program.wp_single fun _ _ _ _ hn _ => ?_
+  refine Program.WP.wp_single fun _ _ _ _ hn _ => ?_
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
     RegOrMem.interp, MachineData.set, MachineData.store,
-    AddrExpr.zeroExtend_interp_base_disp, Width.bytes, hload, Effects.All, Effects.All_require_read_access, Effects.All_require_write_access, ite_true]
+    AddrExpr.zeroExtend_interp_base_disp, Width.bytes, hload, Effects.All, Effects.All_require_write_access]
   exact hn _ hpre
 
 @[spec] public theorem mov_reg16_mem (r b : Reg64) (d : Int64) :
@@ -472,10 +477,10 @@ local macro "run_step" : tactic =>
   refine Triple.intro fun s hpre => ?_
   obtain ⟨hmapped, hpre⟩ := hpre
   obtain ⟨i, hload⟩ := Option.isSome_iff_exists.mp hmapped
-  refine Program.wp_single fun _ _ _ _ hn _ => ?_
+  refine Program.WP.wp_single fun _ _ _ _ hn _ => ?_
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
     RegOrMem.interp, MachineData.load, MachineData.set, MachineData.setReg,
-    AddrExpr.zeroExtend_interp_base_disp, Width.bytes, hload, Effects.All, Effects.All_require_read_access, Effects.All_require_write_access]
+    AddrExpr.zeroExtend_interp_base_disp, Width.bytes, hload, Effects.All, Effects.All_require_read_access]
   exact hn _ (by rwa [hload, Option.get!_some] at hpre)
 
 @[spec] public theorem mov_mem_reg16 (b : Reg64) (d : Int64) (r : Reg64) :
@@ -489,10 +494,10 @@ local macro "run_step" : tactic =>
   refine Triple.intro fun s hpre => ?_
   obtain ⟨hmapped, hpre⟩ := hpre
   obtain ⟨i, hload⟩ := Option.isSome_iff_exists.mp hmapped
-  refine Program.wp_single fun _ _ _ _ hn _ => ?_
+  refine Program.WP.wp_single fun _ _ _ _ hn _ => ?_
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
     RegOrMem.interp, MachineData.set, MachineData.store,
-    AddrExpr.zeroExtend_interp_base_disp, Width.bytes, hload, Effects.All, Effects.All_require_read_access, Effects.All_require_write_access]
+    AddrExpr.zeroExtend_interp_base_disp, Width.bytes, hload, Effects.All, Effects.All_require_write_access]
   exact hn _ hpre
 
 @[spec] public theorem mov_reg32_mem (r b : Reg64) (d : Int64) :
@@ -505,10 +510,10 @@ local macro "run_step" : tactic =>
   refine Triple.intro fun s hpre => ?_
   obtain ⟨hmapped, hpre⟩ := hpre
   obtain ⟨i, hload⟩ := Option.isSome_iff_exists.mp hmapped
-  refine Program.wp_single fun _ _ _ _ hn _ => ?_
+  refine Program.WP.wp_single fun _ _ _ _ hn _ => ?_
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
     RegOrMem.interp, MachineData.load, MachineData.set, MachineData.setReg,
-    AddrExpr.zeroExtend_interp_base_disp, Width.bytes, hload, Effects.All, Effects.All_require_read_access, Effects.All_require_write_access]
+    AddrExpr.zeroExtend_interp_base_disp, Width.bytes, hload, Effects.All, Effects.All_require_read_access]
   exact hn _ (by rwa [hload, Option.get!_some] at hpre)
 
 @[spec] public theorem mov_mem_reg32 (b : Reg64) (d : Int64) (r : Reg64) :
@@ -522,10 +527,10 @@ local macro "run_step" : tactic =>
   refine Triple.intro fun s hpre => ?_
   obtain ⟨hmapped, hpre⟩ := hpre
   obtain ⟨i, hload⟩ := Option.isSome_iff_exists.mp hmapped
-  refine Program.wp_single fun _ _ _ _ hn _ => ?_
+  refine Program.WP.wp_single fun _ _ _ _ hn _ => ?_
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp,
     RegOrMem.interp, MachineData.set, MachineData.store,
-    AddrExpr.zeroExtend_interp_base_disp, Width.bytes, hload, Effects.All, Effects.All_require_read_access, Effects.All_require_write_access]
+    AddrExpr.zeroExtend_interp_base_disp, Width.bytes, hload, Effects.All, Effects.All_require_write_access]
   exact hn _ hpre
 
 @[spec] public theorem xor_reg_reg (asz : Width) (rd rs : Reg64) :
@@ -536,7 +541,7 @@ local macro "run_step" : tactic =>
           (.xor (.reg (.low rd .W64)) (.regOrMem (.reg (.low rs .W64))))))
     ⦃ Q; E ⦄ := by
   refine Triple.intro fun s hpre => ?_
-  refine Program.wp_single fun _ _ _ _ hn _ => ?_
+  refine Program.WP.wp_single fun _ _ _ _ hn _ => ?_
   run_step
   intro af
   exact hn _ (hpre af)
@@ -547,7 +552,7 @@ local macro "run_step" : tactic =>
       ((@Kraken.Directive.instr Instr ConstExpr) (.regular asz .W64 (.dec (.reg (.low r .W64)))))
     ⦃ Q; E ⦄ := by
   refine Triple.intro fun s hpre => ?_
-  refine Program.wp_single fun _ _ _ _ hn _ => ?_
+  refine Program.WP.wp_single fun _ _ _ _ hn _ => ?_
   run_step
   exact hn _ hpre
 
@@ -557,7 +562,7 @@ local macro "run_step" : tactic =>
       ((@Kraken.Directive.instr Instr ConstExpr) (.regular asz .W64 (.inc (.reg (.low r .W64)))))
     ⦃ Q; E ⦄ := by
   refine Triple.intro fun s hpre => ?_
-  refine Program.wp_single fun _ _ _ _ hn _ => ?_
+  refine Program.WP.wp_single fun _ _ _ _ hn _ => ?_
   run_step
   exact hn _ hpre
 
@@ -570,7 +575,7 @@ local macro "run_step" : tactic =>
           (.xor (.reg (.low rd .W32)) (.regOrMem (.reg (.low rs .W32))))))
     ⦃ Q; E ⦄ := by
   refine Triple.intro fun s hpre => ?_
-  refine Program.wp_single fun _ _ _ _ hn _ => ?_
+  refine Program.WP.wp_single fun _ _ _ _ hn _ => ?_
   run_step
   simp only [Reg64s.get_low_W32, Reg64s.set_low_W32]
   intro af
@@ -581,7 +586,7 @@ local macro "run_step" : tactic =>
         Q () { s with status := StatusFlags.ofSub (s.regs.get64 r) (BitVec.setWidth 64 i.toBitVec) } ⦄
       ((@Kraken.Directive.instr Instr ConstExpr) (.regular asz .W64 (.cmp (.reg (.low r .W64)) (.imm (.int64 i)))))
     ⦃ Q; E ⦄ :=
-  Triple.intro fun _ hq => Program.wp_single fun _ _ _ _ hn _ => by run_step; exact hn _ hq
+  Triple.intro fun _ hq => Program.WP.wp_single fun _ _ _ _ hn _ => by run_step; exact hn _ hq
 
 @[spec] public theorem and_reg_imm (asz : Width) (r : Reg64) (i : Int64) :
     ⦃ fun s =>
@@ -589,7 +594,7 @@ local macro "run_step" : tactic =>
         ∀ af : Bool, Q () { s with regs := s.regs.set64 r v, status := StatusFlags.ofLogic v af } ⦄
       ((@Kraken.Directive.instr Instr ConstExpr) (.regular asz .W64 (.and (.reg (.low r .W64)) (.imm (.int64 i)))))
     ⦃ Q; E ⦄ :=
-  Triple.intro fun _ hq => Program.wp_single fun _ _ _ _ hn _ => by run_step; exact fun af => hn _ (hq af)
+  Triple.intro fun _ hq => Program.WP.wp_single fun _ _ _ _ hn _ => by run_step; exact fun af => hn _ (hq af)
 
 @[spec] public theorem shl_reg32_imm (asz : Width) (r : Reg64) (i : Int64) :
     ⦃ fun s =>
@@ -599,7 +604,7 @@ local macro "run_step" : tactic =>
           status := st } ⦄
       ((@Kraken.Directive.instr Instr ConstExpr) (.regular asz .W32 (.shl (.reg (.low r .W32)) (.imm8 (.int64 i)))))
     ⦃ Q; E ⦄ := by
-  refine Triple.intro fun s ⟨hz, hq⟩ => Program.wp_single fun _ _ _ _ hn _ => ?_
+  refine Triple.intro fun s ⟨hz, hq⟩ => Program.WP.wp_single fun _ _ _ _ hn _ => ?_
   have hc : ∀ (L : Labels) rng,
       @ShiftCountExpr.interpMasked L (.imm8 (.int64 i)) s rng Width.W32
         = i.toBitVec.toNat % 32 := fun _ _ => by
@@ -608,7 +613,7 @@ local macro "run_step" : tactic =>
       Nat.and_two_pow_sub_one_eq_mod, Nat.mod_mod_of_dvd _ (by decide)]
   simp only [Directive.interp, Instr.interp, Operation.interp, RegOrMem.interp,
     MachineData.set, MachineData.setReg, Reg64s.get_low_W32, Reg64s.set_low_W32, hc, hz,
-    beq_iff_eq, ite_false, Effects.All, Effects.All_require_read_access, Effects.All_require_write_access]
+    beq_iff_eq, ite_false, Effects.All]
   repeat (first | exact hn _ (hq _) | intro _ | split | simp only [Effects.All, Effects.All_require_read_access, Effects.All_require_write_access])
 
 local macro "run_avx" : tactic =>
@@ -619,14 +624,14 @@ local macro "run_avx" : tactic =>
     ⦃ fun s => Q () { s with zmms := s.zmms.set dst (s.zmms.get src1 ^^^ s.zmms.get src2) } ⦄
       ((@Kraken.Directive.instr Instr ConstExpr) (.avx asz w (.vxorps dst src1 (.avx src2))))
     ⦃ Q; E ⦄ :=
-  Triple.intro fun _ hq => Program.wp_single fun _ _ _ _ hn _ => by run_avx; exact hn _ hq
+  Triple.intro fun _ hq => Program.WP.wp_single fun _ _ _ _ hn _ => by run_avx; exact hn _ hq
 
 @[spec] public theorem vaddps_vreg_vreg_vreg {w : AvxWidth} (asz : Width) (dst src1 src2 : AvxReg w) :
     ⦃ fun s => Q () { s with zmms := (s.zmms.set dst
         (BitVec.packedBinOp 32 (sseBinOp (· + ·)) (s.zmms.get src1) (s.zmms.get src2))) } ⦄
       ((@Kraken.Directive.instr Instr ConstExpr) (.avx asz w (.vaddps dst src1 (.avx src2))))
     ⦃ Q; E ⦄ :=
-  Triple.intro fun _ hq => Program.wp_single fun _ _ _ _ hn _ => by run_avx; exact hn _ hq
+  Triple.intro fun _ hq => Program.WP.wp_single fun _ _ _ _ hn _ => by run_avx; exact hn _ hq
 
 @[spec] public theorem vshufps_vreg_vreg_vreg_imm {w : AvxWidth} (asz : Width) (dst src1 src2 : AvxReg w)
     (imm : UInt8) :
@@ -634,7 +639,7 @@ local macro "run_avx" : tactic =>
         (BitVec.packedBinOp 128 (BitVec.shufps128 imm) (s.zmms.get src1) (s.zmms.get src2))) } ⦄
       ((@Kraken.Directive.instr Instr ConstExpr) (.avx asz w (.vshufps dst src1 (.avx src2) imm)))
     ⦃ Q; E ⦄ :=
-  Triple.intro fun _ hq => Program.wp_single fun _ _ _ _ hn _ => by run_avx; exact hn _ hq
+  Triple.intro fun _ hq => Program.WP.wp_single fun _ _ _ _ hn _ => by run_avx; exact hn _ hq
 
 @[spec] public theorem vextractf128_vreg_vreg_imm {w : AvxWidth} (asz : Width) (dst : AvxReg .W128)
     (src : AvxReg .W256) (imm : UInt8) :
@@ -642,21 +647,21 @@ local macro "run_avx" : tactic =>
         ((s.zmms.get src).extractLsb' (128 * (imm.toNat % 2)) 128)) } ⦄
       ((@Kraken.Directive.instr Instr ConstExpr) (.avx asz w (.vextractf128 dst src imm)))
     ⦃ Q; E ⦄ :=
-  Triple.intro fun _ hq => Program.wp_single fun _ _ _ _ hn _ => by run_avx; exact hn _ hq
+  Triple.intro fun _ hq => Program.WP.wp_single fun _ _ _ _ hn _ => by run_avx; exact hn _ hq
 
 @[spec] public theorem vmovhlps_vreg_vreg_vreg {w : AvxWidth} (asz : Width) (dst src1 src2 : AvxReg .W128) :
     ⦃ fun s => Q () { s with zmms := (s.zmms.set dst
         ((s.zmms.get src1).extractLsb' 64 64 ++ (s.zmms.get src2).extractLsb' 64 64)) } ⦄
       ((@Kraken.Directive.instr Instr ConstExpr) (.avx asz w (.vmovhlps dst src1 src2)))
     ⦃ Q; E ⦄ :=
-  Triple.intro fun _ hq => Program.wp_single fun _ _ _ _ hn _ => by run_avx; exact hn _ hq
+  Triple.intro fun _ hq => Program.WP.wp_single fun _ _ _ _ hn _ => by run_avx; exact hn _ hq
 
 @[spec] public theorem vmovss_vreg_vreg_vreg {w : AvxWidth} (asz : Width) (dst src1 src2 : AvxReg .W128) :
     ⦃ fun s => Q () { s with zmms := (s.zmms.set dst
         ((s.zmms.get src1).extractLsb' 32 96 ++ (s.zmms.get src2).extractLsb' 0 32)) } ⦄
       ((@Kraken.Directive.instr Instr ConstExpr) (.avx asz w (.vmovss dst src1 src2)))
     ⦃ Q; E ⦄ :=
-  Triple.intro fun _ hq => Program.wp_single fun _ _ _ _ hn _ => by run_avx; exact hn _ hq
+  Triple.intro fun _ hq => Program.WP.wp_single fun _ _ _ _ hn _ => by run_avx; exact hn _ hq
 
 @[spec] public theorem vaddss_vreg_vreg_vreg {w : AvxWidth} (asz : Width) (dst src1 src2 : AvxReg .W128) :
     ⦃ fun s => Q () { s with zmms := (s.zmms.set dst
@@ -665,13 +670,13 @@ local macro "run_avx" : tactic =>
             ((s.zmms.get src2).extractLsb' 0 32))) } ⦄
       ((@Kraken.Directive.instr Instr ConstExpr) (.avx asz w (.vaddss dst src1 src2)))
     ⦃ Q; E ⦄ :=
-  Triple.intro fun _ hq => Program.wp_single fun _ _ _ _ hn _ => by run_avx; exact hn _ hq
+  Triple.intro fun _ hq => Program.WP.wp_single fun _ _ _ _ hn _ => by run_avx; exact hn _ hq
 
 @[spec] public theorem vzeroupper {w : AvxWidth} (asz : Width) :
     ⦃ fun s => Q () { s with zmms := s.zmms.zeroUpper } ⦄
       ((@Kraken.Directive.instr Instr ConstExpr) (.avx asz w .vzeroupper))
     ⦃ Q; E ⦄ :=
-  Triple.intro fun _ hq => Program.wp_single fun _ _ _ _ hn _ => by run_avx; exact hn _ hq
+  Triple.intro fun _ hq => Program.WP.wp_single fun _ _ _ _ hn _ => by run_avx; exact hn _ hq
 
 @[spec] public theorem vmovups_vreg_sib1 (y : AvxReg .W256) (b i : Reg64) (d : Int64) :
     ⦃ fun s =>
@@ -683,11 +688,11 @@ local macro "run_avx" : tactic =>
     ⦃ Q; E ⦄ := by
   refine Triple.intro fun s ⟨hsome, hq⟩ => ?_
   obtain ⟨v, hv⟩ := Option.isSome_iff_exists.mp hsome
-  refine Program.wp_single fun _ _ _ _ hn _ => ?_
+  refine Program.WP.wp_single fun _ _ _ _ hn _ => ?_
   simp only [Directive.interp, Instr.interp, AvxOperation.interp, AvxRegOrMem.interp,
     MachineData.setAvx, MachineData.setAvxReg, MachineData.loadAvx,
     AddrExpr.zeroExtend_interp_sib1, hv, Bool.false_and, Bool.false_eq_true, ite_false,
-    Effects.All, Effects.All_require_read_access, Effects.All_require_write_access]
+    Effects.All, Effects.All_require_read_access]
   exact hn _ (by rwa [hv, Option.get!_some] at hq)
 
 @[spec] public theorem vfmadd231ps_vreg_vreg_sib1 (dst src1 : AvxReg .W256) (b i : Reg64)
@@ -703,10 +708,10 @@ local macro "run_avx" : tactic =>
     ⦃ Q; E ⦄ := by
   refine Triple.intro fun s ⟨hsome, hq⟩ => ?_
   obtain ⟨v, hv⟩ := Option.isSome_iff_exists.mp hsome
-  refine Program.wp_single fun _ _ _ _ hn _ => ?_
+  refine Program.WP.wp_single fun _ _ _ _ hn _ => ?_
   simp only [Directive.interp, Instr.interp, AvxOperation.interp, AvxRegOrMem.interp,
     MachineData.setAvxReg, MachineData.loadAvx, AddrExpr.zeroExtend_interp_sib1, hv,
-    Bool.false_and, Bool.false_eq_true, ite_false, Effects.All, Effects.All_require_read_access, Effects.All_require_write_access]
+    Bool.false_and, Bool.false_eq_true, ite_false, Effects.All, Effects.All_require_read_access]
   exact hn _ (by rwa [hv, Option.get!_some] at hq)
 
 @[spec] public theorem vmovaps_vreg_sib1 (x : AvxReg .W128) (b i : Reg64) (d : Int64) :
@@ -719,11 +724,11 @@ local macro "run_avx" : tactic =>
     ⦃ Q; E ⦄ := by
   refine Triple.intro fun s ⟨hal, hsome, hq⟩ => ?_
   obtain ⟨v, hv⟩ := Option.isSome_iff_exists.mp hsome
-  refine Program.wp_single fun _ _ _ _ hn _ => ?_
+  refine Program.WP.wp_single fun _ _ _ _ hn _ => ?_
   simp only [Directive.interp, Instr.interp, AvxOperation.interp, AvxRegOrMem.interp,
     MachineData.setAvx, MachineData.setAvxReg, MachineData.loadAvx,
     AddrExpr.zeroExtend_interp_sib1, hal, hv, AvxWidth.bytes, Bool.not_true, Bool.and_false,
-    Bool.false_eq_true, ite_false, Effects.All, Effects.All_require_read_access, Effects.All_require_write_access]
+    Bool.false_eq_true, ite_false, Effects.All, Effects.All_require_read_access]
   exact hn _ (by rwa [hv, Option.get!_some] at hq)
 
 @[spec] public theorem vmulps_vreg_vreg_sib1 (dst src1 : AvxReg .W128) (b i : Reg64) (d : Int64) :
@@ -738,17 +743,17 @@ local macro "run_avx" : tactic =>
     ⦃ Q; E ⦄ := by
   refine Triple.intro fun s ⟨hsome, hq⟩ => ?_
   obtain ⟨v, hv⟩ := Option.isSome_iff_exists.mp hsome
-  refine Program.wp_single fun _ _ _ _ hn _ => ?_
+  refine Program.WP.wp_single fun _ _ _ _ hn _ => ?_
   simp only [Directive.interp, Instr.interp, AvxOperation.interp, AvxRegOrMem.interp,
     MachineData.setAvxReg, MachineData.loadAvx, AddrExpr.zeroExtend_interp_sib1, hv,
-    Bool.false_and, Bool.false_eq_true, ite_false, Effects.All, Effects.All_require_read_access, Effects.All_require_write_access]
+    Bool.false_and, Bool.false_eq_true, ite_false, Effects.All, Effects.All_require_read_access]
   exact hn _ (by rwa [hv, Option.get!_some] at hq)
 
 @[spec] public theorem jmp_label (asz osz : Width) (l : Label) :
     ⦃ fun s => E (label l) s ⦄
       ((@Kraken.Directive.instr Instr ConstExpr) (.regular asz osz (.jmp (.rel (.sub (.label l) .after_current_instruction)))))
     ⦃ Q; E ⦄ :=
-  Triple.intro fun s hq => Program.wp_single fun _ _ _ _ _ hj => by
+  Triple.intro fun s hq => Program.WP.wp_single fun _ _ _ _ _ hj => by
     run_step
     rw [Int64.ofBitVec_toBitVec, Int64.add_sub_self_left]
     refine hj (label l) s ?_
@@ -761,7 +766,7 @@ attribute [grind =] Int64.ofBitVec_toBitVec
     ⦃ fun s => E (Int64.ofBitVec (s.regs.get64 r)) s ⦄
       ((@Kraken.Directive.instr Instr ConstExpr) (.regular asz osz (.jmp (.reg (.low r .W64)))))
     ⦃ Q; E ⦄ :=
-  Triple.intro fun s hq => Program.wp_single fun _ _ _ _ _ hj => by
+  Triple.intro fun s hq => Program.WP.wp_single fun _ _ _ _ _ hj => by
     run_step
     refine hj _ s ?_
     rw [Executable.StepOut.of_not_below_data (MachineData.not_stackBelow_self s)]
@@ -771,7 +776,7 @@ attribute [grind =] Int64.ofBitVec_toBitVec
     ⦃ fun s => (cc.interp s.status = true → E (label l) s) ∧ (cc.interp s.status = false → Q () s) ⦄
       ((@Kraken.Directive.instr Instr ConstExpr) (.regular asz osz (.jcc cc l)))
     ⦃ Q; E ⦄ :=
-  Triple.intro fun s ⟨hjmp, hfall⟩ => Program.wp_single fun _ _ _ _ hn hj => by
+  Triple.intro fun s ⟨hjmp, hfall⟩ => Program.WP.wp_single fun _ _ _ _ hn hj => by
     run_step
     cases hc : CondCode.interp cc s.status <;> simp only [Bool.false_eq_true, ite_true, ite_false]
     · exact hn _ (hfall hc)
@@ -788,9 +793,9 @@ attribute [grind =] Int64.ofBitVec_toBitVec
   refine Triple.intro fun s hpre => ?_
   obtain ⟨hmapped, hpre⟩ := hpre
   obtain ⟨i, hload⟩ := Option.isSome_iff_exists.mp hmapped
-  refine Program.wp_single fun _ _ _ _ hn _ => ?_
+  refine Program.WP.wp_single fun _ _ _ _ hn _ => ?_
   simp only [Directive.interp, Instr.interp, Operation.interp, Operand.interp, RegOrMem.interp,
-    MachineData.store, Reg64s.get_low_W64, Width.bytes, hload, Effects.All, Effects.All_require_read_access, Effects.All_require_write_access]
+    MachineData.store, Reg64s.get_low_W64, Width.bytes, hload, Effects.All, Effects.All_require_write_access]
   exact hn _ hpre
 
 @[spec] public theorem pop_reg (rd : Reg64) :
@@ -803,9 +808,9 @@ attribute [grind =] Int64.ofBitVec_toBitVec
   refine Triple.intro fun s hpre => ?_
   obtain ⟨hmapped, hpre⟩ := hpre
   obtain ⟨i, hload⟩ := Option.isSome_iff_exists.mp hmapped
-  refine Program.wp_single fun _ _ _ _ hn _ => ?_
+  refine Program.WP.wp_single fun _ _ _ _ hn _ => ?_
   simp only [Directive.interp, Instr.interp, Operation.interp, MachineData.load, MachineData.set,
-    MachineData.setReg, Reg64s.set_low_W64, Width.bytes, hload, Effects.All, Effects.All_require_read_access, Effects.All_require_write_access]
+    MachineData.setReg, Reg64s.set_low_W64, Width.bytes, hload, Effects.All, Effects.All_require_read_access]
   exact hn _ (by rwa [hload, Option.get!_some] at hpre)
 
 @[spec] public theorem ret (asz osz : Width) :
@@ -823,9 +828,9 @@ attribute [grind =] Int64.ofBitVec_toBitVec
     cases hl : Mem.loadInt s.dmem (s.regs.get64 .rsp) 8 with
     | none => rw [hl] at hra; exact absurd hra (by simp)
     | some i => exact ⟨i, rfl, by rw [hl] at hra; simpa using hra⟩
-  refine Program.wp_single fun _ _ _ _ _ hj => ?_
+  refine Program.WP.wp_single fun _ _ _ _ _ hj => ?_
   simp only [Directive.interp, Instr.interp, Operation.interp, MachineData.load, hi,
-    Effects.All, Effects.All_require_read_access, Effects.All_require_write_access, hval]
+    Effects.All, Effects.All_require_read_access, hval]
   refine hj ra { s with regs := s.regs.set64 .rsp (s.regs.get64 .rsp + 8#64) } ?_
   rw [Executable.StepOut.of_not_below_data (MachineData.not_stackBelow_pop s)]
   exact hexit
@@ -842,11 +847,14 @@ attribute [grind =] Int64.ofBitVec_toBitVec
     refine Triple.intro fun s ⟨_, hbody⟩ => ?_
     have hw := hbody 0
     simp only [FunDecls.body, hg, Option.map_none, Option.getD_none] at hw
+    rw [Program.WP.wp_def] at hw
     exact (Program.wp_nil_elim hw ⟨0, List.nil_isInfixAt _ _⟩).elim
   | some g =>
     refine Triple.intro fun s ⟨hmapped, hbody⟩ => (wp_call_iff hg).mpr fun [h : Embeds _] =>
       ⟨Mem.Mapped.loadInt_isSome hmapped (Mem.Blocks.Inside.base (Nat.le_refl _)), ?_⟩
-    refine Program.wp_mono (fun _ h => h) (fun u hu => ?_) (hbody h.embedding.endAddr)
+    have hbody' := hbody h.embedding.endAddr
+    rw [Program.WP.wp_def] at hbody' ⊢
+    refine Program.wp_mono (fun _ h => h) (fun u hu => ?_) hbody'
     by_cases hpc : u.pc = h.embedding.endAddr
     · simp only [hpc, ite_true]
       exact hu.1 hpc
