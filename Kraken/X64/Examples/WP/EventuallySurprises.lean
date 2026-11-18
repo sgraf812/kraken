@@ -61,7 +61,7 @@ local macro "pc_mem" : tactic =>
 set_option hygiene false in
 local macro "estep " i:num " [" ids:ident,* "]" : tactic =>
   `(tactic| (
-    apply step_cps
+    refine Eventually.step _ _ ?_ fun _ => id
     apply Host.step1_addrOf (hcell $i (by decide)) (Host.instr_size_pos _ _ (hP $i (by decide)) (by rintro ⟨⟩))
     simp only [$[$ids:ident],*, List.cons_append, List.nil_append]
     step_simp))
@@ -122,8 +122,7 @@ theorem p₁_ends_rax7 (s : MachineData) :
 theorem p₁_not_ends_rax8 [H : Embeds p₁] (s : MachineData) :
     ¬ WP.wp p₁ (fun _ t => t.regs.get64 .rax = 8) (fun _ _ => False) s := by
   intro hw
-  have hw : Program.wp p₁ (fun st => st.data.regs.get64 .rax = 8) (fun _ => False) s := hw
-  rw [Program.wp_eq] at hw
+  rw [Program.WP.wp_def, Program.wp_eq] at hw
   have hw := @hw H
   have hk := H.embedding.isInfixAt
   change While (fun st : MachineState => st.pc ≠ Host.addrOf (H.embedding.start + p₁.length)) _ _
@@ -191,8 +190,7 @@ theorem p₂_ends_rax8_eventually {k : Nat} (hk : (p₂ ++ q₂).IsInfixAt Host.
 theorem p₂_no_wp [H : Embeds p₂] (Q : Unit → MachineData → Prop) (s : MachineData) :
     ¬ WP.wp p₂ Q (fun _ _ => False) s := by
   intro hw
-  have hw : Program.wp p₂ (fun st => Q () st.data) (fun _ => False) s := hw
-  rw [Program.wp_eq] at hw
+  rw [Program.WP.wp_def, Program.wp_eq] at hw
   have hw := @hw H
   have hk := H.embedding.isInfixAt
   change While (fun st : MachineState => st.pc ≠ Host.addrOf (H.embedding.start + p₂.length)) _ _

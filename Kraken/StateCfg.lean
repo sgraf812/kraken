@@ -152,8 +152,7 @@ theorem cfg {p : Program} {s₀ : MachineData} {Q : Unit → MachineData → Pro
         (Program.Intercept (Program.labels p) s₀
           (fun l j s => I (s₀ := s₀) l s ∧ Program.Decreases var blk.label blk.idx t l j s) E) t) :
     WP.wp p Q E s₀ := by
-  show Program.wp p (fun st => Q () st.data) (fun st => E st.pc st.data) s₀
-  rw [Program.wp_eq]
+  rw [Program.WP.wp_def, Program.wp_eq]
   intro H
   have hlink := H.embedding.isInfixAt
   have hnd : (Program.labels p).Nodup := Program.labels_nodup_of_embeds
@@ -239,7 +238,7 @@ theorem cfg {p : Program} {s₀ : MachineData} {Q : Unit → MachineData → Pro
         rw [← Nat.add_assoc, Host.addrOf_succ hlab', Host.label_size _ _ hlab']; simp
       rw [← haddr]
       refine Program.run_infix (o := i + 1) hbody (by omega) (Program.blockAt_noInternal hblk)
-        (hb s hI) ?_ ?_
+        (Program.WP.wp_def.mp (hb s hI)) ?_ ?_
       · intro st hpc hnext
         cases hn : blk.next with
         | none =>
@@ -272,7 +271,7 @@ theorem cfg {p : Program} {s₀ : MachineData} {Q : Unit → MachineData → Pro
   have hlen0 := congrArg List.length (Program.view_eq_entry hnd)
   simp only [List.length_append] at hlen0
   refine Program.run_infix (o := 0) hq (by omega) (Program.entry_noInternal p)
-    (h _ (Program.entryBlock_mem_blocks p) s₀ rfl) ?_ ?_
+    (Program.WP.wp_def.mp (h _ (Program.entryBlock_mem_blocks p) s₀ rfl)) ?_ ?_
   · intro st hpc hnext
     simp only [Program.entryBlock] at hnext hlen0
     cases hv : (Program.view p).2 with

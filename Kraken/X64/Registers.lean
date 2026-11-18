@@ -282,7 +282,7 @@ theorem BitVec.unsigned_add_add_bne {w} (a b : BitVec w) (c : Bool) :
   have ha := a.isLt; have hb := b.isLt
   have hc : c.toNat ≤ 1 := Bool.toNat_le c
   have hsum : ((a + b + BitVec.ofNat w c.toNat).toNat) = (a.toNat + b.toNat + c.toNat) % 2 ^ w := by
-    simp only [BitVec.toNat_add, BitVec.natCast_eq_ofNat, BitVec.toNat_ofNat, Nat.add_mod_mod, Nat.mod_add_mod]
+    simp only [BitVec.toNat_add, BitVec.toNat_ofNat, Nat.add_mod_mod, Nat.mod_add_mod]
   rw [BitVec.carry_width]
   apply Bool.eq_iff_iff.mpr
   simp only [bne_iff_ne, ne_eq, decide_eq_true_eq, BitVec.unsigned, hsum]
@@ -300,7 +300,7 @@ theorem BitVec.unsigned_take_add_add_bne {w} (a b : BitVec w) (c : Bool) (hw : 4
     simp only [BitVec.take, BitVec.extractLsb'_toNat, Nat.shiftRight_zero]
   have hsum : ((a + b + BitVec.ofNat w c.toNat).take 4).toNat = (a.toNat + b.toNat + c.toNat) % 16 := by
     rw [htake]
-    simp only [BitVec.toNat_add, BitVec.natCast_eq_ofNat, BitVec.toNat_ofNat, Nat.add_mod_mod, Nat.mod_add_mod]
+    simp only [BitVec.toNat_add, BitVec.toNat_ofNat, Nat.add_mod_mod, Nat.mod_add_mod]
     exact Nat.mod_mod_of_dvd _ hdvd
   apply Bool.eq_iff_iff.mpr
   simp only [BitVec.carry, bne_iff_ne, ne_eq, decide_eq_true_eq, BitVec.unsigned, hsum, htake]

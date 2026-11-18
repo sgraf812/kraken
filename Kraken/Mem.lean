@@ -18,12 +18,10 @@ open Std
 open Std.ExtHashMap
 open List
 
-def List.allSome {α} (l : List (Option α)) : Option (List α) := l.mapM id
-
 abbrev Mem (w) := ExtHashMap (BitVec w) UInt8
 
 def Mem.loadBytes {w} (m : Mem w) (a : BitVec w) (n : Nat) : Option (List UInt8) :=
-  ((List.range n).map (fun i => m.get? (a + .ofNat _ i))).allSome
+  ((List.range n).map (fun i => m.get? (a + .ofNat _ i))).mapM id
 
 def Mem.loadInt {w} (m : Mem w) (a : BitVec w) (n : Nat) : Option Int :=
   (loadBytes m a n).map Int.ofBytes
@@ -141,23 +139,23 @@ private theorem List.mapM_loop_id_some {α : Type} (xs : List α) (acc : List α
   | nil => simp [List.mapM.loop]
   | cons x xs ih => simp [List.mapM.loop, ih (x :: acc)]
 
-theorem List.allSome_map_some {α : Type} (l : List α) : List.allSome (l.map some) = some l := by
-  dsimp [List.allSome, List.mapM]
+theorem List.mapM_id_map_some {α : Type} (l : List α) : (l.map some).mapM id = some l := by
+  dsimp [List.mapM]
   rw [List.mapM_loop_id_some l []]
   simp
 
 /-- A list of options that reads as `some xs` is `xs` under `some`. -/
-theorem List.allSome_eq_map_some {α : Type} :
-    ∀ {l : List (Option α)} {xs : List α}, l.allSome = some xs → l = xs.map some := by
+theorem List.mapM_id_eq_map_some {α : Type} :
+    ∀ {l : List (Option α)} {xs : List α}, l.mapM id = some xs → l = xs.map some := by
   intro l
   induction l with
-  | nil => intro xs h; simp [List.allSome] at h; simp [← h]
+  | nil => intro xs h; simp at h; simp [← h]
   | cons o l ih =>
     intro xs h
     cases o with
-    | none => simp [List.allSome] at h
+    | none => simp [id] at h
     | some a =>
-      simp only [List.allSome, List.mapM_cons, id, Option.bind_some] at h
+      simp only [List.mapM_cons, id] at h
       cases hl : (l.mapM id) with
       | none => rw [hl] at h; exact absurd h (by simp)
       | some ys =>
@@ -189,7 +187,7 @@ theorem Mem.loadBytes_storeBytes {w} (m : Mem w) (a : BitVec w) (bs : List UInt8
       (fun i => (m.storeBytes a bs).get? (a + .ofNat w i))
     = (List.range bs.length).map (fun i => bs[i]?) from
       List.map_congr_left (fun i hi => hget i (List.mem_range.mp hi)),
-    List.map_range_getElem?, List.allSome_map_some]
+    List.map_range_getElem?, List.mapM_id_map_some]
 
 /-- A load reads back the value the store at that address and width wrote,
 narrowed to that width. -/
@@ -207,7 +205,7 @@ theorem Mem.loadInt_storeInt {w} (m : Mem w) (a : BitVec w) (n : Nat) (v : Int)
 theorem Mem.loadInt_one {w} (m : Mem w) (a : BitVec w) :
     m.loadInt a 1 = (m.get? a).map (fun b => (b.toNat : Int)) := by
   simp only [Mem.loadInt, Mem.loadBytes, List.range_one, List.map_cons, List.map_nil,
-    BitVec.ofNat_eq_ofNat, BitVec.add_zero, List.allSome, List.mapM_cons, List.mapM_nil, id]
+    BitVec.add_zero, List.mapM_cons, List.mapM_nil, id]
   cases m.get? a <;> simp [Int.ofBytes]
 
 /-- A store of one byte writes the map at the address. -/
@@ -217,7 +215,7 @@ theorem Mem.get?_storeInt_one {w} (m : Mem w) (a b : BitVec w) (v : Int) :
     ExtHashMap.getElem?_union]
   have hAt : ((Int.toBytes 1 v).At a)[b]? = if b = a then some (v.take 8).toNat.toUInt8 else none := by
     rw [← get?_eq_getElem?]
-    simp only [Int.toBytes, List.At, List.mapIdx_cons, List.mapIdx_nil, BitVec.ofNat_eq_ofNat,
+    simp only [Int.toBytes, List.At, List.mapIdx_cons, List.mapIdx_nil,
       BitVec.add_zero]
     by_cases h : b = a
     · subst h; simp

@@ -40,7 +40,8 @@ public theorem autoframes {f : Label} {g : Fragment} (h : FunDecls.at (label f) 
     ⦃ Q'; E' ⦄ := by
   refine Triple.intro fun s₀ ⟨h₀, hpre, hok, hexit⟩ => ?_
   rw [FunDecls.body_eq h]
-  refine Program.wp_mono (fun _ h => False.elim h) (fun u hu => ?_) (hp.1 s₀ ⟨h₀, hpre⟩)
+  rw [Program.WP.wp_def]
+  refine Program.wp_mono (fun _ h => False.elim h) (fun u hu => ?_) (Program.WP.wp_def.mp (hp.1 s₀ ⟨h₀, hpre⟩))
   by_cases ha : u.pc = ra
   · obtain ⟨hQ, hrsp, hF⟩ := hu.1 ha
     have hk := hok u.data
@@ -63,7 +64,8 @@ public theorem autoframes_of_ret {f : Label} {g : Fragment} (h : FunDecls.at (la
     ⦃ Q'; E' ⦄ := by
   refine Triple.intro fun s₀ ⟨h₀, hpre, hok⟩ => ?_
   rw [FunDecls.body_eq h]
-  refine Program.wp_mono (fun _ h => False.elim h) (fun u hu => ?_) (hp.1 s₀ ⟨h₀, hpre⟩)
+  rw [Program.WP.wp_def]
+  refine Program.wp_mono (fun _ h => False.elim h) (fun u hu => ?_) (Program.WP.wp_def.mp (hp.1 s₀ ⟨h₀, hpre⟩))
   obtain ⟨ha, hQ, hrsp, hF⟩ := hu
   have hk := hok u.data
   rw [hH s u.data hF hrsp] at hk

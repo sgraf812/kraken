@@ -41,7 +41,7 @@ def Program.fromLabel : Program → Label → Program
 /-- An instruction cell is invisible to the scope lookup. -/
 @[simp] theorem Program.fromLabel_cons_instr (i : Instr) (p : Program) (l : Label) :
     Program.fromLabel ((@Kraken.Directive.instr Instr ConstExpr) i :: p) l = Program.fromLabel p l := by
-  rw [Program.fromLabel_cons, if_neg (by rintro ⟨-, h⟩; cases h)]
+  rw [Program.fromLabel_cons, ite_eq_right (by rintro ⟨-, h⟩; cases h)]
 
 theorem Program.fromLabel_suffix (p : Program) (l : Label) :
     Program.fromLabel p l <:+ p := by
@@ -63,7 +63,7 @@ theorem Program.fromLabel_mem {p : Program} {l : Label}
     by_cases hc : Program.fromLabel p l = [] ∧ d = (@Kraken.Directive.label Instr ConstExpr) l
     · rw [hc.2]
       exact List.mem_cons_self
-    · rw [if_neg hc] at h
+    · rw [ite_eq_right hc] at h
       exact List.mem_cons_of_mem d (ih h)
 
 def Directive.isLabel : Directive → Bool
@@ -129,9 +129,9 @@ theorem Program.fromLabel_head :
     intro l h
     rw [Program.fromLabel_cons] at h ⊢
     by_cases hc : Program.fromLabel p l = [] ∧ d = (@Kraken.Directive.label Instr ConstExpr) l
-    · rw [if_pos hc]
+    · rw [ite_eq_left hc]
       exact ⟨p, by rw [hc.2]⟩
-    · rw [if_neg hc] at h ⊢
+    · rw [ite_eq_right hc] at h ⊢
       exact ih h
 
 /-- A label present in the text has a scope suffix. -/
@@ -156,10 +156,10 @@ theorem Program.fromLabel_ne_nil_of_mem {p : Program} {l : Label}
       rw [Program.fromLabel_cons_instr]
       exact ih h
     | byteArray a =>
-      rw [Program.fromLabel_cons, if_neg (fun hc => by cases hc.2)]
+      rw [Program.fromLabel_cons, ite_eq_right (fun hc => by cases hc.2)]
       exact ih h
     | word n e =>
-      rw [Program.fromLabel_cons, if_neg (fun hc => by cases hc.2)]
+      rw [Program.fromLabel_cons, ite_eq_right (fun hc => by cases hc.2)]
       exact ih h
 
 private theorem idxOf_eq_of_getElem? {α} [BEq α] [LawfulBEq α] {xs : List α} {a : α}
@@ -286,7 +286,7 @@ theorem Program.fromLabel_view {p : Program} (hnd : (Program.labels p).Nodup) :
           · exact hne
           · exact absurd (Program.mem_labels.mpr (Program.fromLabel_mem hne))
               (List.nodup_cons.mp hnd).1
-        rw [Program.fromLabel_cons, if_pos ⟨hnil, rfl⟩]
+        rw [Program.fromLabel_cons, ite_eq_left ⟨hnil, rfl⟩]
         simp only [Program.view, List.drop_zero, List.flatMap_cons, Program.blockCells,
           List.cons_append]
         exact congrArg ((@Kraken.Directive.label Instr ConstExpr) l' :: ·) (Program.view_eq p)
@@ -296,7 +296,7 @@ theorem Program.fromLabel_view {p : Program} (hnd : (Program.labels p).Nodup) :
           rw [Program.labels_view]
           exact List.mem_map.mpr ⟨(l, b), List.mem_of_getElem? hi, rfl⟩
         have hne : Program.fromLabel p l ≠ [] := Program.fromLabel_ne_nil_of_mem hmem
-        rw [Program.fromLabel_cons, if_neg (fun hc => hne hc.1)]
+        rw [Program.fromLabel_cons, ite_eq_right (fun hc => hne hc.1)]
         simp only [Program.view, List.drop_succ_cons]
         exact ih hnd' hi
     | instr i' =>
@@ -306,12 +306,12 @@ theorem Program.fromLabel_view {p : Program} (hnd : (Program.labels p).Nodup) :
       exact ih hnd hi
     | byteArray a =>
       simp only [Program.view] at hi
-      rw [Program.fromLabel_cons, if_neg (fun hc => by cases hc.2)]
+      rw [Program.fromLabel_cons, ite_eq_right (fun hc => by cases hc.2)]
       simp only [Program.view]
       exact ih hnd hi
     | word n e =>
       simp only [Program.view] at hi
-      rw [Program.fromLabel_cons, if_neg (fun hc => by cases hc.2)]
+      rw [Program.fromLabel_cons, ite_eq_right (fun hc => by cases hc.2)]
       simp only [Program.view]
       exact ih hnd hi
 
@@ -361,7 +361,7 @@ theorem Program.isSome_blockAtAux (j : Nat) (bs : List (Label × Program)) (l : 
     obtain ⟨l', b⟩ := b
     by_cases h : l' = l
     · simp [Program.blockAtAux, h]
-    · simp only [Program.blockAtAux, h, if_false, ih, List.map_cons, List.contains_cons]
+    · simp only [Program.blockAtAux, h, ite_false, ih, List.map_cons, List.contains_cons]
       simp [Ne.symm h]
 
 theorem Program.isSome_blockAt (p : Program) (l : Label) :
@@ -413,7 +413,7 @@ theorem Program.blockAtAux_of_getElem : ∀ {j : Nat} {bs : List (Label × Progr
         List.mem_map.mpr ⟨(l, b), List.mem_of_getElem? h, rfl⟩
       have hne : l' ≠ l := fun heq =>
         (List.nodup_cons.mp (by simpa using hnd)).1 (heq ▸ hmem)
-      simp only [Program.blockAtAux, if_neg hne]
+      simp only [Program.blockAtAux, ite_eq_right hne]
       rw [ih (List.nodup_cons.mp (by simpa using hnd)).2 h, Nat.add_assoc, Nat.add_comm 1 k]
       rfl
 
